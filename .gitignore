@@ -1,0 +1,24 @@
+.DS_Store
+
+# Python bytecode/cache
+__pycache__/
+*.py[cod]
+*.pyo
+
+# Packaging/build artifacts
+build/
+dist/
+*.egg-info/
+fastllm_v2.egg-info/
+
+# Test/tool caches
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# Jupyter
+.ipynb_checkpoints/
+
+# Virtual environments
+.venv/
+venv/
