@@ -1,0 +1,103 @@
+Metadata-Version: 2.4
+Name: fastllm_v2
+Version: 0.1.0
+Summary: OpenAPI-layered minimal LLM API client
+Author-email: AnswerDotAI <support@answer.ai>
+License: Apache-2.0
+Project-URL: Repository, https://github.com/AnswerDotAI/fastllm_v2
+Project-URL: Documentation, https://fastllm.answer.ai/
+Keywords: llm,openapi,fastcore,httpx,python
+Classifier: Natural Language :: English
+Classifier: Intended Audience :: Developers
+Classifier: Development Status :: 3 - Alpha
+Classifier: Programming Language :: Python :: 3
+Classifier: Programming Language :: Python :: 3 :: Only
+Requires-Python: >=3.9
+Description-Content-Type: text/markdown
+Requires-Dist: fastcore>=1.8.4
+Requires-Dist: httpx>=0.27
+Provides-Extra: dev
+Requires-Dist: pytest>=8; extra == "dev"
+Requires-Dist: pytest-cov>=5; extra == "dev"
+
+# fastllm_v2
+
+`fastllm_v2` is a minimal LLM client built around a generic OpenAPI operation layer.
+
+Highlights:
+
+- OpenAPI-like operation specs -> dynamic operation groups/methods
+- Async HTTP transport + SSE parsing
+- Normalized completion/streaming types
+- Built-in LLM families: OpenAI (Responses + Chat Completions), Anthropic Messages, Gemini generateContent
+- Pass-through `native`/`extra_*` options for forward compatibility
+
+## Install
+
+```bash
+pip install fastllm_v2
+```
+
+## Quickstart
+
+```python
+import asyncio
+from fastllm_v2 import Msg, Part, mk_client
+
+async def main():
+    c = mk_client('openai', model='gpt-5-mini', api_key='YOUR_KEY')
+    try:
+        res = await c.acomplete([Msg(role='user', content=[Part(type='text', text='Say hi')])])
+        print(res.message.content[0].text)
+    finally:
+        await c.aclose()
+
+asyncio.run(main())
+```
+
+## OpenAI Responses API coverage
+
+`OpenAIClient` defaults to the Responses API and includes wrappers for:
+
+- `POST /responses` (`acomplete`, `astream`)
+- `GET /responses/{response_id}` (`aresponse_get`)
+- `DELETE /responses/{response_id}` (`aresponse_delete`)
+- `POST /responses/{response_id}/cancel` (`aresponse_cancel`)
+- `GET /responses/{response_id}/input_items` (`aresponse_input_items`)
+- `POST /responses/compact` (`acompact`)
+- `POST /responses/input_tokens` (`ainput_tokens`)
+
+It also supports Chat Completions through:
+
+- `achat_complete(...)`
+- `achat_stream(...)`
+
+## Generic OpenAPI layer
+
+You can build clients directly from OpenAPI-like specs (local or remote), then call operations dynamically by group/name.
+
+```python
+from fastllm_v2 import client_from_spec, load_spec_file, spec_to_ops
+
+spec = load_spec_file("openapi.json")
+api = client_from_spec("https://api.example.com", spec, headers={"Authorization": "Bearer X"})
+```
+
+Operation call pattern:
+
+```python
+# non-stream
+res = await api.responses.create(model="gpt-5-mini", input="hello")
+
+# stream
+async for ev in api.responses.create(model="gpt-5-mini", input="hello", stream=True, _stream=True):
+    print(ev)
+```
+
+`_stream=True` enables SSE transport for stream-capable operations; regular request fields like `stream=True` stay in payload/query.
+
+## Run tests
+
+```bash
+python -m unittest discover -s tests -p 'test_*.py' -v
+```
