@@ -3,7 +3,7 @@ import unittest
 
 import httpx
 
-from fastllm_v2 import AnthropicClient, ClientConfig, GeminiClient, Msg, Part, RequestOptions, ToolSpec
+from fastllm_v2 import AnthropicClient, ClientConfig, GeminiClient, Msg, Part, RequestOptions
 from fastllm_v2.builtin_specs import anthropic_ops, gemini_ops
 from fastllm_v2.oapi import OpenAPIClient
 from fastllm_v2.transport import AsyncTransport
@@ -112,7 +112,7 @@ class TestAnthropicGemini(unittest.IsolatedAsyncioTestCase):
         ])]
         try:
             res = await c.acomplete(msgs, cache=True, tool_choice="auto", reasoning_effort="low",
-                tools=[ToolSpec(name="lookup", parameters={"type": "object"})])
+                tools=[{"type": "function", "function": {"name": "lookup", "parameters": {"type": "object"}}}])
             self.assertEqual(res.tool_calls[0].name, "lookup")
             blocks = seen["payload"]["messages"][0]["content"]
             self.assertEqual(blocks[0]["cache_control"]["type"], "ephemeral")
@@ -156,17 +156,21 @@ class TestAnthropicGemini(unittest.IsolatedAsyncioTestCase):
         ])]
         try:
             res = await c.acomplete(msgs,
-                tools=[ToolSpec(name="lookup", parameters={"type": "object"})],
+                tools=[
+                    {"type": "function", "function": {"name": "lookup", "parameters": {"type": "object"}}},
+                    {"googleSearch": {"dynamic": True}},
+                ],
                 tool_choice="required",
-                search={"dynamic": True},
                 cache={"cachedContent": "cachedContents/abc"})
             self.assertEqual(res.tool_calls[0].name, "lookup")
             self.assertEqual(res.usage.total_tokens, 5)
 
             ds = []
             async for d in c.astream(msgs,
-                tools=[ToolSpec(name="lookup", parameters={"type": "object"})],
-                search=True,
+                tools=[
+                    {"type": "function", "function": {"name": "lookup", "parameters": {"type": "object"}}},
+                    {"googleSearch": {}},
+                ],
                 cache={"cachedContent": "cachedContents/abc"}):
                 ds.append(d)
             self.assertEqual(ds[0].tool_calls[0].name, "lookup")

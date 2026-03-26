@@ -117,6 +117,39 @@ class TestOpenAIResponses(unittest.IsolatedAsyncioTestCase):
             await c.aclose()
             await hc.aclose()
 
+    async def test_chat_stream_usage_from_choice_usage_field(self):
+        def handler(request: httpx.Request) -> httpx.Response:
+            payload = json.loads(request.content.decode())
+            if payload.get("stream"):
+                body = (
+                    'data: {"choices":[{"delta":{"content":"Hello"},"finish_reason":null}]}\n\n'
+                    'data: {"choices":[{"delta":{},"finish_reason":"stop","usage":{"prompt_tokens":14,"completion_tokens":7,"total_tokens":21,"cached_tokens":8}}]}\n\n'
+                    'data: [DONE]\n\n'
+                )
+                return httpx.Response(200, text=body, headers={"content-type": "text/event-stream"})
+            return httpx.Response(200, json={"choices": [{"message": {"content": "ok"}, "finish_reason": "stop"}]})
+
+        hc = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+        api = OpenAPIClient(
+            base_url="https://api.openai.com/v1",
+            headers={"Authorization": "Bearer sk-test"},
+            ops=openai_ops(),
+            transport=AsyncTransport(client=hc),
+        )
+        c = OpenAIClient(ClientConfig(model="gpt-test", api_key="sk-test", base_url="https://api.openai.com/v1"), api=api)
+        try:
+            done = None
+            async for d in c.achat_stream(_user("hello"), stream_options={"include_usage": True}):
+                if d.finish_reason: done = d
+            self.assertIsNotNone(done)
+            self.assertIsNotNone(done.usage)
+            self.assertEqual(done.usage.prompt_tokens, 14)
+            self.assertEqual(done.usage.completion_tokens, 7)
+            self.assertEqual(done.usage.total_tokens, 21)
+        finally:
+            await c.aclose()
+            await hc.aclose()
+
     async def test_kwargs_passthrough_and_cache(self):
         seen = {"payload": None, "headers": None}
 
@@ -150,6 +183,60 @@ class TestOpenAIResponses(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(seen["payload"]["store"], True)
             self.assertEqual(seen["payload"]["custom_toggle"], True)
             self.assertEqual(seen["headers"]["x-extra"], "1")
+        finally:
+            await c.aclose()
+            await hc.aclose()
+
+    async def test_search_kwarg_removed_use_tools_instead(self):
+        def handler(request: httpx.Request) -> httpx.Response:
+            return httpx.Response(200, json={})
+
+        hc = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+        api = OpenAPIClient(
+            base_url="https://api.openai.com/v1",
+            headers={"Authorization": "Bearer sk-test"},
+            ops=openai_ops(),
+            transport=AsyncTransport(client=hc),
+        )
+        c = OpenAIClient(ClientConfig(model="gpt-test", api_key="sk-test", base_url="https://api.openai.com/v1"), api=api)
+        try:
+            with self.assertRaises(TypeError):
+                await c.acomplete(_user("hello"), search=True)
+        finally:
+            await c.aclose()
+            await hc.aclose()
+
+    async def test_tools_lisette_style_schema_is_accepted(self):
+        seen = {"payload": None}
+
+        def handler(request: httpx.Request) -> httpx.Response:
+            seen["payload"] = json.loads(request.content.decode())
+            return httpx.Response(200, json={
+                "id": "resp_tools",
+                "model": "gpt-test",
+                "status": "completed",
+                "output": [{"type": "message", "content": [{"type": "output_text", "text": "ok"}]}],
+                "usage": {"input_tokens": 1, "output_tokens": 1, "total_tokens": 2},
+            })
+
+        hc = httpx.AsyncClient(transport=httpx.MockTransport(handler))
+        api = OpenAPIClient(
+            base_url="https://api.openai.com/v1",
+            headers={"Authorization": "Bearer sk-test"},
+            ops=openai_ops(),
+            transport=AsyncTransport(client=hc),
+        )
+        c = OpenAIClient(ClientConfig(model="gpt-test", api_key="sk-test", base_url="https://api.openai.com/v1"), api=api)
+        try:
+            tool = {"type": "function", "function": {
+                "name": "simple_add",
+                "description": "Add two integers",
+                "parameters": {"type": "object", "properties": {"a": {"type": "integer"}, "b": {"type": "integer"}}},
+            }}
+            await c.acomplete(_user("hello"), tools=[tool], tool_choice="required")
+            self.assertEqual(seen["payload"]["tools"][0]["type"], "function")
+            self.assertEqual(seen["payload"]["tools"][0]["name"], "simple_add")
+            self.assertIn("parameters", seen["payload"]["tools"][0])
         finally:
             await c.aclose()
             await hc.aclose()

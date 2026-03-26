@@ -109,7 +109,8 @@ def normalize_openai_response_event(ev: Dict[str, Any]) -> Optional[Delta]:
     if typ == "error":
         msg = ev.get("error") if isinstance(ev.get("error"), dict) else ev
         raise ProtocolError(f"Responses stream error: {msg}")
-    return None
+    # Preserve unknown events so callers never lose provider metadata.
+    return Delta(raw=ev)
 
 
 def normalize_openai_chat_completion(raw: Dict[str, Any], *, model: str, provider: str = "openai_chat") -> Completion:
@@ -151,8 +152,17 @@ def normalize_openai_chat_delta(ev: Dict[str, Any]) -> Delta:
     for tc in d.get("tool_calls") or []:
         if not isinstance(tc, dict): continue
         fn = tc.get("function") if isinstance(tc.get("function"), dict) else {}
-        tcs.append(ToolCall(id=str(tc.get("id", "")), name=str(fn.get("name", "")), arguments=_json_dict(fn.get("arguments"))))
-    return Delta(text=txt, tool_calls=tcs, finish_reason=c0.get("finish_reason"), usage=usage_from_openai(ev.get("usage")), raw=ev)
+        tid = tc.get("id")
+        if not tid and tc.get("index") is not None: tid = str(tc.get("index"))
+        args = fn.get("arguments")
+        if isinstance(args, str):
+            targs = {"_delta": args}
+        else:
+            targs = _json_dict(args)
+        tcs.append(ToolCall(id=str(tid or ""), name=str(fn.get("name", "")), arguments=targs))
+    usage = ev.get("usage")
+    if usage is None and isinstance(c0.get("usage"), dict): usage = c0.get("usage")
+    return Delta(text=txt, tool_calls=tcs, finish_reason=c0.get("finish_reason"), usage=usage_from_openai(usage), raw=ev)
 
 
 def normalize_anthropic_message(raw: Dict[str, Any], *, model: str, provider: str = "anthropic") -> Completion:
@@ -199,7 +209,8 @@ def normalize_anthropic_event(ev: Dict[str, Any]) -> Optional[Delta]:
         return Delta(finish_reason=d.get("stop_reason"), usage=usage_from_anthropic(ev.get("usage")), raw=ev)
     if typ == "message_stop": return Delta(finish_reason="message_stop", raw=ev)
     if typ == "error": raise ProtocolError(f"Anthropic stream error: {ev}")
-    return None
+    # Preserve unknown events so callers never lose provider metadata.
+    return Delta(raw=ev)
 
 
 def normalize_gemini_generate(raw: Dict[str, Any], *, model: str, provider: str = "gemini") -> Completion:

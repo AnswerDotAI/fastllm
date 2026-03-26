@@ -5,6 +5,8 @@ from __future__ import annotations
 from dataclasses import fields, replace
 from typing import Any, AsyncIterator, Optional
 
+from fastcore.meta import delegates
+
 from .builtin_specs import anthropic_ops, gemini_ops, openai_ops
 from .config import ClientConfig
 from .errors import UnsupportedCapabilityError
@@ -12,16 +14,81 @@ from .normalize import normalize_anthropic_event, normalize_anthropic_message, n
 from .normalize import normalize_gemini_generate, normalize_openai_chat_completion, normalize_openai_chat_delta
 from .normalize import normalize_openai_response, normalize_openai_response_event
 from .oapi import OpenAPIClient
-from .types import Caps, Completion, Delta, Msg, RequestOptions, ToolSpec
+from .types import Caps, Completion, Delta, Msg, RequestOptions
 
 
 _REQ_OPT_FIELDS = {f.name for f in fields(RequestOptions)}
 _REQ_OPT_ALIASES = {"headers": "extra_headers", "query": "extra_query", "body": "extra_body"}
 
 
-def _tool_obj(t: ToolSpec) -> dict:
-    "Build provider-agnostic function tool schema."
-    return {"type": "function", "name": t.name, "description": t.description, "parameters": t.parameters}
+def _tool_fn(t: Any) -> Optional[dict]:
+    "Extract provider-agnostic function schema from a tool-like object."
+    if isinstance(t, dict):
+        if isinstance(t.get("function"), dict):
+            fn = t["function"]
+            name = str(fn.get("name") or "")
+            params = fn.get("parameters")
+            return dict(name=name, description=str(fn.get("description") or ""),
+                parameters=params if isinstance(params, dict) else {})
+        if t.get("type") == "function" and "name" in t:
+            params = t.get("parameters")
+            return dict(name=str(t.get("name") or ""), description=str(t.get("description") or ""),
+                parameters=params if isinstance(params, dict) else {})
+        if "name" in t and ("parameters" in t or "input_schema" in t):
+            params = t.get("parameters", t.get("input_schema"))
+            return dict(name=str(t.get("name") or ""), description=str(t.get("description") or ""),
+                parameters=params if isinstance(params, dict) else {})
+    return None
+
+
+def _openai_responses_tools(tools: list[Any]) -> list[dict]:
+    "Normalize tools to OpenAI Responses API tool shape."
+    out = []
+    for t in tools:
+        if isinstance(t, dict):
+            if t.get("type") == "function" and "name" in t: out.append(dict(t)); continue
+            if t.get("type") != "function" and "function" not in t and "name" not in t:
+                out.append(dict(t))
+                continue
+        fn = _tool_fn(t)
+        if fn is None:
+            if isinstance(t, dict): out.append(dict(t)); continue
+            raise TypeError(f"Unsupported tool type: {type(t).__name__}")
+        out.append(dict(type="function", name=fn["name"], description=fn.get("description", ""),
+            parameters=fn.get("parameters") or {}))
+    return out
+
+
+def _openai_chat_tools(tools: list[Any]) -> list[dict]:
+    "Normalize tools to OpenAI Chat Completions tool shape."
+    out = []
+    for t in tools:
+        if isinstance(t, dict) and t.get("type") == "function" and isinstance(t.get("function"), dict):
+            out.append(dict(t))
+            continue
+        fn = _tool_fn(t)
+        if fn is None:
+            if isinstance(t, dict): out.append(dict(t)); continue
+            raise TypeError(f"Unsupported tool type: {type(t).__name__}")
+        out.append(dict(type="function", function=dict(name=fn["name"], description=fn.get("description", ""),
+            parameters=fn.get("parameters") or {})))
+    return out
+
+
+def _anthropic_tools(tools: list[Any]) -> list[dict]:
+    "Normalize tools to Anthropic tool shape."
+    out = []
+    for t in tools:
+        if isinstance(t, dict) and "name" in t and "input_schema" in t:
+            out.append(dict(t))
+            continue
+        fn = _tool_fn(t)
+        if fn is None:
+            if isinstance(t, dict): out.append(dict(t)); continue
+            raise TypeError(f"Unsupported tool type: {type(t).__name__}")
+        out.append(dict(name=fn["name"], description=fn.get("description", ""),
+            input_schema=fn.get("parameters") or {}))
+    return out
 
 
 def _provider_part(p, nm: str) -> Optional[dict]:
@@ -37,6 +104,9 @@ def _merge_opts(options: Optional[RequestOptions], kw: dict[str, Any]) -> Reques
     "Merge keyword overrides into RequestOptions; unknown kwargs go to native body."
     opts = options or RequestOptions()
     if not kw: return opts
+    if "search" in kw:
+        raise TypeError("`search` has been removed; pass provider-native web-search tools via `tools=[...]` "
+            "or provider fields via `native`/`extra_body`.")
 
     updates = {}
     native = dict(opts.native or {})
@@ -130,9 +200,25 @@ def _anthropic_cache_control(cache: Any) -> Optional[dict]:
     return {"type": "ephemeral"}
 
 
-def _gemini_tool_obj(t: ToolSpec) -> dict:
-    "Map ToolSpec to Gemini function declaration."
-    return {"name": t.name, "description": t.description, "parameters": t.parameters}
+def _gemini_tools(tools: list[Any]) -> list[dict]:
+    "Normalize tools to Gemini tools payload shape."
+    out, fn_decls = [], []
+    for t in tools:
+        if isinstance(t, dict):
+            if "functionDeclarations" in t and isinstance(t["functionDeclarations"], list):
+                out.append(dict(t))
+                continue
+            if any(k in t for k in ("googleSearch", "googleSearchRetrieval", "codeExecution")) and "function" not in t and "name" not in t:
+                out.append(dict(t))
+                continue
+        fn = _tool_fn(t)
+        if fn is None:
+            if isinstance(t, dict): out.append(dict(t)); continue
+            raise TypeError(f"Unsupported tool type: {type(t).__name__}")
+        fn_decls.append(dict(name=fn["name"], description=fn.get("description", ""),
+            parameters=fn.get("parameters") or {}))
+    if fn_decls: out.insert(0, dict(functionDeclarations=fn_decls))
+    return out
 
 
 def _gemini_tool_choice(v: Any) -> Optional[dict]:
@@ -251,8 +337,18 @@ class OpenAIClient(BaseLLMClient):
         "Serialize normalized messages to Responses API input format."
         out = []
         for m in messages:
+            data = dict(m.data or {})
+            raw = data.pop("openai", None)
+            if isinstance(raw, dict):
+                out.append(raw)
+                continue
             parts = [self._responses_part(m.role, p) for p in m.content]
-            out.append({"role": m.role, "content": parts})
+            obj = {"role": m.role, "content": parts}
+            if data:
+                for k,v in data.items():
+                    if k in ("openai_chat", "anthropic", "gemini"): continue
+                    obj[k] = v
+            out.append(obj)
         return out
 
     def _chat_part(self, p):
@@ -287,18 +383,28 @@ class OpenAIClient(BaseLLMClient):
         "Serialize normalized messages to chat.completions messages."
         res = []
         for m in messages:
-            if len(m.content) == 1 and m.content[0].type == "text":
-                res.append({"role": m.role, "content": m.content[0].text or ""})
+            data = dict(m.data or {})
+            raw = data.pop("openai_chat", None)
+            if isinstance(raw, dict):
+                res.append(raw)
                 continue
-            cts = [self._chat_part(p) for p in m.content]
-            res.append({"role": m.role, "content": cts})
+
+            if len(m.content) == 1 and m.content[0].type == "text":
+                obj = {"role": m.role, "content": m.content[0].text or ""}
+            else:
+                cts = [self._chat_part(p) for p in m.content]
+                obj = {"role": m.role, "content": cts} if cts else {"role": m.role}
+            if data:
+                for k,v in data.items():
+                    if k in ("openai", "anthropic", "gemini"): continue
+                    obj[k] = v
+            res.append(obj)
         return res
 
     def _responses_payload(self, messages: list[Msg], opts: RequestOptions, *, stream: bool):
         "Build Responses API request payload."
         if opts.tools: self._require_caps(["tools"])
         if opts.tool_choice is not None: self._require_caps(["tool_choice"])
-        if opts.search: self._require_caps(["search"])
         if opts.reasoning_effort is not None: self._require_caps(["reasoning"])
 
         payload = {"model": self.config.model, "input": self._responses_messages(messages), "stream": stream}
@@ -308,14 +414,9 @@ class OpenAIClient(BaseLLMClient):
             txt = dict(payload.get("text") or {})
             txt["format"] = _openai_text_format(opts.response_format)
             payload["text"] = txt
-        if opts.tools: payload["tools"] = [_tool_obj(t) for t in opts.tools]
+        if opts.tools: payload["tools"] = _openai_responses_tools(opts.tools)
         if opts.tool_choice is not None: payload["tool_choice"] = opts.tool_choice
         if opts.reasoning_effort is not None: payload["reasoning"] = {"effort": opts.reasoning_effort}
-        if opts.search:
-            tools = list(payload.get("tools") or [])
-            search_obj = opts.search if isinstance(opts.search, dict) else {}
-            tools.append({"type": "web_search_preview", **search_obj})
-            payload["tools"] = tools
         _openai_cache(payload, opts.cache)
         if opts.native: payload.update(opts.native)
         if opts.extra_body: payload.update(opts.extra_body)
@@ -332,23 +433,21 @@ class OpenAIClient(BaseLLMClient):
         "Build chat.completions payload."
         if opts.tools: self._require_caps(["tools"])
         if opts.tool_choice is not None: self._require_caps(["tool_choice"])
-        if opts.search: self._require_caps(["search"])
         if opts.reasoning_effort is not None: self._require_caps(["reasoning"])
 
         payload = {"model": self.config.model, "messages": self._chat_messages(messages), "stream": stream}
         if opts.max_tokens is not None: payload["max_tokens"] = opts.max_tokens
         if opts.temperature is not None: payload["temperature"] = opts.temperature
         if opts.response_format is not None: payload["response_format"] = opts.response_format
-        if opts.tools: payload["tools"] = [{"type": "function", "function": _tool_obj(t) | {"name": t.name}} for t in opts.tools]
+        if opts.tools: payload["tools"] = _openai_chat_tools(opts.tools)
         if opts.tool_choice is not None: payload["tool_choice"] = opts.tool_choice
         if opts.reasoning_effort is not None: payload["reasoning_effort"] = opts.reasoning_effort
-        if opts.search:
-            payload["web_search_options"] = opts.search if isinstance(opts.search, dict) else {}
         _openai_cache(payload, opts.cache)
         if opts.native: payload.update(opts.native)
         if opts.extra_body: payload.update(opts.extra_body)
         return payload
 
+    @delegates(RequestOptions, keep=True)
     async def acomplete(self, messages: list[Msg], *, options: Optional[RequestOptions] = None, **kwargs) -> Completion:
         "Responses API non-stream completion."
         opts = _merge_opts(options, kwargs)
@@ -357,6 +456,7 @@ class OpenAIClient(BaseLLMClient):
             _query=opts.extra_query, **payload)
         return normalize_openai_response(raw, model=self.config.model, provider=self.config.provider or "openai")
 
+    @delegates(RequestOptions, keep=True)
     async def astream(self, messages: list[Msg], *, options: Optional[RequestOptions] = None, **kwargs) -> AsyncIterator[Delta]:
         "Responses API streaming completion."
         opts = _merge_opts(options, kwargs)
@@ -366,6 +466,7 @@ class OpenAIClient(BaseLLMClient):
             d = normalize_openai_response_event(ev)
             if d is not None: yield d
 
+    @delegates(RequestOptions, keep=True)
     async def achat_complete(self, messages: list[Msg], *, options: Optional[RequestOptions] = None, **kwargs) -> Completion:
         "Chat Completions non-stream completion."
         opts = _merge_opts(options, kwargs)
@@ -374,6 +475,7 @@ class OpenAIClient(BaseLLMClient):
         raw = await op(_headers=opts.extra_headers, _query=opts.extra_query, **payload)
         return normalize_openai_chat_completion(raw, model=self.config.model, provider=self.config.provider or "openai_chat")
 
+    @delegates(RequestOptions, keep=True)
     async def achat_stream(self, messages: list[Msg], *, options: Optional[RequestOptions] = None, **kwargs) -> AsyncIterator[Delta]:
         "Chat Completions stream."
         opts = _merge_opts(options, kwargs)
@@ -458,20 +560,28 @@ class AnthropicClient(BaseLLMClient):
         res = []
         cache_ctl = _anthropic_cache_control(cache)
         for m in messages:
+            data = dict(m.data or {})
+            raw = data.pop("anthropic", None)
+            if isinstance(raw, dict):
+                res.append(raw)
+                continue
             blocks = []
             for p in m.content:
                 b = self._anthropic_part(p)
                 if cache_ctl and m.role in ("user", "system") and "cache_control" not in b:
                     if b.get("type") in ("text", "image", "document"): b["cache_control"] = cache_ctl
                 blocks.append(b)
-            res.append({"role": m.role, "content": blocks})
+            obj = {"role": m.role, "content": blocks}
+            for k,v in data.items():
+                if k in ("openai", "openai_chat", "gemini"): continue
+                obj[k] = v
+            res.append(obj)
         return res
 
     def _payload(self, messages: list[Msg], opts: RequestOptions, *, stream: bool):
         "Build Anthropic messages payload."
         if opts.tools: self._require_caps(["tools"])
         if opts.tool_choice is not None: self._require_caps(["tool_choice"])
-        if opts.search: self._require_caps(["search"])
         if opts.reasoning_effort is not None: self._require_caps(["reasoning"])
 
         payload = {
@@ -480,10 +590,9 @@ class AnthropicClient(BaseLLMClient):
             "max_tokens": opts.max_tokens or 1024,
             "stream": stream}
         if opts.temperature is not None: payload["temperature"] = opts.temperature
-        if opts.tools: payload["tools"] = [{"name": t.name, "description": t.description, "input_schema": t.parameters} for t in opts.tools]
+        if opts.tools: payload["tools"] = _anthropic_tools(opts.tools)
         tc = _anthropic_tool_choice(opts.tool_choice)
         if tc is not None: payload["tool_choice"] = tc
-        if opts.search: payload["web_search"] = opts.search if isinstance(opts.search, dict) else {}
         think = _anthropic_thinking(opts.reasoning_effort)
         if think is not None:
             payload["thinking"] = think
@@ -496,6 +605,7 @@ class AnthropicClient(BaseLLMClient):
         if opts.extra_body: payload.update(opts.extra_body)
         return payload
 
+    @delegates(RequestOptions, keep=True)
     async def acomplete(self, messages: list[Msg], *, options: Optional[RequestOptions] = None, **kwargs) -> Completion:
         "Non-stream Anthropic completion."
         opts = _merge_opts(options, kwargs)
@@ -503,6 +613,7 @@ class AnthropicClient(BaseLLMClient):
             **self._payload(messages, opts, stream=False))
         return normalize_anthropic_message(raw, model=self.config.model, provider=self.config.provider or "anthropic")
 
+    @delegates(RequestOptions, keep=True)
     async def astream(self, messages: list[Msg], *, options: Optional[RequestOptions] = None, **kwargs) -> AsyncIterator[Delta]:
         "Stream Anthropic completion."
         opts = _merge_opts(options, kwargs)
@@ -510,7 +621,9 @@ class AnthropicClient(BaseLLMClient):
             **self._payload(messages, opts, stream=True)):
             d = normalize_anthropic_event(ev)
             if d is None: continue
-            if d.finish_reason == "message_stop": return
+            if d.finish_reason == "message_stop":
+                yield d
+                return
             yield d
 
     async def alist_models(self):
@@ -582,16 +695,24 @@ class GeminiClient(BaseLLMClient):
         "Serialize normalized messages for Gemini contents format."
         out = []
         for m in messages:
+            data = dict(m.data or {})
+            raw = data.pop("gemini", None)
+            if isinstance(raw, dict):
+                out.append(raw)
+                continue
             parts = [self._gemini_part(p) for p in m.content]
             role = "model" if m.role == "assistant" else "user"
-            out.append({"role": role, "parts": parts})
+            obj = {"role": role, "parts": parts}
+            for k,v in data.items():
+                if k in ("openai", "openai_chat", "anthropic"): continue
+                obj[k] = v
+            out.append(obj)
         return out
 
     def _payload(self, messages: list[Msg], opts: RequestOptions):
         "Build Gemini request payload."
         if opts.tools: self._require_caps(["tools"])
         if opts.tool_choice is not None: self._require_caps(["tool_choice"])
-        if opts.search: self._require_caps(["search"])
 
         body = {"contents": self._messages(messages)}
         gen = {}
@@ -601,14 +722,7 @@ class GeminiClient(BaseLLMClient):
         if think is not None: gen["thinkingConfig"] = think
         if gen: body["generationConfig"] = gen
 
-        if opts.tools:
-            body["tools"] = [{"functionDeclarations": [_gemini_tool_obj(t) for t in opts.tools]}]
-        if opts.search:
-            search_obj = opts.search if isinstance(opts.search, dict) else {}
-            tools = list(body.get("tools") or [])
-            tools.append({"googleSearch": search_obj})
-            body["tools"] = tools
-
+        if opts.tools: body["tools"] = _gemini_tools(opts.tools)
         if opts.tool_choice is not None:
             tcfg = _gemini_tool_choice(opts.tool_choice)
             if tcfg: body["toolConfig"] = tcfg
@@ -618,6 +732,7 @@ class GeminiClient(BaseLLMClient):
         if opts.extra_body: body.update(opts.extra_body)
         return body
 
+    @delegates(RequestOptions, keep=True)
     async def acomplete(self, messages: list[Msg], *, options: Optional[RequestOptions] = None, **kwargs) -> Completion:
         "Non-stream Gemini completion."
         opts = _merge_opts(options, kwargs)
@@ -625,6 +740,7 @@ class GeminiClient(BaseLLMClient):
             _headers=opts.extra_headers, **self._payload(messages, opts))
         return normalize_gemini_generate(raw, model=self.config.model, provider=self.config.provider or "gemini")
 
+    @delegates(RequestOptions, keep=True)
     async def astream(self, messages: list[Msg], *, options: Optional[RequestOptions] = None, **kwargs) -> AsyncIterator[Delta]:
         "Stream Gemini completion."
         opts = _merge_opts(options, kwargs)
@@ -633,5 +749,5 @@ class GeminiClient(BaseLLMClient):
             _query=self._params(opts, stream=True), _headers=opts.extra_headers, **self._payload(messages, opts)):
             d = normalize_gemini_event(ev, emitted)
             if d.text: emitted += d.text
-            if d.text or d.finish_reason or d.usage or d.tool_calls: yield d
+            yield d
             if d.finish_reason: return

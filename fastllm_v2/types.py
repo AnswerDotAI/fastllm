@@ -19,14 +19,7 @@ class Msg:
     "A normalized message."
     role: str
     content: List[Part]
-
-
-@dataclass(frozen=True)
-class ToolSpec:
-    "Normalized tool schema."
-    name: str
-    description: str = ""
-    parameters: Dict[str, Any] = field(default_factory=dict)
+    data: Optional[Dict[str, Any]] = None
 
 
 @dataclass(frozen=True)
@@ -68,11 +61,10 @@ class RequestOptions:
     max_tokens: Optional[int] = None
     temperature: Optional[float] = None
     cache: Optional[Any] = None
-    tools: Optional[List[ToolSpec]] = None
+    tools: Optional[List[Dict[str, Any]]] = None
     tool_choice: Optional[Any] = None
     reasoning_effort: Optional[str] = None
     response_format: Optional[Dict[str, Any]] = None
-    search: Optional[Any] = None
     native: Optional[Dict[str, Any]] = None
     extra_body: Optional[Dict[str, Any]] = None
     extra_headers: Optional[Dict[str, str]] = None

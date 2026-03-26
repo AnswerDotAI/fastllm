@@ -18,6 +18,7 @@ Highlights:
 - Gemini full operation snapshot from official discovery docs
 - Expanded Anthropic documented routes (messages, batches, files, models, org admin)
 - Generic controls for dynamic calls: `_stream`, `_raw`, `_files`, `_data`, `_headers`, `_query`, `_body`
+- New high-level async `acompletion/astream` API with automatic provider inference
 
 ## Install
 
@@ -42,11 +43,59 @@ async def main():
 asyncio.run(main())
 ```
 
+## One-call API (LiteLLM-style)
+
+You can skip explicit client creation and call a single high-level function:
+
+```python
+from fastllm_v2 import acompletion
+
+res = await acompletion(
+    model='gpt-5-mini',
+    messages=[{'role': 'user', 'content': 'Say hi in one line'}],
+    api_key='YOUR_KEY',
+)
+print(res.message.content[0].text)
+```
+
+Routing rules in `endpoint='auto'` mode:
+
+- `claude...` -> Anthropic Messages API
+- `gemini...` -> Gemini GenerateContent API
+- `gpt...` -> OpenAI Responses API (auto fallback to Chat Completions if unsupported)
+- otherwise -> OpenAI-compatible Chat Completions
+
+Streaming is also available:
+
+```python
+from fastllm_v2 import astream
+
+async for d in astream(model='kimi-k2.5', messages='Count to 3', api_key='YOUR_MOONSHOT_KEY', base_url='https://api.moonshot.ai/v1'):
+    if d.text: print(d.text, end='')
+```
+
+If you want lossless stream collation (keep every raw event + aggregate text/usage/tool calls):
+
+```python
+from fastllm_v2 import acompletion, acollect_stream
+
+summary = await acollect_stream(acompletion(
+    model='gpt-5-mini',
+    messages='Count from 1 to 3.',
+    api_key='YOUR_OPENAI_KEY',
+    stream=True,
+))
+print(summary.text)
+print(summary.final)      # aggregated Delta
+print(len(summary.raw_events))
+```
+
 ## Generic kwargs (no wrapper churn)
 
 You can pass options as `RequestOptions(...)` or directly as kwargs.
-Known option kwargs are mapped (`max_tokens`, `temperature`, `tools`, `tool_choice`, `search`, `cache`, etc.).
+Known option kwargs are mapped (`max_tokens`, `temperature`, `tools`, `tool_choice`, `cache`, etc.).
 Unknown kwargs are forwarded to provider payload (`native` body).
+`search=` convenience is intentionally not supported; pass provider-native web-search tools in `tools=[...]`.
 
 ```python
 res = await c.acomplete(
@@ -61,16 +110,25 @@ res = await c.acomplete(
 
 ## Multimodal + tools (example)
 
+Tools are passed as raw schema dicts (for example, `lisette.lite_mk_func(...)` output).
+
 ```python
-from fastllm_v2 import Msg, Part, ToolSpec
+from fastllm_v2 import Msg, Part
 
 msgs = [Msg(role='user', content=[
     Part(type='text', text='Summarize this image'),
     Part(type='image', data={'inlineData': {'mimeType': 'image/png', 'data': '<base64>'}}),
 ])]
 
-tool = ToolSpec(name='lookup', parameters={'type': 'object', 'properties': {'q': {'type': 'string'}}})
-res = await gemini_client.acomplete(msgs, tools=[tool], tool_choice='required', search=True)
+tool = {'type': 'function', 'function': {
+    'name': 'lookup',
+    'parameters': {'type': 'object', 'properties': {'q': {'type': 'string'}}},
+}}
+res = await gemini_client.acomplete(
+    msgs,
+    tools=[tool, {'googleSearch': {}}],
+    tool_choice='required',
+)
 ```
 
 ## Caching
