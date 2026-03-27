@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from typing import Any, Dict, Optional
 
-from .errors import ProtocolError
+from .errors import ProtocolError, api_error_from_event
 from .types import Completion, Delta, Msg, Part, ToolCall, Usage
 
 
@@ -107,8 +107,7 @@ def normalize_openai_response_event(ev: Dict[str, Any]) -> Optional[Delta]:
         rsp = ev.get("response") if isinstance(ev.get("response"), dict) else {}
         return Delta(finish_reason=str(rsp.get("status") or "completed"), usage=usage_from_openai(rsp.get("usage")), raw=ev)
     if typ == "error":
-        msg = ev.get("error") if isinstance(ev.get("error"), dict) else ev
-        raise ProtocolError(f"Responses stream error: {msg}")
+        raise api_error_from_event(ev, provider="openai", endpoint="responses.stream")
     # Preserve unknown events so callers never lose provider metadata.
     return Delta(raw=ev)
 
@@ -208,7 +207,7 @@ def normalize_anthropic_event(ev: Dict[str, Any]) -> Optional[Delta]:
         d = ev.get("delta") if isinstance(ev.get("delta"), dict) else {}
         return Delta(finish_reason=d.get("stop_reason"), usage=usage_from_anthropic(ev.get("usage")), raw=ev)
     if typ == "message_stop": return Delta(finish_reason="message_stop", raw=ev)
-    if typ == "error": raise ProtocolError(f"Anthropic stream error: {ev}")
+    if typ == "error": raise api_error_from_event(ev, provider="anthropic", endpoint="messages.stream")
     # Preserve unknown events so callers never lose provider metadata.
     return Delta(raw=ev)
 

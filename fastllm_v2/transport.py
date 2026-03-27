@@ -25,6 +25,16 @@ class AsyncTransport:
     def _headers(self, headers: Optional[Dict[str, str]] = None) -> Dict[str, str]:
         return {**self.base_headers, **(headers or {})}
 
+    def _request_headers(self, headers: Optional[Dict[str, str]] = None, *, files: Optional[Any] = None) -> Dict[str, str]:
+        "Merge headers and drop explicit content-type for multipart uploads."
+        h = self._headers(headers)
+        if files is not None:
+            # Let httpx compute multipart/form-data with boundary.
+            for k in list(h):
+                if k.lower() == "content-type":
+                    h.pop(k, None)
+        return h
+
     @staticmethod
     def _decode(resp: httpx.Response) -> Any:
         "Decode response body using content type."
@@ -39,7 +49,7 @@ class AsyncTransport:
         params: Optional[Dict[str, Any]] = None, json_data: Optional[Any] = None, data: Optional[Any] = None,
         files: Optional[Any] = None, raw: bool = False) -> Any:
         "Execute a request and decode JSON/text/binary response."
-        resp = await self.client.request(method, url, headers=self._headers(headers), params=params,
+        resp = await self.client.request(method, url, headers=self._request_headers(headers, files=files), params=params,
             json=json_data, data=data, files=files)
         resp.raise_for_status()
         return resp if raw else self._decode(resp)
@@ -53,9 +63,15 @@ class AsyncTransport:
     async def stream_sse(self, method: str, url: str, *, headers: Optional[Dict[str, str]] = None,
         params: Optional[Dict[str, Any]] = None, json_data: Optional[Any] = None, data: Optional[Any] = None,
         files: Optional[Any] = None) -> AsyncIterator[SSEvent]:
-        async with self.client.stream(method, url, headers=self._headers(headers), params=params, json=json_data,
+        async with self.client.stream(method, url, headers=self._request_headers(headers, files=files), params=params, json=json_data,
             data=data, files=files) as resp:
-            resp.raise_for_status()
+            try:
+                resp.raise_for_status()
+            except httpx.HTTPStatusError:
+                # Ensure body is materialized so callers can read `e.response.text` on stream errors.
+                try: await resp.aread()
+                except Exception: pass
+                raise
             async for event in aiter_sse(resp):
                 if not event.data: continue
                 yield event
