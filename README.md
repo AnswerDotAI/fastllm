@@ -18,7 +18,9 @@ Highlights:
 - Gemini full operation snapshot from official discovery docs
 - Expanded Anthropic documented routes (messages, batches, files, models, org admin)
 - Generic controls for dynamic calls: `_stream`, `_raw`, `_files`, `_data`, `_headers`, `_query`, `_body`
-- New high-level async `acompletion/astream` API with automatic provider inference
+- High-level async `acompletion` API with automatic provider inference
+- Streaming collation via `acollect_stream(acompletion(..., stream=True))`
+- Canonical toolloop message replay across OpenAI/Anthropic/Gemini/OpenAI-compatible chat
 
 ## Install
 
@@ -72,7 +74,7 @@ Routing rules in `endpoint='auto'` mode:
 - `gpt...` -> OpenAI Responses API (auto fallback to Chat Completions if unsupported)
 - otherwise -> OpenAI-compatible Chat Completions
 
-`acompletion/astream` infer routing from `model` and `base_url`.
+`acompletion` infers routing from `model` and `base_url`.
 The `provider`/`custom_llm_provider` arguments remain for backward compatibility but are ignored.
 
 ### Model-Only Swap (no code changes)
@@ -125,6 +127,19 @@ print(summary.text)
 print(summary.final)      # aggregated Delta
 print(len(summary.raw_events))
 ```
+
+### Accepted message inputs
+
+`acompletion(messages=...)` accepts:
+
+- `str`
+- `dict` (OpenAI-style role/content)
+- canonical `Msg`
+- `Completion` (assistant turn from previous non-stream call)
+- `StreamSummary` (assistant turn from `acollect_stream(...)`)
+- list/tuple mixing the above
+
+This lets you append model outputs directly during toolloop flows.
 
 ## Generic kwargs (no wrapper churn)
 
@@ -234,6 +249,63 @@ Current canonical multimodal handling:
 - OpenAI (Responses/Chat): `input_image`, `input_audio`, `input_file`, `input_video` (video is normalized to file input).
 - Gemini: `input_image`, `input_audio`, `input_file`, `input_video` (mapped to `inlineData`/`fileData`).
 - Anthropic: `input_image` and `input_file`/`document` are normalized; no dedicated video canonical mapping yet.
+
+## Canonical toolloop contract
+
+Toolloop history can stay provider-agnostic with canonical message objects.
+
+Assistant tool call turn:
+
+```python
+Msg(
+    role="assistant",
+    content=[Part(type="text", text="I'll call tools...")],  # optional text
+    data={"tool_calls": [{"id": "...", "name": "...", "arguments": {...}}]},
+)
+```
+
+Tool result turn:
+
+```python
+Msg(
+    role="tool",
+    content=[Part(type="text", text="tool output text/json")],
+    data={"tool_call_id": "...", "name": "..."},
+)
+```
+
+`fastllm_v2` maps these automatically to:
+
+- OpenAI chat/openai-compatible chat: `assistant.tool_calls` + `role="tool"` messages
+- OpenAI Responses: `function_call` + `function_call_output` input items
+- Anthropic: `tool_use` + `tool_result`
+- Gemini: `functionCall` + `functionResponse`
+
+### Toolloop example (2+ turns)
+
+```python
+from fastllm_v2 import Msg, Part, acompletion, acollect_stream
+
+msgs = [Msg(role="user", content=[Part(type="text", text=pr)])]
+
+for _ in range(6):
+    res = await acollect_stream(acompletion(
+        model=MODEL,
+        messages=msgs,
+        tools=[simple_add_tool],
+        stream=True,
+    ))
+    msgs.append(res)  # StreamSummary is accepted directly
+    if not res.tool_calls:
+        break
+    for tc in res.tool_calls:
+        out = simple_add(**tc.arguments)
+        msgs.append(Msg(
+            role="tool",
+            content=[Part(type="text", text=str(out))],
+            data={"tool_call_id": tc.id, "name": tc.name},
+        ))
+```
 
 ### Early compatibility validation
 
