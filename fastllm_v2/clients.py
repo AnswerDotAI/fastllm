@@ -120,6 +120,14 @@ def _json_dumps(v: Any) -> str:
     return json.dumps(v, ensure_ascii=False, separators=(",", ":"))
 
 
+def _strip_openai_file_meta(d: dict[str, Any]) -> dict[str, Any]:
+    "Drop OpenAI convenience file fields not accepted by Anthropic/Gemini content parts."
+    out = dict(d or {})
+    for k in ("filename", "mimeType", "mime_type"):
+        out.pop(k, None)
+    return out
+
+
 def _openai_responses_tools(tools: list[Any]) -> list[dict]:
     "Normalize tools to OpenAI Responses API tool shape."
     out = []
@@ -915,6 +923,7 @@ class AnthropicClient(BaseLLMClient):
             d = dict(p.data or {})
             if "source" in d and isinstance(d["source"], dict): return {"type": "document", **d}
             fdata = d.pop("file_data", None)
+            d = _strip_openai_file_meta(d)
             if isinstance(fdata, str) and fdata:
                 b64 = _data_url_to_base64(fdata)
                 if b64 is not None:
@@ -1154,6 +1163,7 @@ class GeminiClient(BaseLLMClient):
             d = dict(p.data or {})
             if "fileData" in d or "file_data" in d:
                 v = d.pop("fileData", d.pop("file_data", None))
+                d = _strip_openai_file_meta(d)
                 if isinstance(v, dict): return {"fileData": v, **d}
                 if isinstance(v, str) and v:
                     b64 = _data_url_to_base64(v)
@@ -1167,6 +1177,7 @@ class GeminiClient(BaseLLMClient):
                     return {"inlineData": {"mimeType": mt, "data": v}, **d}
                 return {"fileData": v, **d}
             ref, d = _openai_like_file_ref(d, p.text)
+            d = _strip_openai_file_meta(d)
             if isinstance(ref, str):
                 b64 = _data_url_to_base64(ref)
                 if b64 is not None:

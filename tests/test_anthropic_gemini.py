@@ -331,6 +331,7 @@ class TestAnthropicGemini(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(doc["source"]["type"], "base64")
             self.assertEqual(doc["source"]["media_type"], "application/pdf")
             self.assertEqual(doc["source"]["data"], b64)
+            self.assertNotIn("filename", doc)
         finally:
             await c_a.aclose()
             await hc_a.aclose()
@@ -353,6 +354,7 @@ class TestAnthropicGemini(unittest.IsolatedAsyncioTestCase):
             doc = seen_g["payload"]["contents"][0]["parts"][1]
             self.assertEqual(doc["inlineData"]["mimeType"], "application/pdf")
             self.assertEqual(doc["inlineData"]["data"], b64)
+            self.assertNotIn("filename", doc)
         finally:
             await c_g.aclose()
             await hc_g.aclose()
