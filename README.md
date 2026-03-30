@@ -25,14 +25,8 @@ Highlights:
 ## Install
 
 ```bash
-pip install fastllm
+pip install -e .
 ```
-
-## Migration From `fastllm_v2`
-
-- Package import: `from fastllm import ...`
-- CLI module: `python -m fastllm.specsync ...`
-- Project name in `pyproject.toml`: `fastllm`
 
 ## Quickstart
 
