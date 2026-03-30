@@ -1,10 +1,11 @@
 import unittest
 
-from fastllm_v2 import Completion, CostBreakdown, ModelPrice, Msg, Part, Usage, estimate_cost
-from fastllm_v2.builtin_specs import anthropic_ops, gemini_ops, openai_ops
+from fastllm import Completion, CostBreakdown, ModelPrice, Msg, Part, Usage, estimate_cost
+from fastllm.spec import anthropic_ops, gemini_ops, openai_ops
 
 
 def _keys(xs): return {(o.group, o.name) for o in xs}
+def _routes(xs): return {(o.path, o.verb) for o in xs}
 
 
 class TestCostsAndSpecs(unittest.TestCase):
@@ -28,18 +29,24 @@ class TestCostsAndSpecs(unittest.TestCase):
         out = estimate_cost({"input_tokens": 10, "output_tokens": 5, "model": "unknown"}, strict=False)
         self.assertEqual(out.total_cost, 0.0)
 
-    def test_builtin_specs_cover_more_endpoints(self):
-        ok = _keys(openai_ops())
-        self.assertIn(("responses", "create"), ok)
-        self.assertIn(("chat", "create_completions"), ok)
-        self.assertIn(("embeddings", "create"), ok)
-        self.assertIn(("images", "generate"), ok)
-        self.assertIn(("audio", "speech"), ok)
+    def test_provider_specs_cover_more_endpoints(self):
+        oo = openai_ops()
+        ok = _keys(oo)
+        oroutes = _routes(oo)
+        self.assertIn(("/responses", "POST"), oroutes)
+        self.assertIn(("/chat/completions", "POST"), oroutes)
+        self.assertIn(("/embeddings", "POST"), oroutes)
+        self.assertIn(("/audio/speech", "POST"), oroutes)
+        self.assertTrue(any(g == "responses" for g,_ in ok))
+        self.assertTrue(any(p.startswith("/images") and v == "POST" for p,v in oroutes))
 
-        ak = _keys(anthropic_ops())
-        self.assertIn(("messages", "create"), ak)
-        self.assertIn(("messages", "count_tokens"), ak)
-        self.assertIn(("files", "list"), ak)
+        ao = anthropic_ops()
+        ak = _keys(ao)
+        ar = _routes(ao)
+        self.assertIn(("/v1/messages", "POST"), ar)
+        self.assertIn(("/v1/messages/count_tokens", "POST"), ar)
+        self.assertIn(("/v1/files", "GET"), ar)
+        self.assertTrue(any(g == "messages" for g,_ in ak))
 
         gk = _keys(gemini_ops())
         self.assertIn(("models", "generate_content"), gk)

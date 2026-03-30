@@ -1,6 +1,6 @@
-# fastllm_v2
+# fastllm
 
-`fastllm_v2` is a minimal LLM client built around a generic OpenAPI operation layer.
+`fastllm` is a minimal LLM client built around a generic OpenAPI operation layer.
 
 Highlights:
 
@@ -14,9 +14,9 @@ Highlights:
 - Provider-agnostic `estimate_cost(...)` from normalized usage + your pricing table
 - OpenAI Responses `response_format` compatibility mapped to `text.format`
 - Gemini auth on both high-level + dynamic operations (`x-goog-api-key` header)
-- OpenAI full operation snapshot from official OpenAPI spec
-- Gemini full operation snapshot from official discovery docs
-- Expanded Anthropic documented routes (messages, batches, files, models, org admin)
+- OpenAI operations parsed from local OpenAPI YAML/JSON specs
+- Gemini operations parsed from local discovery JSON specs
+- Anthropic operations parsed from local OpenAPI YAML/JSON specs
 - Generic controls for dynamic calls: `_stream`, `_raw`, `_files`, `_data`, `_headers`, `_query`, `_body`
 - High-level async `acompletion` API with automatic provider inference
 - Streaming collation via `acollect_stream(acompletion(..., stream=True))`
@@ -25,19 +25,26 @@ Highlights:
 ## Install
 
 ```bash
-pip install fastllm_v2
+pip install fastllm
 ```
+
+## Migration From `fastllm_v2`
+
+- Package import: `from fastllm import ...`
+- CLI module: `python -m fastllm.specsync ...`
+- Project name in `pyproject.toml`: `fastllm`
 
 ## Quickstart
 
 ```python
 import asyncio
-from fastllm_v2 import Msg, Part, mk_client
+from fastllm import Msg, Part, mk_auto_client
 
 async def main():
-    c = mk_client('openai', model='gpt-5-mini', api_key='YOUR_KEY')
+    model = 'gpt-5-mini'
+    c = mk_auto_client(model, api_key='YOUR_KEY')
     try:
-        res = await c.acomplete([Msg(role='user', content=[Part(type='text', text='Say hi')])])
+        res = await c.acomplete([Msg(role='user', content=[Part(type='text', text='Say hi')])], model=model)
         print(res.message.content[0].text)
     finally:
         await c.aclose()
@@ -50,7 +57,7 @@ asyncio.run(main())
 You can skip explicit client creation and call a single high-level function:
 
 ```python
-from fastllm_v2 import acompletion
+from fastllm import acompletion
 
 res = await acompletion(
     model='gpt-5-mini',
@@ -80,7 +87,7 @@ The `provider`/`custom_llm_provider` arguments remain for backward compatibility
 ### Model-Only Swap (no code changes)
 
 You can keep call code identical and only change `model=...`.
-`fastllm_v2` now resolves provider family, default base URL, and API key env vars automatically.
+`fastllm` now resolves provider family, default base URL, and API key env vars automatically.
 
 Examples:
 
@@ -115,7 +122,7 @@ Then call with `model='<vendor>/<model-name>'`.
 Streaming is also available:
 
 ```python
-from fastllm_v2 import acompletion, acollect_stream
+from fastllm import acompletion, acollect_stream
 
 summary = await acollect_stream(acompletion(
     model='gpt-5-mini',
@@ -151,6 +158,7 @@ Unknown kwargs are forwarded to provider payload (`native` body).
 ```python
 res = await c.acomplete(
     msgs,
+    model='gpt-5-mini',
     temperature=0.2,
     cache=True,
     metadata={'team': 'research'},
@@ -223,7 +231,7 @@ Tools are passed as raw schema dicts (for example, `lisette.lite_mk_func(...)` o
 Use OpenAI-style part payloads as the canonical input format; provider clients normalize as needed.
 
 ```python
-from fastllm_v2 import Msg, Part
+from fastllm import Msg, Part
 
 msgs = [Msg(role='user', content=[
     Part(type='text', text='Summarize this image'),
@@ -236,6 +244,7 @@ tool = {'type': 'function', 'function': {
 }}
 res = await gemini_client.acomplete(
     msgs,
+    model='gemini-2.5-flash',
     tools=[tool, {'googleSearch': {}}],
     tool_choice='required',
 )
@@ -274,7 +283,7 @@ Msg(
 )
 ```
 
-`fastllm_v2` maps these automatically to:
+`fastllm` maps these automatically to:
 
 - OpenAI chat/openai-compatible chat: `assistant.tool_calls` + `role="tool"` messages
 - OpenAI Responses: `function_call` + `function_call_output` input items
@@ -284,7 +293,7 @@ Msg(
 ### Toolloop example (2+ turns)
 
 ```python
-from fastllm_v2 import Msg, Part, acompletion, acollect_stream
+from fastllm import Msg, Part, acompletion, acollect_stream
 
 msgs = [Msg(role="user", content=[Part(type="text", text=pr)])]
 
@@ -309,7 +318,7 @@ for _ in range(6):
 
 ### Early compatibility validation
 
-`fastllm_v2` validates canonical media kinds before request build:
+`fastllm` validates canonical media kinds before request build:
 
 - Anthropic + `input_audio` / `input_video` -> raises `UnsupportedCapabilityError`
 - `openai_compat` + non-text media -> warning (compatibility varies by vendor)
@@ -332,7 +341,7 @@ If implicit caching is supported by a provider, `cache=True` is not needed.
 
 ## Canonical files API
 
-`fastllm_v2` now includes a provider-agnostic files layer for `openai`, `openai_compat` (openai-chat style),
+`fastllm` now includes a provider-agnostic files layer for `openai`, `openai_compat` (openai-chat style),
 `anthropic`, and `gemini`:
 
 - `afile_create(...)`
@@ -343,7 +352,7 @@ If implicit caching is supported by a provider, `cache=True` is not needed.
 - `to_input_file_part(...)`
 
 ```python
-from fastllm_v2 import afile_create, to_input_file_part, Msg, Part, acompletion, acollect_stream
+from fastllm import afile_create, to_input_file_part, Msg, Part, acompletion, acollect_stream
 
 # 1) upload once
 fref = await afile_create(
@@ -377,7 +386,7 @@ Notes:
 High-level and provider clients now raise structured `APIError` for HTTP and stream-level provider errors.
 
 ```python
-from fastllm_v2 import APIError
+from fastllm import APIError
 
 try:
     res = await acollect_stream(acompletion(model=ANTHROPIC_MODEL, messages=[msg], stream=True))
@@ -395,11 +404,11 @@ Anthropic `invalid_request_error`, Gemini `RESOURCE_EXHAUSTED`).
 
 ## Cost estimation
 
-`fastllm_v2` normalizes token usage but does not hardcode provider prices.
+`fastllm` normalizes token usage but does not hardcode provider prices.
 Pass your own pricing table to keep prices current.
 
 ```python
-from fastllm_v2 import estimate_cost, ModelPrice
+from fastllm import estimate_cost, ModelPrice
 
 cost = estimate_cost(
     completion,
@@ -412,16 +421,24 @@ print(cost.total_cost, cost.currency)
 
 ## OpenAPI layer and endpoint coverage
 
-Built-in specs include:
+Built-in provider operation loaders include:
 
-- OpenAI official OpenAPI snapshot (broad endpoint coverage)
-- Gemini official discovery snapshot (broad endpoint coverage)
-- Anthropic expanded documented API surface
+- OpenAI OpenAPI parser over `specs/openai*.yml|json`
+- Gemini discovery parser over `specs/gemini.json`
+- Anthropic OpenAPI parser over `specs/anthropic.yml|yaml|json`
+
+Refresh local specs from official sources (maintainer workflow):
+
+```bash
+python -m fastllm.specsync --providers openai,gemini,anthropic
+```
+
+Use `--dry-run` to fetch and diff without writing local files.
 
 You can also load provider specs directly and call any operation dynamically:
 
 ```python
-from fastllm_v2 import client_from_spec, load_spec_file
+from fastllm import client_from_spec, load_spec_file
 
 spec = load_spec_file('openapi.json')
 api = client_from_spec('https://api.example.com', spec, headers={'Authorization': 'Bearer X'})
@@ -459,6 +476,11 @@ And chat compatibility:
 
 - `achat_complete(...)`
 - `achat_stream(...)`
+
+For direct provider clients (`OpenAIClient`, `AnthropicClient`, `GeminiClient`), `model` is a per-request argument:
+
+- `await client.acomplete(msgs, model='...')`
+- `await acollect_stream(client.astream(msgs, model='...'))`
 
 ## Run tests
 

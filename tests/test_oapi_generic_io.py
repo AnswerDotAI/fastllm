@@ -2,8 +2,8 @@ import unittest
 
 import httpx
 
-from fastllm_v2 import OpenAPIClient, spec_to_ops
-from fastllm_v2.transport import AsyncTransport
+from fastllm import OpenAPIClient, spec_to_ops
+from fastllm.transport import AsyncTransport
 
 
 SPEC = {

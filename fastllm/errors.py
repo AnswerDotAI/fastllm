@@ -1,4 +1,4 @@
-"fastllm_v2 errors."
+"fastllm errors."
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ import httpx
 
 
 class FastLLMError(Exception):
-    "Base fastllm_v2 error."
+    "Base fastllm error."
 
 
 class UnsupportedCapabilityError(FastLLMError):

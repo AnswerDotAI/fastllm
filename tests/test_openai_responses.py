@@ -4,16 +4,19 @@ import warnings
 
 import httpx
 
-from fastllm_v2 import APIError, ClientConfig, Msg, OpenAIClient, Part, RequestOptions
-from fastllm_v2.builtin_specs import openai_ops
-from fastllm_v2.oapi import OpenAPIClient
-from fastllm_v2.transport import AsyncTransport
+from fastllm import APIError, Msg, OpenAIClient, Part, RequestOptions
+from fastllm.spec import openai_ops
+from fastllm.oapi import OpenAPIClient
+from fastllm.transport import AsyncTransport
 
 
 def _user(s): return [Msg(role="user", content=[Part(type="text", text=s)])]
 
 
 class TestOpenAIResponses(unittest.IsolatedAsyncioTestCase):
+    OPENAI_MODEL = "gpt-test"
+    COMPAT_MODEL = "kimi-k2.5"
+
     async def test_completion_stream_and_latest_response_ops(self):
         def handler(request: httpx.Request) -> httpx.Response:
             if request.url.path == "/v1/responses" and request.method == "POST":
@@ -58,26 +61,27 @@ class TestOpenAIResponses(unittest.IsolatedAsyncioTestCase):
             ops=openai_ops(),
             transport=AsyncTransport(client=hc),
         )
-        c = OpenAIClient(ClientConfig(model="gpt-test", api_key="sk-test", base_url="https://api.openai.com/v1"), api=api)
+        c = OpenAIClient(api_key="sk-test", base_url="https://api.openai.com/v1", api=api)
         try:
-            res = await c.acomplete(_user("hello"), options=RequestOptions(max_tokens=32, reasoning_effort="medium"))
+            res = await c.acomplete(_user("hello"), model=self.OPENAI_MODEL,
+                options=RequestOptions(max_tokens=32, reasoning_effort="medium"))
             self.assertEqual(res.message.content[0].text, "hi")
             self.assertEqual(res.usage.total_tokens, 9)
 
             txt = []
             done = None
-            async for d in c.astream(_user("hello")):
+            async for d in c.astream(_user("hello"), model=self.OPENAI_MODEL):
                 if d.text: txt.append(d.text)
                 if d.finish_reason: done = d
             self.assertEqual("".join(txt), "hello")
             self.assertEqual(done.usage.total_tokens, 5)
 
-            self.assertEqual((await c.aresponse_get("resp_1"))["id"], "resp_1")
-            self.assertEqual((await c.aresponse_delete("resp_1"))["deleted"], True)
-            self.assertEqual((await c.aresponse_cancel("resp_1"))["status"], "cancelled")
-            self.assertEqual((await c.aresponse_input_items("resp_1"))["data"][0]["type"], "message")
-            self.assertEqual((await c.acompact(["resp_1"]))["id"], "cmp_1")
-            self.assertEqual((await c.ainput_tokens([{"role": "user", "content": "x"}]))["total_tokens"], 12)
+            self.assertEqual((await c.aresponse_get("resp_1", model=self.OPENAI_MODEL))["id"], "resp_1")
+            self.assertEqual((await c.aresponse_delete("resp_1", model=self.OPENAI_MODEL))["deleted"], True)
+            self.assertEqual((await c.aresponse_cancel("resp_1", model=self.OPENAI_MODEL))["status"], "cancelled")
+            self.assertEqual((await c.aresponse_input_items("resp_1", model=self.OPENAI_MODEL))["data"][0]["type"], "message")
+            self.assertEqual((await c.acompact(["resp_1"], model=self.OPENAI_MODEL))["id"], "cmp_1")
+            self.assertEqual((await c.ainput_tokens([{"role": "user", "content": "x"}], model=self.OPENAI_MODEL))["total_tokens"], 12)
         finally:
             await c.aclose()
             await hc.aclose()
@@ -105,13 +109,13 @@ class TestOpenAIResponses(unittest.IsolatedAsyncioTestCase):
             ops=openai_ops(),
             transport=AsyncTransport(client=hc),
         )
-        c = OpenAIClient(ClientConfig(model="gpt-test", api_key="sk-test", base_url="https://api.openai.com/v1"), api=api)
+        c = OpenAIClient(api_key="sk-test", base_url="https://api.openai.com/v1", api=api)
         try:
-            res = await c.achat_complete(_user("hello"))
+            res = await c.achat_complete(_user("hello"), model=self.OPENAI_MODEL)
             self.assertEqual(res.message.content[0].text, "ok")
 
             out = []
-            async for d in c.achat_stream(_user("hello")):
+            async for d in c.achat_stream(_user("hello"), model=self.OPENAI_MODEL):
                 out.append(d.text)
             self.assertEqual("".join(out), "ab")
         finally:
@@ -133,10 +137,10 @@ class TestOpenAIResponses(unittest.IsolatedAsyncioTestCase):
             ops=openai_ops(),
             transport=AsyncTransport(client=hc),
         )
-        c = OpenAIClient(ClientConfig(model="gpt-test", api_key="sk-test", base_url="https://api.openai.com/v1"), api=api)
+        c = OpenAIClient(api_key="sk-test", base_url="https://api.openai.com/v1", api=api)
         try:
             with self.assertRaises(APIError) as ctx:
-                async for _ in c.astream(_user("hello")):
+                async for _ in c.astream(_user("hello"), model=self.OPENAI_MODEL):
                     pass
             err = ctx.exception
             self.assertEqual(err.provider, "openai")
@@ -168,10 +172,10 @@ class TestOpenAIResponses(unittest.IsolatedAsyncioTestCase):
             ops=openai_ops(),
             transport=AsyncTransport(client=hc),
         )
-        c = OpenAIClient(ClientConfig(model="gpt-test", api_key="sk-test", base_url="https://api.openai.com/v1"), api=api)
+        c = OpenAIClient(api_key="sk-test", base_url="https://api.openai.com/v1", api=api)
         try:
             with self.assertRaises(APIError) as ctx:
-                await c.acomplete(_user("hello"))
+                await c.acomplete(_user("hello"), model=self.OPENAI_MODEL)
             err = ctx.exception
             self.assertEqual(err.status_code, 400)
             self.assertEqual(err.error_type, "invalid_request_error")
@@ -201,10 +205,10 @@ class TestOpenAIResponses(unittest.IsolatedAsyncioTestCase):
             ops=openai_ops(),
             transport=AsyncTransport(client=hc),
         )
-        c = OpenAIClient(ClientConfig(model="gpt-test", api_key="sk-test", base_url="https://api.openai.com/v1"), api=api)
+        c = OpenAIClient(api_key="sk-test", base_url="https://api.openai.com/v1", api=api)
         try:
             done = None
-            async for d in c.achat_stream(_user("hello"), stream_options={"include_usage": True}):
+            async for d in c.achat_stream(_user("hello"), model=self.OPENAI_MODEL, stream_options={"include_usage": True}):
                 if d.finish_reason: done = d
             self.assertIsNotNone(done)
             self.assertIsNotNone(done.usage)
@@ -236,9 +240,9 @@ class TestOpenAIResponses(unittest.IsolatedAsyncioTestCase):
             ops=openai_ops(),
             transport=AsyncTransport(client=hc),
         )
-        c = OpenAIClient(ClientConfig(model="gpt-test", api_key="sk-test", base_url="https://api.openai.com/v1"), api=api)
+        c = OpenAIClient(api_key="sk-test", base_url="https://api.openai.com/v1", api=api)
         try:
-            await c.acomplete(_user("hello"),
+            await c.acomplete(_user("hello"), model=self.OPENAI_MODEL,
                 temperature=0.2,
                 cache=True,
                 custom_toggle=True,
@@ -263,10 +267,10 @@ class TestOpenAIResponses(unittest.IsolatedAsyncioTestCase):
             ops=openai_ops(),
             transport=AsyncTransport(client=hc),
         )
-        c = OpenAIClient(ClientConfig(model="gpt-test", api_key="sk-test", base_url="https://api.openai.com/v1"), api=api)
+        c = OpenAIClient(api_key="sk-test", base_url="https://api.openai.com/v1", api=api)
         try:
             with self.assertRaises(TypeError):
-                await c.acomplete(_user("hello"), search=True)
+                await c.acomplete(_user("hello"), model=self.OPENAI_MODEL, search=True)
         finally:
             await c.aclose()
             await hc.aclose()
@@ -291,14 +295,14 @@ class TestOpenAIResponses(unittest.IsolatedAsyncioTestCase):
             ops=openai_ops(),
             transport=AsyncTransport(client=hc),
         )
-        c = OpenAIClient(ClientConfig(model="gpt-test", api_key="sk-test", base_url="https://api.openai.com/v1"), api=api)
+        c = OpenAIClient(api_key="sk-test", base_url="https://api.openai.com/v1", api=api)
         try:
             tool = {"type": "function", "function": {
                 "name": "simple_add",
                 "description": "Add two integers",
                 "parameters": {"type": "object", "properties": {"a": {"type": "integer"}, "b": {"type": "integer"}}},
             }}
-            await c.acomplete(_user("hello"), tools=[tool], tool_choice="required")
+            await c.acomplete(_user("hello"), model=self.OPENAI_MODEL, tools=[tool], tool_choice="required")
             self.assertEqual(seen["payload"]["tools"][0]["type"], "function")
             self.assertEqual(seen["payload"]["tools"][0]["name"], "simple_add")
             self.assertIn("parameters", seen["payload"]["tools"][0])
@@ -326,9 +330,9 @@ class TestOpenAIResponses(unittest.IsolatedAsyncioTestCase):
             ops=openai_ops(),
             transport=AsyncTransport(client=hc),
         )
-        c = OpenAIClient(ClientConfig(model="gpt-test", api_key="sk-test", base_url="https://api.openai.com/v1"), api=api)
+        c = OpenAIClient(api_key="sk-test", base_url="https://api.openai.com/v1", api=api)
         try:
-            await c.acomplete(_user("hello"), response_format={
+            await c.acomplete(_user("hello"), model=self.OPENAI_MODEL, response_format={
                 "type": "json_schema",
                 "json_schema": {
                     "name": "city_country",
@@ -364,13 +368,13 @@ class TestOpenAIResponses(unittest.IsolatedAsyncioTestCase):
             ops=openai_ops(),
             transport=AsyncTransport(client=hc),
         )
-        c = OpenAIClient(ClientConfig(model="gpt-test", api_key="sk-test", base_url="https://api.openai.com/v1"), api=api)
+        c = OpenAIClient(api_key="sk-test", base_url="https://api.openai.com/v1", api=api)
         msgs = [Msg(role="user", content=[
             Part(type="text", text="Summarize this video"),
             Part(type="input_video", data={"video_url": "https://example.com/demo.mp4", "mimeType": "video/mp4"}),
         ])]
         try:
-            await c.acomplete(msgs)
+            await c.acomplete(msgs, model=self.OPENAI_MODEL)
             p = seen["payload"]["input"][0]["content"][1]
             self.assertEqual(p["type"], "input_file")
             self.assertEqual(p["file_url"], "https://example.com/demo.mp4")
@@ -400,7 +404,7 @@ class TestOpenAIResponses(unittest.IsolatedAsyncioTestCase):
             ops=openai_ops(),
             transport=AsyncTransport(client=hc),
         )
-        c = OpenAIClient(ClientConfig(model="gpt-test", api_key="sk-test", base_url="https://api.openai.com/v1"), api=api)
+        c = OpenAIClient(api_key="sk-test", base_url="https://api.openai.com/v1", api=api)
         msg = Msg("user", content=[
             Part(type="text", text="Summarize this PDF"),
             Part(type="input_file", data={
@@ -409,7 +413,7 @@ class TestOpenAIResponses(unittest.IsolatedAsyncioTestCase):
             }),
         ])
         try:
-            await c.acomplete([msg])
+            await c.acomplete([msg], model=self.OPENAI_MODEL)
             fp = seen["payload"]["input"][0]["content"][1]
             self.assertEqual(fp["type"], "input_file")
             self.assertEqual(fp["filename"], "doc.pdf")
@@ -438,7 +442,7 @@ class TestOpenAIResponses(unittest.IsolatedAsyncioTestCase):
             ops=openai_ops(),
             transport=AsyncTransport(client=hc),
         )
-        c = OpenAIClient(ClientConfig(model="gpt-test", api_key="sk-test", base_url="https://api.openai.com/v1"), api=api)
+        c = OpenAIClient(api_key="sk-test", base_url="https://api.openai.com/v1", api=api)
         msg = Msg("user", content=[
             Part(type="text", text="Summarize this PDF"),
             Part(type="input_file", data={
@@ -447,7 +451,7 @@ class TestOpenAIResponses(unittest.IsolatedAsyncioTestCase):
             }),
         ])
         try:
-            await c.acomplete([msg])
+            await c.acomplete([msg], model=self.OPENAI_MODEL)
             fp = seen["payload"]["input"][0]["content"][1]
             self.assertEqual(fp["file_data"], "data:application/pdf;base64,QUJDRA==")
         finally:
@@ -474,13 +478,13 @@ class TestOpenAIResponses(unittest.IsolatedAsyncioTestCase):
             ops=openai_ops(),
             transport=AsyncTransport(client=hc),
         )
-        c = OpenAIClient(ClientConfig(model="gpt-test", api_key="sk-test", base_url="https://api.openai.com/v1"), api=api)
+        c = OpenAIClient(api_key="sk-test", base_url="https://api.openai.com/v1", api=api)
         msg = Msg("user", content=[
             Part(type="text", text="Summarize this PDF"),
             Part(type="input_file", data={"file_data": "data:application/pdf;base64,QUJDRA=="}),
         ])
         try:
-            await c.acomplete([msg])
+            await c.acomplete([msg], model=self.OPENAI_MODEL)
             fp = seen["payload"]["input"][0]["content"][1]
             self.assertEqual(fp["type"], "input_file")
             self.assertEqual(fp["filename"], "upload.pdf")
@@ -507,13 +511,13 @@ class TestOpenAIResponses(unittest.IsolatedAsyncioTestCase):
             ops=openai_ops(),
             transport=AsyncTransport(client=hc),
         )
-        c = OpenAIClient(ClientConfig(model="gpt-test", api_key="sk-test", base_url="https://api.openai.com/v1"), api=api)
+        c = OpenAIClient(api_key="sk-test", base_url="https://api.openai.com/v1", api=api)
         msg = Msg("user", content=[
             Part(type="text", text="Summarize this PDF"),
             Part(type="input_file", data={"file_data": "data:application/pdf;base64,QUJDRA=="}),
         ])
         try:
-            await c.achat_complete([msg])
+            await c.achat_complete([msg], model=self.OPENAI_MODEL)
             fp = seen["payload"]["messages"][0]["content"][1]
             self.assertEqual(fp["type"], "file")
             self.assertEqual(fp["filename"], "upload.pdf")
@@ -542,8 +546,7 @@ class TestOpenAIResponses(unittest.IsolatedAsyncioTestCase):
             ops=openai_ops(),
             transport=AsyncTransport(client=hc),
         )
-        cfg = ClientConfig(model="kimi-k2.5", api_key="sk-test", base_url="https://api.moonshot.ai/v1", provider="openai_compat")
-        c = OpenAIClient(cfg, api=api)
+        c = OpenAIClient(api_key="sk-test", base_url="https://api.moonshot.ai/v1", provider="openai_compat", api=api)
         msg = Msg("user", content=[
             Part(type="text", text="Describe this image"),
             Part(type="input_image", data={"image_url": "https://example.com/cat.png"}),
@@ -551,7 +554,7 @@ class TestOpenAIResponses(unittest.IsolatedAsyncioTestCase):
         try:
             with warnings.catch_warnings(record=True) as rec:
                 warnings.simplefilter("always")
-                await c.acomplete([msg])
+                await c.acomplete([msg], model=self.COMPAT_MODEL)
             txts = [str(w.message) for w in rec]
             self.assertTrue(any("OpenAI-compatible model" in t and "input_image" in t for t in txts))
         finally:
@@ -576,8 +579,7 @@ class TestOpenAIResponses(unittest.IsolatedAsyncioTestCase):
             ops=openai_ops(),
             transport=AsyncTransport(client=hc),
         )
-        cfg = ClientConfig(model="kimi-k2.5", api_key="sk-test", base_url="https://api.moonshot.ai/v1", provider="openai_compat")
-        c = OpenAIClient(cfg, api=api)
+        c = OpenAIClient(api_key="sk-test", base_url="https://api.moonshot.ai/v1", provider="openai_compat", api=api)
         msgs = [
             Msg(role="user", content=[Part(type="text", text="calc")]),
             Msg(role="assistant", content=[], data={
@@ -587,7 +589,7 @@ class TestOpenAIResponses(unittest.IsolatedAsyncioTestCase):
             Msg(role="tool", content=[Part(type="text", text="3")], data={"tool_call_id": "call_1", "name": "simple_add"}),
         ]
         try:
-            await c.achat_complete(msgs)
+            await c.achat_complete(msgs, model=self.COMPAT_MODEL)
             mm = seen["payload"]["messages"]
             self.assertEqual(mm[1]["role"], "assistant")
             self.assertEqual(mm[1]["tool_calls"][0]["id"], "call_1")
@@ -620,14 +622,14 @@ class TestOpenAIResponses(unittest.IsolatedAsyncioTestCase):
             ops=openai_ops(),
             transport=AsyncTransport(client=hc),
         )
-        c = OpenAIClient(ClientConfig(model="gpt-test", api_key="sk-test", base_url="https://api.openai.com/v1"), api=api)
+        c = OpenAIClient(api_key="sk-test", base_url="https://api.openai.com/v1", api=api)
         msgs = [
             Msg(role="user", content=[Part(type="text", text="calc")]),
             Msg(role="assistant", content=[], data={"tool_calls": [{"id": "call_2", "name": "simple_add", "arguments": {"a": 2, "b": 3}}]}),
             Msg(role="tool", content=[Part(type="text", text="5")], data={"tool_call_id": "call_2", "name": "simple_add"}),
         ]
         try:
-            await c.acomplete(msgs)
+            await c.acomplete(msgs, model=self.OPENAI_MODEL)
             inp = seen["payload"]["input"]
             fc = [it for it in inp if isinstance(it, dict) and it.get("type") == "function_call"]
             fo = [it for it in inp if isinstance(it, dict) and it.get("type") == "function_call_output"]

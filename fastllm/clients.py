@@ -11,8 +11,7 @@ import httpx
 
 from fastcore.meta import delegates
 
-from .builtin_specs import anthropic_ops, gemini_ops, openai_ops
-from .config import ClientConfig
+from .spec import anthropic_ops, gemini_ops, openai_ops
 from .errors import APIError, UnsupportedCapabilityError, api_error_from_http
 from .normalize import normalize_anthropic_event, normalize_anthropic_message, normalize_gemini_event
 from .normalize import normalize_gemini_generate, normalize_openai_chat_completion, normalize_openai_chat_delta
@@ -118,6 +117,13 @@ def _tool_output_obj(msg: Msg, data: dict[str, Any]) -> Any:
 def _json_dumps(v: Any) -> str:
     "Compact JSON serializer for tool-argument strings."
     return json.dumps(v, ensure_ascii=False, separators=(",", ":"))
+
+
+def _require_model(model: str) -> str:
+    "Validate and normalize per-request model name."
+    if not isinstance(model, str) or not model.strip():
+        raise TypeError("`model` must be a non-empty string.")
+    return model.strip()
 
 
 def _strip_openai_file_meta(d: dict[str, Any]) -> dict[str, Any]:
@@ -548,10 +554,66 @@ def _raise_api_error(exc: Exception, *, provider: str, model: str, endpoint: str
     raise exc
 
 
+def _coerce_client_common(*, api_key: Optional[str], base_url: Optional[str], provider: Optional[str],
+    timeout: Optional[float], default_headers: Optional[dict[str, str]]) -> tuple[str, str, str, float, dict[str, str]]:
+    "Normalize shared client init fields."
+    key = api_key or ""
+    burl = base_url or ""
+    prov = provider or ""
+    to = float(timeout if timeout is not None else 60.0)
+    dh = dict(default_headers or {})
+    return key, burl, prov, to, dh
+
+
+def _merge_extras(obj: dict[str, Any], raw_extra: dict[str, Any], data: dict[str, Any], *, skip: tuple[str, ...]) -> dict[str, Any]:
+    "Merge provider-specific extras into an object while skipping cross-provider namespaces."
+    for src in (raw_extra, data):
+        for k, v in src.items():
+            if k in skip:
+                continue
+            obj[k] = v
+    return obj
+
+
+def _merge_native_body(payload: dict[str, Any], opts: RequestOptions) -> dict[str, Any]:
+    "Merge generic passthrough payload fields."
+    if opts.native:
+        payload.update(opts.native)
+    if opts.extra_body:
+        payload.update(opts.extra_body)
+    return payload
+
+
+def _openai_file_like_part(p, *, part_type: str) -> dict[str, Any]:
+    "Build OpenAI file-like content part for Responses/Chat APIs."
+    d = dict(p.data or {})
+    if p.type in ("input_video", "video", "video_url"):
+        ref, d = _openai_like_video_ref(d, p.text)
+    else:
+        ref, d = _openai_like_file_ref(d, p.text)
+    d = _ensure_openai_file_data_url(d)
+    obj = {"type": part_type, **d}
+    if isinstance(ref, str) and all(k not in obj for k in ("file_id", "file_data", "file_url")):
+        obj["file_url"] = ref
+    if "url" in obj and "file_url" not in obj:
+        obj["file_url"] = obj.pop("url")
+    obj.pop("mimeType", None)
+    obj.pop("mime_type", None)
+    obj.pop("videoMetadata", None)
+    obj.pop("video_metadata", None)
+    return obj
+
+
 class BaseLLMClient:
     "Shared provider-client behavior."
-    def __init__(self, config: ClientConfig, *, caps: Caps, api: OpenAPIClient):
-        self.config,self._caps,self.api = config,caps,api
+    def __init__(self, *, api_key: str = "", base_url: str = "", provider: str = "",
+        timeout: float = 60.0, default_headers: Optional[dict[str, str]] = None, caps: Caps, api: OpenAPIClient):
+        self.api_key = api_key or ""
+        self.base_url = base_url or ""
+        self.provider = provider or ""
+        self.timeout = float(timeout)
+        self.default_headers = dict(default_headers or {})
+        self._caps,self.api = caps,api
 
     @property
     def caps(self) -> Caps: return self._caps
@@ -562,22 +624,47 @@ class BaseLLMClient:
 
     async def aclose(self): await self.api.aclose()
 
-    async def acomplete(self, messages: list[Msg], *, options: Optional[RequestOptions] = None, **kwargs) -> Completion:
+    async def _op_json(self, op, *, err_model: str, endpoint: str, provider: str, **kwargs):
+        "Run a JSON op and normalize errors with provider/model/endpoint context."
+        kwargs.setdefault("_endpoint", endpoint)
+        try:
+            return await op(**kwargs)
+        except Exception as e:
+            _raise_api_error(e, provider=provider, model=err_model, endpoint=endpoint)
+
+    async def _op_sse(self, op, *, err_model: str, endpoint: str, provider: str, **kwargs):
+        "Run a stream op and normalize errors with provider/model/endpoint context."
+        kwargs.setdefault("_endpoint", endpoint)
+        try:
+            async for ev in op(_stream=True, **kwargs):
+                yield ev
+        except Exception as e:
+            _raise_api_error(e, provider=provider, model=err_model, endpoint=endpoint)
+
+    async def acomplete(self, messages: list[Msg], *, model: str, options: Optional[RequestOptions] = None, **kwargs
+        ) -> Completion:
         raise NotImplementedError
 
-    async def astream(self, messages: list[Msg], *, options: Optional[RequestOptions] = None, **kwargs) -> AsyncIterator[Delta]:
+    async def astream(self, messages: list[Msg], *, model: str, options: Optional[RequestOptions] = None, **kwargs
+        ) -> AsyncIterator[Delta]:
         raise NotImplementedError
 
 
 class OpenAIClient(BaseLLMClient):
     "OpenAI client with Responses API default and Chat Completions compatibility."
-    def __init__(self, config: ClientConfig, *, caps: Optional[Caps] = None, api: Optional[OpenAPIClient] = None):
-        hdrs = {"Authorization": f"Bearer {config.api_key or ''}", "content-type": "application/json", **config.default_headers}
-        base_url = config.base_url or "https://api.openai.com/v1"
-        api = api or OpenAPIClient(base_url=base_url, headers=hdrs, timeout=config.timeout, ops=openai_ops())
+    def __init__(self, *, api_key: Optional[str] = None, base_url: Optional[str] = None,
+        provider: Optional[str] = None, timeout: Optional[float] = None, default_headers: Optional[dict[str, str]] = None,
+        caps: Optional[Caps] = None, api: Optional[OpenAPIClient] = None):
+        api_key, base_url, provider, timeout, default_headers = _coerce_client_common(api_key=api_key,
+            base_url=base_url, provider=provider, timeout=timeout, default_headers=default_headers)
+        hdrs = {"Authorization": f"Bearer {api_key}", "content-type": "application/json", **default_headers}
+        base_url = base_url or "https://api.openai.com/v1"
+        api = api or OpenAPIClient(base_url=base_url, headers=hdrs, timeout=timeout,
+            provider=(provider or "openai"), ops=openai_ops())
         caps = caps or Caps(tools=True, tool_choice=True, streaming=True, search=True, reasoning=True,
             prompt_caching=True, images=True)
-        super().__init__(config, caps=caps, api=api)
+        super().__init__(api_key=api_key, base_url=base_url, provider=provider, timeout=timeout,
+            default_headers=default_headers, caps=caps, api=api)
 
     def _responses_part(self, role: str, p):
         "Serialize a normalized part for OpenAI Responses input."
@@ -597,18 +684,7 @@ class OpenAIClient(BaseLLMClient):
         if p.type in ("input_audio", "audio"): return {"type": "input_audio", **(p.data or {})}
 
         if p.type in ("input_file", "file", "pdf", "document", "input_video", "video", "video_url"):
-            d = dict(p.data or {})
-            if p.type in ("input_video", "video", "video_url"): ref, d = _openai_like_video_ref(d, p.text)
-            else: ref, d = _openai_like_file_ref(d, p.text)
-            d = _ensure_openai_file_data_url(d)
-            obj = {"type": "input_file", **d}
-            if isinstance(ref, str) and all(k not in obj for k in ("file_id", "file_data", "file_url")): obj["file_url"] = ref
-            if "url" in obj and "file_url" not in obj: obj["file_url"] = obj.pop("url")
-            obj.pop("mimeType", None)
-            obj.pop("mime_type", None)
-            obj.pop("videoMetadata", None)
-            obj.pop("video_metadata", None)
-            return obj
+            return _openai_file_like_part(p, part_type="input_file")
 
         obj = {"type": p.type}
         if p.text is not None: obj["text"] = p.text
@@ -631,10 +707,7 @@ class OpenAIClient(BaseLLMClient):
                 item = {"type": "function_call_output", "call_id": tcid, "output": _tool_output_text(m, data)}
                 if nm := data.pop("name", None):
                     item["name"] = str(nm)
-                for src in (raw_extra, data):
-                    for k,v in src.items():
-                        if k in ("openai_chat", "anthropic", "gemini"): continue
-                        item[k] = v
+                _merge_extras(item, raw_extra, data, skip=("openai_chat", "anthropic", "gemini"))
                 out.append(item)
                 continue
 
@@ -642,10 +715,7 @@ class OpenAIClient(BaseLLMClient):
             parts = [self._responses_part(m.role, p) for p in m.content]
             if parts or not tcs:
                 obj = {"role": m.role, "content": parts}
-                for src in (raw_extra, data):
-                    for k,v in src.items():
-                        if k in ("openai_chat", "anthropic", "gemini"): continue
-                        obj[k] = v
+                _merge_extras(obj, raw_extra, data, skip=("openai_chat", "anthropic", "gemini"))
                 out.append(obj)
             for tc in tcs:
                 out.append({
@@ -677,18 +747,7 @@ class OpenAIClient(BaseLLMClient):
             return {"type": "input_audio", **(p.data or {})}
 
         if p.type in ("input_file", "file", "pdf", "document", "input_video", "video", "video_url"):
-            d = dict(p.data or {})
-            if p.type in ("input_video", "video", "video_url"): ref, d = _openai_like_video_ref(d, p.text)
-            else: ref, d = _openai_like_file_ref(d, p.text)
-            d = _ensure_openai_file_data_url(d)
-            obj = {"type": "file", **d}
-            if isinstance(ref, str) and all(k not in obj for k in ("file_id", "file_data", "file_url")): obj["file_url"] = ref
-            if "url" in obj and "file_url" not in obj: obj["file_url"] = obj.pop("url")
-            obj.pop("mimeType", None)
-            obj.pop("mime_type", None)
-            obj.pop("videoMetadata", None)
-            obj.pop("video_metadata", None)
-            return obj
+            return _openai_file_like_part(p, part_type="file")
 
         obj = {"type": p.type}
         if p.text is not None: obj["text"] = p.text
@@ -711,10 +770,7 @@ class OpenAIClient(BaseLLMClient):
                 tcid = data.pop("tool_call_id", data.pop("call_id", data.pop("id", None)))
                 if tcid is not None: obj["tool_call_id"] = str(tcid)
                 data.pop("name", None)
-                for src in (raw_extra, data):
-                    for k,v in src.items():
-                        if k in ("openai", "anthropic", "gemini"): continue
-                        obj[k] = v
+                _merge_extras(obj, raw_extra, data, skip=("openai", "anthropic", "gemini"))
                 res.append(obj)
                 continue
 
@@ -733,21 +789,18 @@ class OpenAIClient(BaseLLMClient):
                     "function": {"name": tc["name"], "arguments": _json_dumps(tc.get("arguments") or {})},
                 } for tc in tcs]
 
-            for src in (raw_extra, data):
-                for k,v in src.items():
-                    if k in ("openai", "anthropic", "gemini"): continue
-                    obj[k] = v
+            _merge_extras(obj, raw_extra, data, skip=("openai", "anthropic", "gemini"))
             res.append(obj)
         return res
 
-    def _responses_payload(self, messages: list[Msg], opts: RequestOptions, *, stream: bool):
+    def _responses_payload(self, model: str, messages: list[Msg], opts: RequestOptions, *, stream: bool):
         "Build Responses API request payload."
-        _validate_media_support(self.config.provider or "openai", self.config.model, messages)
+        _validate_media_support(self.provider or "openai", model, messages)
         if opts.tools: self._require_caps(["tools"])
         if opts.tool_choice is not None: self._require_caps(["tool_choice"])
         if opts.reasoning_effort is not None: self._require_caps(["reasoning"])
 
-        payload = {"model": self.config.model, "input": self._responses_messages(messages), "stream": stream}
+        payload = {"model": model, "input": self._responses_messages(messages), "stream": stream}
         if opts.max_tokens is not None: payload["max_output_tokens"] = opts.max_tokens
         if opts.temperature is not None: payload["temperature"] = opts.temperature
         if opts.response_format is not None:
@@ -758,25 +811,16 @@ class OpenAIClient(BaseLLMClient):
         if opts.tool_choice is not None: payload["tool_choice"] = opts.tool_choice
         if opts.reasoning_effort is not None: payload["reasoning"] = {"effort": opts.reasoning_effort}
         _openai_cache(payload, opts.cache)
-        if opts.native: payload.update(opts.native)
-        if opts.extra_body: payload.update(opts.extra_body)
-        return payload
+        return _merge_native_body(payload, opts)
 
-    def _op(self, group: str, *names: str):
-        "Return first existing operation from a group."
-        g = getattr(self.api, group)
-        for nm in names:
-            if hasattr(g, nm): return getattr(g, nm)
-        raise AttributeError(f"No operation found in group '{group}' for any of: {', '.join(names)}")
-
-    def _chat_payload(self, messages: list[Msg], opts: RequestOptions, *, stream: bool):
+    def _chat_payload(self, model: str, messages: list[Msg], opts: RequestOptions, *, stream: bool):
         "Build chat.completions payload."
-        _validate_media_support(self.config.provider or "openai", self.config.model, messages)
+        _validate_media_support(self.provider or "openai", model, messages)
         if opts.tools: self._require_caps(["tools"])
         if opts.tool_choice is not None: self._require_caps(["tool_choice"])
         if opts.reasoning_effort is not None: self._require_caps(["reasoning"])
 
-        payload = {"model": self.config.model, "messages": self._chat_messages(messages), "stream": stream}
+        payload = {"model": model, "messages": self._chat_messages(messages), "stream": stream}
         if opts.max_tokens is not None: payload["max_tokens"] = opts.max_tokens
         if opts.temperature is not None: payload["temperature"] = opts.temperature
         if opts.response_format is not None: payload["response_format"] = opts.response_format
@@ -784,121 +828,115 @@ class OpenAIClient(BaseLLMClient):
         if opts.tool_choice is not None: payload["tool_choice"] = opts.tool_choice
         if opts.reasoning_effort is not None: payload["reasoning_effort"] = opts.reasoning_effort
         _openai_cache(payload, opts.cache)
-        if opts.native: payload.update(opts.native)
-        if opts.extra_body: payload.update(opts.extra_body)
-        return payload
+        return _merge_native_body(payload, opts)
 
     @delegates(RequestOptions, keep=True)
-    async def acomplete(self, messages: list[Msg], *, options: Optional[RequestOptions] = None, **kwargs) -> Completion:
+    async def acomplete(self, messages: list[Msg], *, model: str, options: Optional[RequestOptions] = None, **kwargs
+        ) -> Completion:
         "Responses API non-stream completion."
+        model = _require_model(model)
         opts = _merge_opts(options, kwargs)
-        payload = self._responses_payload(messages, opts, stream=False)
-        try:
-            raw = await self._op("responses", "create", "create_response")(_headers=opts.extra_headers,
-                _query=opts.extra_query, **payload)
-        except Exception as e:
-            _raise_api_error(e, provider=self.config.provider or "openai", model=self.config.model, endpoint="responses.create")
-        return normalize_openai_response(raw, model=self.config.model, provider=self.config.provider or "openai")
+        payload = self._responses_payload(model, messages, opts, stream=False)
+        raw = await self._op_json(self.api["/responses", "POST"], err_model=model, endpoint="responses.create",
+            provider=self.provider or "openai", _headers=opts.extra_headers, _query=opts.extra_query, **payload)
+        return normalize_openai_response(raw, model=model, provider=self.provider or "openai")
 
     @delegates(RequestOptions, keep=True)
-    async def astream(self, messages: list[Msg], *, options: Optional[RequestOptions] = None, **kwargs) -> AsyncIterator[Delta]:
+    async def astream(self, messages: list[Msg], *, model: str, options: Optional[RequestOptions] = None, **kwargs
+        ) -> AsyncIterator[Delta]:
         "Responses API streaming completion."
+        model = _require_model(model)
         opts = _merge_opts(options, kwargs)
-        payload = self._responses_payload(messages, opts, stream=True)
-        op = self._op("responses", "create", "create_response")
+        payload = self._responses_payload(model, messages, opts, stream=True)
+        op = self.api["/responses", "POST"]
         try:
-            async for ev in op(_stream=True, _headers=opts.extra_headers, _query=opts.extra_query, **payload):
+            async for ev in self._op_sse(op, err_model=model, endpoint="responses.stream",
+                provider=self.provider or "openai", _headers=opts.extra_headers, _query=opts.extra_query, **payload):
                 d = normalize_openai_response_event(ev)
                 if d is not None: yield d
         except Exception as e:
-            _raise_api_error(e, provider=self.config.provider or "openai", model=self.config.model, endpoint="responses.stream")
+            _raise_api_error(e, provider=self.provider or "openai", model=model, endpoint="responses.stream")
 
     @delegates(RequestOptions, keep=True)
-    async def achat_complete(self, messages: list[Msg], *, options: Optional[RequestOptions] = None, **kwargs) -> Completion:
+    async def achat_complete(self, messages: list[Msg], *, model: str, options: Optional[RequestOptions] = None,
+        **kwargs) -> Completion:
         "Chat Completions non-stream completion."
+        model = _require_model(model)
         opts = _merge_opts(options, kwargs)
-        payload = self._chat_payload(messages, opts, stream=False)
-        op = self._op("chat", "create_completions", "create_chat_completion")
-        try:
-            raw = await op(_headers=opts.extra_headers, _query=opts.extra_query, **payload)
-        except Exception as e:
-            _raise_api_error(e, provider=self.config.provider or "openai_chat", model=self.config.model, endpoint="chat.completions")
-        return normalize_openai_chat_completion(raw, model=self.config.model, provider=self.config.provider or "openai_chat")
+        payload = self._chat_payload(model, messages, opts, stream=False)
+        op = self.api["/chat/completions", "POST"]
+        raw = await self._op_json(op, err_model=model, endpoint="chat.completions", provider=self.provider or "openai_chat",
+            _headers=opts.extra_headers, _query=opts.extra_query, **payload)
+        return normalize_openai_chat_completion(raw, model=model, provider=self.provider or "openai_chat")
 
     @delegates(RequestOptions, keep=True)
-    async def achat_stream(self, messages: list[Msg], *, options: Optional[RequestOptions] = None, **kwargs) -> AsyncIterator[Delta]:
+    async def achat_stream(self, messages: list[Msg], *, model: str, options: Optional[RequestOptions] = None,
+        **kwargs) -> AsyncIterator[Delta]:
         "Chat Completions stream."
+        model = _require_model(model)
         opts = _merge_opts(options, kwargs)
-        payload = self._chat_payload(messages, opts, stream=True)
-        op = self._op("chat", "create_completions", "create_chat_completion")
+        payload = self._chat_payload(model, messages, opts, stream=True)
+        op = self.api["/chat/completions", "POST"]
         try:
-            async for ev in op(_stream=True, _headers=opts.extra_headers, _query=opts.extra_query, **payload):
+            async for ev in self._op_sse(op, err_model=model, endpoint="chat.stream", provider=self.provider or "openai_chat",
+                _headers=opts.extra_headers, _query=opts.extra_query, **payload):
                 yield normalize_openai_chat_delta(ev)
         except Exception as e:
-            _raise_api_error(e, provider=self.config.provider or "openai_chat", model=self.config.model, endpoint="chat.stream")
+            _raise_api_error(e, provider=self.provider or "openai_chat", model=model, endpoint="chat.stream")
 
-    async def aresponse_get(self, response_id: str):
+    async def aresponse_get(self, response_id: str, *, model: str = ""):
         "Get a response object by id."
-        try:
-            return await self._op("responses", "retrieve", "get_response")(response_id=response_id)
-        except Exception as e:
-            _raise_api_error(e, provider=self.config.provider or "openai", model=self.config.model, endpoint="responses.get")
+        return await self._op_json(self.api["/responses/{response_id}", "GET"], err_model=model, endpoint="responses.get",
+            provider=self.provider or "openai", response_id=response_id)
 
-    async def aresponse_delete(self, response_id: str):
+    async def aresponse_delete(self, response_id: str, *, model: str = ""):
         "Delete a response object by id."
-        try:
-            return await self._op("responses", "delete", "delete_response")(response_id=response_id)
-        except Exception as e:
-            _raise_api_error(e, provider=self.config.provider or "openai", model=self.config.model, endpoint="responses.delete")
+        return await self._op_json(self.api["/responses/{response_id}", "DELETE"], err_model=model, endpoint="responses.delete",
+            provider=self.provider or "openai", response_id=response_id)
 
-    async def aresponse_cancel(self, response_id: str):
+    async def aresponse_cancel(self, response_id: str, *, model: str = ""):
         "Cancel an in-progress response by id."
-        try:
-            op = getattr(self.api.responses, "cancel", None)
-            if op is not None: return await op(response_id=response_id)
-            return await self.api.call("/responses/{response_id}/cancel", "POST", route={"response_id": response_id})
-        except Exception as e:
-            _raise_api_error(e, provider=self.config.provider or "openai", model=self.config.model, endpoint="responses.cancel")
+        return await self._op_json(self.api["/responses/{response_id}/cancel", "POST"], err_model=model, endpoint="responses.cancel",
+            provider=self.provider or "openai", response_id=response_id)
 
-    async def aresponse_input_items(self, response_id: str, *, after: Optional[str] = None, limit: Optional[int] = None):
+    async def aresponse_input_items(self, response_id: str, *, after: Optional[str] = None, limit: Optional[int] = None,
+        model: str = ""):
         "List response input items."
-        try:
-            return await self._op("responses", "list_input_items")(response_id=response_id, after=after, limit=limit)
-        except Exception as e:
-            _raise_api_error(e, provider=self.config.provider or "openai", model=self.config.model, endpoint="responses.input_items")
+        return await self._op_json(self.api["/responses/{response_id}/input_items", "GET"], err_model=model, endpoint="responses.input_items",
+            provider=self.provider or "openai", response_id=response_id, after=after, limit=limit)
 
-    async def acompact(self, response_ids: list[str], *, model: Optional[str] = None):
+    async def acompact(self, response_ids: list[str], *, model: str):
         "Compact response history via /responses/compact."
-        try:
-            op = getattr(self.api.responses, "compact", None)
-            if op is not None: return await op(response_ids=response_ids, model=model or self.config.model)
-            return await self.api.call("/responses/compact", "POST", body={"response_ids": response_ids, "model": model or self.config.model})
-        except Exception as e:
-            _raise_api_error(e, provider=self.config.provider or "openai", model=self.config.model, endpoint="responses.compact")
+        model = _require_model(model)
+        return await self._op_json(self.api["/responses/compact", "POST"], err_model=model, endpoint="responses.compact",
+            provider=self.provider or "openai", response_ids=response_ids, model=model)
 
-    async def ainput_tokens(self, inp: Any, *, model: Optional[str] = None):
+    async def ainput_tokens(self, inp: Any, *, model: str):
         "Estimate input token count via /responses/input_tokens."
-        try:
-            op = getattr(self.api.responses, "input_tokens", None)
-            if op is not None: return await op(model=model or self.config.model, input=inp)
-            return await self.api.call("/responses/input_tokens", "POST", body={"model": model or self.config.model, "input": inp})
-        except Exception as e:
-            _raise_api_error(e, provider=self.config.provider or "openai", model=self.config.model, endpoint="responses.input_tokens")
+        model = _require_model(model)
+        return await self._op_json(self.api["/responses/input_tokens", "POST"], err_model=model, endpoint="responses.input_tokens",
+            provider=self.provider or "openai", model=model, input=inp)
 
 
 class AnthropicClient(BaseLLMClient):
     "Anthropic native Messages client."
-    def __init__(self, config: ClientConfig, *, caps: Optional[Caps] = None, api: Optional[OpenAPIClient] = None):
+    def __init__(self, *, api_key: Optional[str] = None, base_url: Optional[str] = None,
+        provider: Optional[str] = None, timeout: Optional[float] = None, default_headers: Optional[dict[str, str]] = None,
+        caps: Optional[Caps] = None, api: Optional[OpenAPIClient] = None):
+        api_key, base_url, provider, timeout, default_headers = _coerce_client_common(api_key=api_key,
+            base_url=base_url, provider=provider, timeout=timeout, default_headers=default_headers)
         hdrs = {
-            "x-api-key": config.api_key or "",
+            "x-api-key": api_key,
             "anthropic-version": "2023-06-01",
             "content-type": "application/json",
-            **config.default_headers}
-        base_url = config.base_url or "https://api.anthropic.com"
-        api = api or OpenAPIClient(base_url=base_url, headers=hdrs, timeout=config.timeout, ops=anthropic_ops())
+            **default_headers}
+        base_url = base_url or "https://api.anthropic.com"
+        api = api or OpenAPIClient(base_url=base_url, headers=hdrs, timeout=timeout,
+            provider=(provider or "anthropic"), ops=anthropic_ops())
         caps = caps or Caps(tools=True, tool_choice=True, streaming=True, search=True, reasoning=True,
             prefill=True, citations=True, prompt_caching=True, images=True, pdfs=True)
-        super().__init__(config, caps=caps, api=api)
+        super().__init__(api_key=api_key, base_url=base_url, provider=provider, timeout=timeout,
+            default_headers=default_headers, caps=caps, api=api)
 
     def _anthropic_part(self, p):
         "Serialize a normalized part for Anthropic content blocks."
@@ -969,10 +1007,7 @@ class AnthropicClient(BaseLLMClient):
                 tr = {"type": "tool_result", "tool_use_id": tcid, "content": content}
                 if "is_error" in data: tr["is_error"] = bool(data.pop("is_error"))
                 obj = {"role": "user", "content": [tr]}
-                for src in (raw_extra, data):
-                    for k,v in src.items():
-                        if k in ("openai", "openai_chat", "gemini"): continue
-                        obj[k] = v
+                _merge_extras(obj, raw_extra, data, skip=("openai", "openai_chat", "gemini"))
                 res.append(obj)
                 continue
 
@@ -991,22 +1026,19 @@ class AnthropicClient(BaseLLMClient):
                     "input": tc.get("arguments") or {},
                 })
             obj = {"role": m.role, "content": blocks}
-            for src in (raw_extra, data):
-                for k,v in src.items():
-                    if k in ("openai", "openai_chat", "gemini"): continue
-                    obj[k] = v
+            _merge_extras(obj, raw_extra, data, skip=("openai", "openai_chat", "gemini"))
             res.append(obj)
         return res
 
-    def _payload(self, messages: list[Msg], opts: RequestOptions, *, stream: bool):
+    def _payload(self, model: str, messages: list[Msg], opts: RequestOptions, *, stream: bool):
         "Build Anthropic messages payload."
-        _validate_media_support(self.config.provider or "anthropic", self.config.model, messages)
+        _validate_media_support(self.provider or "anthropic", model, messages)
         if opts.tools: self._require_caps(["tools"])
         if opts.tool_choice is not None: self._require_caps(["tool_choice"])
         if opts.reasoning_effort is not None: self._require_caps(["reasoning"])
 
         payload = {
-            "model": self.config.model,
+            "model": model,
             "messages": self._serialize_messages(messages, cache=opts.cache),
             "max_tokens": opts.max_tokens or 1024,
             "stream": stream}
@@ -1022,28 +1054,29 @@ class AnthropicClient(BaseLLMClient):
                 payload["max_tokens"] = bt + 256
         if isinstance(opts.cache, dict) and "context_management" in opts.cache:
             payload["context_management"] = opts.cache["context_management"]
-        if opts.native: payload.update(opts.native)
-        if opts.extra_body: payload.update(opts.extra_body)
-        return payload
+        return _merge_native_body(payload, opts)
 
     @delegates(RequestOptions, keep=True)
-    async def acomplete(self, messages: list[Msg], *, options: Optional[RequestOptions] = None, **kwargs) -> Completion:
+    async def acomplete(self, messages: list[Msg], *, model: str, options: Optional[RequestOptions] = None, **kwargs
+        ) -> Completion:
         "Non-stream Anthropic completion."
+        model = _require_model(model)
         opts = _merge_opts(options, kwargs)
-        try:
-            raw = await self.api.messages.create(_headers=opts.extra_headers, _query=opts.extra_query,
-                **self._payload(messages, opts, stream=False))
-        except Exception as e:
-            _raise_api_error(e, provider=self.config.provider or "anthropic", model=self.config.model, endpoint="messages.create")
-        return normalize_anthropic_message(raw, model=self.config.model, provider=self.config.provider or "anthropic")
+        raw = await self._op_json(self.api["/v1/messages", "POST"], err_model=model, endpoint="messages.create",
+            provider=self.provider or "anthropic", _headers=opts.extra_headers, _query=opts.extra_query,
+            **self._payload(model, messages, opts, stream=False))
+        return normalize_anthropic_message(raw, model=model, provider=self.provider or "anthropic")
 
     @delegates(RequestOptions, keep=True)
-    async def astream(self, messages: list[Msg], *, options: Optional[RequestOptions] = None, **kwargs) -> AsyncIterator[Delta]:
+    async def astream(self, messages: list[Msg], *, model: str, options: Optional[RequestOptions] = None, **kwargs
+        ) -> AsyncIterator[Delta]:
         "Stream Anthropic completion."
+        model = _require_model(model)
         opts = _merge_opts(options, kwargs)
         try:
-            async for ev in self.api.messages.create(_stream=True, _headers=opts.extra_headers, _query=opts.extra_query,
-                **self._payload(messages, opts, stream=True)):
+            async for ev in self._op_sse(self.api["/v1/messages", "POST"], err_model=model, endpoint="messages.stream",
+                provider=self.provider or "anthropic", _headers=opts.extra_headers, _query=opts.extra_query,
+                **self._payload(model, messages, opts, stream=True)):
                 d = normalize_anthropic_event(ev)
                 if d is None: continue
                 if d.finish_reason == "message_stop":
@@ -1051,25 +1084,29 @@ class AnthropicClient(BaseLLMClient):
                     return
                 yield d
         except Exception as e:
-            _raise_api_error(e, provider=self.config.provider or "anthropic", model=self.config.model, endpoint="messages.stream")
+            _raise_api_error(e, provider=self.provider or "anthropic", model=model, endpoint="messages.stream")
 
-    async def alist_models(self):
+    async def alist_models(self, *, model: str = ""):
         "List Anthropic models through the OpenAPI layer."
-        try:
-            return await self.api.models.list()
-        except Exception as e:
-            _raise_api_error(e, provider=self.config.provider or "anthropic", model=self.config.model, endpoint="models.list")
+        return await self._op_json(self.api["/v1/models", "GET"], err_model=model, endpoint="models.list",
+            provider=self.provider or "anthropic")
 
 
 class GeminiClient(BaseLLMClient):
     "Gemini native generateContent/streamGenerateContent client."
-    def __init__(self, config: ClientConfig, *, caps: Optional[Caps] = None, api: Optional[OpenAPIClient] = None):
-        base_url = config.base_url or "https://generativelanguage.googleapis.com/v1beta"
-        hdrs = {"x-goog-api-key": config.api_key or "", **config.default_headers}
-        api = api or OpenAPIClient(base_url=base_url, headers=hdrs, timeout=config.timeout, ops=gemini_ops())
+    def __init__(self, *, api_key: Optional[str] = None, base_url: Optional[str] = None,
+        provider: Optional[str] = None, timeout: Optional[float] = None, default_headers: Optional[dict[str, str]] = None,
+        caps: Optional[Caps] = None, api: Optional[OpenAPIClient] = None):
+        api_key, base_url, provider, timeout, default_headers = _coerce_client_common(api_key=api_key,
+            base_url=base_url, provider=provider, timeout=timeout, default_headers=default_headers)
+        base_url = base_url or "https://generativelanguage.googleapis.com/v1beta"
+        hdrs = {"x-goog-api-key": api_key, **default_headers}
+        api = api or OpenAPIClient(base_url=base_url, headers=hdrs, timeout=timeout,
+            provider=(provider or "gemini"), ops=gemini_ops())
         caps = caps or Caps(tools=True, tool_choice=True, streaming=True, reasoning=True, search=True,
             prompt_caching=True, images=True, url_context=True)
-        super().__init__(config, caps=caps, api=api)
+        super().__init__(api_key=api_key, base_url=base_url, provider=provider, timeout=timeout,
+            default_headers=default_headers, caps=caps, api=api)
 
     def _params(self, opts: RequestOptions, *, stream: bool):
         "Build Gemini query params."
@@ -1209,10 +1246,7 @@ class GeminiClient(BaseLLMClient):
                 fr = {"name": (nm or "tool"), "response": resp}
                 if tcid: fr["id"] = tcid
                 obj = {"role": "user", "parts": [{"functionResponse": fr}]}
-                for src in (raw_extra, data):
-                    for k,v in src.items():
-                        if k in ("openai", "openai_chat", "anthropic"): continue
-                        obj[k] = v
+                _merge_extras(obj, raw_extra, data, skip=("openai", "openai_chat", "anthropic"))
                 out.append(obj)
                 continue
 
@@ -1224,16 +1258,13 @@ class GeminiClient(BaseLLMClient):
                 parts.append({"functionCall": fc})
             role = "model" if m.role == "assistant" else "user"
             obj = {"role": role, "parts": parts}
-            for src in (raw_extra, data):
-                for k,v in src.items():
-                    if k in ("openai", "openai_chat", "anthropic"): continue
-                    obj[k] = v
+            _merge_extras(obj, raw_extra, data, skip=("openai", "openai_chat", "anthropic"))
             out.append(obj)
         return out
 
-    def _payload(self, messages: list[Msg], opts: RequestOptions):
+    def _payload(self, model: str, messages: list[Msg], opts: RequestOptions):
         "Build Gemini request payload."
-        _validate_media_support(self.config.provider or "gemini", self.config.model, messages)
+        _validate_media_support(self.provider or "gemini", model, messages)
         if opts.tools: self._require_caps(["tools"])
         if opts.tool_choice is not None: self._require_caps(["tool_choice"])
 
@@ -1251,32 +1282,33 @@ class GeminiClient(BaseLLMClient):
             if tcfg: body["toolConfig"] = tcfg
 
         _gemini_cache(body, opts.cache)
-        if opts.native: body.update(opts.native)
-        if opts.extra_body: body.update(opts.extra_body)
-        return body
+        return _merge_native_body(body, opts)
 
     @delegates(RequestOptions, keep=True)
-    async def acomplete(self, messages: list[Msg], *, options: Optional[RequestOptions] = None, **kwargs) -> Completion:
+    async def acomplete(self, messages: list[Msg], *, model: str, options: Optional[RequestOptions] = None, **kwargs
+        ) -> Completion:
         "Non-stream Gemini completion."
+        model = _require_model(model)
         opts = _merge_opts(options, kwargs)
-        try:
-            raw = await self.api.models.generate_content(model=_gemini_model_ref(self.config.model), _query=self._params(opts, stream=False),
-                _headers=opts.extra_headers, **self._payload(messages, opts))
-        except Exception as e:
-            _raise_api_error(e, provider=self.config.provider or "gemini", model=self.config.model, endpoint="models.generate_content")
-        return normalize_gemini_generate(raw, model=self.config.model, provider=self.config.provider or "gemini")
+        raw = await self._op_json(self.api["/{+model}:generateContent", "POST"], err_model=model, endpoint="models.generate_content",
+            provider=self.provider or "gemini", model=_gemini_model_ref(model),
+            _query=self._params(opts, stream=False), _headers=opts.extra_headers, **self._payload(model, messages, opts))
+        return normalize_gemini_generate(raw, model=model, provider=self.provider or "gemini")
 
     @delegates(RequestOptions, keep=True)
-    async def astream(self, messages: list[Msg], *, options: Optional[RequestOptions] = None, **kwargs) -> AsyncIterator[Delta]:
+    async def astream(self, messages: list[Msg], *, model: str, options: Optional[RequestOptions] = None, **kwargs
+        ) -> AsyncIterator[Delta]:
         "Stream Gemini completion."
+        model = _require_model(model)
         opts = _merge_opts(options, kwargs)
         emitted = ""
         try:
-            async for ev in self.api.models.stream_generate_content(model=_gemini_model_ref(self.config.model), _stream=True,
-                _query=self._params(opts, stream=True), _headers=opts.extra_headers, **self._payload(messages, opts)):
+            async for ev in self._op_sse(self.api["/{+model}:streamGenerateContent", "POST"], err_model=model, endpoint="models.stream_generate_content",
+                provider=self.provider or "gemini", model=_gemini_model_ref(model), _query=self._params(opts, stream=True),
+                _headers=opts.extra_headers, **self._payload(model, messages, opts)):
                 d = normalize_gemini_event(ev, emitted)
                 if d.text: emitted += d.text
                 yield d
                 if d.finish_reason: return
         except Exception as e:
-            _raise_api_error(e, provider=self.config.provider or "gemini", model=self.config.model, endpoint="models.stream_generate_content")
+            _raise_api_error(e, provider=self.provider or "gemini", model=model, endpoint="models.stream_generate_content")

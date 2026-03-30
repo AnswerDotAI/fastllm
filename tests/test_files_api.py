@@ -3,7 +3,7 @@ from unittest.mock import patch
 
 import httpx
 
-from fastllm_v2 import (
+from fastllm import (
     APIError,
     FileRef,
     Part,
@@ -17,15 +17,10 @@ from fastllm_v2 import (
 )
 
 
-class _Cfg:
-    def __init__(self, provider: str, model: str = "test-model"):
-        self.provider = provider
-        self.model = model
-
-
 class _Client:
     def __init__(self, provider: str, api, model: str = "test-model"):
-        self.config = _Cfg(provider, model=model)
+        self.provider = provider
+        self.model = model
         self.api = api
         self.closed = False
 
@@ -150,7 +145,7 @@ class TestFilesApi(unittest.IsolatedAsyncioTestCase):
             made.append(c)
             return c
 
-        with patch("fastllm_v2.files.mk_auto_client", side_effect=_mk):
+        with patch("fastllm.files.mk_auto_client", side_effect=_mk):
             f = await afile_create("gpt-5-mini", file=b"hello", filename="doc.txt", purpose="assistants")
             g = await afile_get("gpt-5-mini", "file_oa_1")
             ls = await afile_list("gpt-5-mini")
@@ -179,7 +174,7 @@ class TestFilesApi(unittest.IsolatedAsyncioTestCase):
             made.append(c)
             return c
 
-        with patch("fastllm_v2.files.mk_auto_client", side_effect=_mk):
+        with patch("fastllm.files.mk_auto_client", side_effect=_mk):
             f = await afile_create("claude-sonnet-4-5", file=b"%PDF", filename="paper.pdf", mime_type="application/pdf")
             g = await afile_get("claude-sonnet-4-5", "file_ant_1")
             ls = await afile_list("claude-sonnet-4-5", limit=5)
@@ -204,7 +199,7 @@ class TestFilesApi(unittest.IsolatedAsyncioTestCase):
             made.append(c)
             return c
 
-        with patch("fastllm_v2.files.mk_auto_client", side_effect=_mk):
+        with patch("fastllm.files.mk_auto_client", side_effect=_mk):
             f = await afile_create("gemini-2.5-flash", file=b"01234567890", filename="doc.pdf", mime_type="application/pdf")
             g = await afile_get("gemini-2.5-flash", "gm_1")
             ls = await afile_list("gemini-2.5-flash", pageSize=2)
@@ -239,7 +234,7 @@ class TestFilesApi(unittest.IsolatedAsyncioTestCase):
                 raise httpx.HTTPStatusError("bad", request=req, response=rsp)
 
         fake = _Client("openai", _ErrApi(), model="gpt-5-mini")
-        with patch("fastllm_v2.files.mk_auto_client", return_value=fake):
+        with patch("fastllm.files.mk_auto_client", return_value=fake):
             with self.assertRaises(APIError) as ctx:
                 await afile_create("gpt-5-mini", file=b"x", filename="x.txt")
         err = ctx.exception
@@ -247,4 +242,3 @@ class TestFilesApi(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(err.endpoint, "files.create")
         self.assertEqual(err.code, "bad_file")
         self.assertTrue(fake.closed)
-

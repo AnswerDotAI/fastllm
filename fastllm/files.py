@@ -236,7 +236,7 @@ async def afile_create(
     try:
         if fam in ("openai", "openai_compat"):
             raw = await _openai_create(c, file=file, filename=filename, mime_type=mime_type, purpose=purpose, headers=headers)
-            return _to_file_ref(raw if isinstance(raw, dict) else {"raw": raw}, c.config.provider or fam)
+            return _to_file_ref(raw if isinstance(raw, dict) else {"raw": raw}, c.provider or fam)
         if fam == "anthropic":
             raw = await _anthropic_create(c, file=file, filename=filename, mime_type=mime_type, purpose=purpose, headers=headers)
             return _to_file_ref(raw if isinstance(raw, dict) else {"raw": raw}, "anthropic")
@@ -247,7 +247,7 @@ async def afile_create(
     except APIError:
         raise
     except httpx.HTTPStatusError as e:
-        raise api_error_from_http(e, provider=c.config.provider or fam, model=c.config.model, endpoint="files.create")
+        raise api_error_from_http(e, provider=c.provider or fam, model=model, endpoint="files.create")
     finally:
         await c.aclose()
 
@@ -268,7 +268,7 @@ async def afile_get(
     try:
         if fam in ("openai", "openai_compat"):
             raw = await c.api.call("/files/{file_id}", "GET", headers=headers, route={"file_id": file_id})
-            return _to_file_ref(raw if isinstance(raw, dict) else {"raw": raw}, c.config.provider or fam)
+            return _to_file_ref(raw if isinstance(raw, dict) else {"raw": raw}, c.provider or fam)
         if fam == "anthropic":
             h = dict(headers or {})
             h.setdefault("anthropic-beta", "files-api-2025-04-14")
@@ -282,7 +282,7 @@ async def afile_get(
     except APIError:
         raise
     except httpx.HTTPStatusError as e:
-        raise api_error_from_http(e, provider=c.config.provider or fam, model=c.config.model, endpoint="files.get")
+        raise api_error_from_http(e, provider=c.provider or fam, model=model, endpoint="files.get")
     finally:
         await c.aclose()
 
@@ -303,7 +303,7 @@ async def afile_list(
     try:
         if fam in ("openai", "openai_compat"):
             raw = await c.api.call("/files", "GET", headers=headers, query=query or None)
-            return _list_to_file_refs(raw if isinstance(raw, dict) else {"data": []}, c.config.provider or fam)
+            return _list_to_file_refs(raw if isinstance(raw, dict) else {"data": []}, c.provider or fam)
         if fam == "anthropic":
             h = dict(headers or {})
             h.setdefault("anthropic-beta", "files-api-2025-04-14")
@@ -316,7 +316,7 @@ async def afile_list(
     except APIError:
         raise
     except httpx.HTTPStatusError as e:
-        raise api_error_from_http(e, provider=c.config.provider or fam, model=c.config.model, endpoint="files.list")
+        raise api_error_from_http(e, provider=c.provider or fam, model=model, endpoint="files.list")
     finally:
         await c.aclose()
 
@@ -351,7 +351,7 @@ async def afile_delete(
     except APIError:
         raise
     except httpx.HTTPStatusError as e:
-        raise api_error_from_http(e, provider=c.config.provider or fam, model=c.config.model, endpoint="files.delete")
+        raise api_error_from_http(e, provider=c.provider or fam, model=model, endpoint="files.delete")
     finally:
         await c.aclose()
 
@@ -392,10 +392,9 @@ async def afile_content(
     except APIError:
         raise
     except httpx.HTTPStatusError as e:
-        raise api_error_from_http(e, provider=c.config.provider or fam, model=c.config.model, endpoint="files.content")
+        raise api_error_from_http(e, provider=c.provider or fam, model=model, endpoint="files.content")
     finally:
         await c.aclose()
 
 
 __all__ = "FileRef to_input_file_part afile_create afile_get afile_list afile_delete afile_content".split()
-

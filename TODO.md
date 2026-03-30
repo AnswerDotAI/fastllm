@@ -2,7 +2,7 @@
 
 ## Spec Sync Roadmap (Official Sources)
 
-Goal: keep `fastllm_v2` operation coverage current with minimal manual maintenance by auto-refreshing specs from official provider sources and regenerating `official_ops` artifacts.
+Goal: keep `fastllm` operation coverage current with minimal manual maintenance by auto-refreshing specs from official provider sources and updating the `specs/` sources used by runtime parsers.
 
 ## Scope
 
@@ -20,31 +20,32 @@ Goal: keep `fastllm_v2` operation coverage current with minimal manual maintenan
 - Gemini:
   - Primary discovery doc: `https://generativelanguage.googleapis.com/$discovery/rest?version=v1beta`
 - Anthropic:
-  - No single official OpenAPI artifact currently exposed.
-  - Primary source: official API reference pages under `https://docs.anthropic.com/en/api`.
-  - Strategy: maintain a curated provider surface with automated doc-diff checks and explicit beta-header support.
+  - SDK metadata includes a Stainless OpenAPI artifact URL (from `.stats.yml` in `anthropic-sdk-python`).
+  - Example artifact URL:
+    - `https://storage.googleapis.com/stainless-sdk-openapi-specs/anthropic%2Fanthropic-dd2dcd00a757075370a7e4a7f469a1e2d067c2118684c3b70d7906a8f5cf518b.yml`
+  - Strategy: resolve `openapi_spec_url` from `.stats.yml`, then parse that OpenAPI spec directly.
 
 ## Planned Architecture
 
-- Add a new module: `fastllm_v2/specsync.py`
-- Add optional script entrypoint: `python -m fastllm_v2.specsync`
+- Add a new module: `fastllm/specsync.py`
+- Add optional script entrypoint: `python -m fastllm.specsync`
 
 Core steps:
 
 1. Fetch
 - Download provider source docs/specs with conditional requests (`ETag` / `If-None-Match`) when available.
-- Store raw snapshots under `fastllm_v2/spec_snapshots/`.
+- Store raw snapshots under `fastllm/spec_snapshots/`.
 - Write metadata manifest (`provider`, `source_url`, `fetched_at`, `sha256`, `etag`, `status`).
 
 2. Normalize
 - OpenAI: parse OpenAPI -> `OpSpec` via existing `spec_to_ops` flow.
 - Gemini: parse discovery JSON -> normalized operation records -> `OpSpec`.
-- Anthropic: reconcile curated endpoints against latest docs map; emit warnings for added/removed endpoints.
+- Anthropic: parse OpenAPI -> `OpSpec` via existing `spec_to_ops` flow.
 
-3. Generate
-- Regenerate `fastllm_v2/official_ops.py` from normalized operation records.
-- Keep generation deterministic (stable sort by `group/name/path/verb`).
-- Stamp file header with source metadata and generation timestamp.
+3. Refresh Sources
+- Update `specs/openai*.yml|json` and `specs/gemini.json`.
+- Keep deterministic parser output (stable sort by `group/name/path/verb`).
+- Persist source metadata and generation timestamp in a manifest.
 
 4. Validate
 - Ensure required key operations exist (e.g. OpenAI `/responses` + `/chat/completions`, Gemini `generateContent` + `streamGenerateContent`, Anthropic `/v1/messages`).
@@ -77,10 +78,10 @@ Core steps:
 
 ## Milestones
 
-- [ ] M1: Build `specsync` fetch + manifest + snapshot storage
-- [ ] M2: OpenAI autogen wired to `official_ops.py`
-- [ ] M3: Gemini discovery autogen wired to `official_ops.py`
-- [ ] M4: Anthropic doc-diff checker + curated surface validator
+- [x] M1: Build `specsync` fetch + manifest + snapshot storage
+- [x] M2: OpenAI autogen wired to `specs/openai*.yml|json`
+- [x] M3: Gemini discovery autogen wired to `specs/gemini.json`
+- [x] M4: Anthropic OpenAPI fetch via `.stats.yml` and parser wiring
 - [ ] M5: Weekly CI auto-refresh PR
 - [ ] M6: Release workflow integration + changelog auto-note
 

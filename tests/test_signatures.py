@@ -1,7 +1,7 @@
 import inspect
 import unittest
 
-from fastllm_v2 import AnthropicClient, GeminiClient, OpenAIClient, acompletion
+from fastllm import AnthropicClient, GeminiClient, OpenAIClient, acompletion
 
 
 class TestDelegatedSignatures(unittest.TestCase):

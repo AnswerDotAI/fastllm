@@ -2,10 +2,10 @@ import json, unittest
 
 import httpx
 
-from fastllm_v2 import AnthropicClient, ClientConfig, Delta, GeminiClient, Msg, OpenAIClient, Part, ToolCall, acollect_stream
-from fastllm_v2.builtin_specs import anthropic_ops, gemini_ops, openai_ops
-from fastllm_v2.oapi import OpenAPIClient
-from fastllm_v2.transport import AsyncTransport
+from fastllm import AnthropicClient, Delta, GeminiClient, Msg, OpenAIClient, Part, ToolCall, acollect_stream
+from fastllm.spec import anthropic_ops, gemini_ops, openai_ops
+from fastllm.oapi import OpenAPIClient
+from fastllm.transport import AsyncTransport
 
 
 def _user(s): return [Msg(role="user", content=[Part(type="text", text=s)])]
@@ -17,6 +17,10 @@ async def _agen(xs):
 
 
 class TestStreamingLossless(unittest.IsolatedAsyncioTestCase):
+    OPENAI_MODEL = "gpt-test"
+    ANTHROPIC_MODEL = "claude-sonnet-4-5"
+    GEMINI_MODEL = "gemini-2.5-pro"
+
     async def test_openai_stream_preserves_unknown_events_and_collects(self):
         def handler(request: httpx.Request) -> httpx.Response:
             if request.url.path == "/v1/responses":
@@ -36,9 +40,9 @@ class TestStreamingLossless(unittest.IsolatedAsyncioTestCase):
         hc = httpx.AsyncClient(transport=httpx.MockTransport(handler))
         api = OpenAPIClient(base_url="https://api.openai.com/v1", headers={"Authorization": "Bearer sk-test"},
             ops=openai_ops(), transport=AsyncTransport(client=hc))
-        c = OpenAIClient(ClientConfig(model="gpt-test", api_key="sk-test", base_url="https://api.openai.com/v1"), api=api)
+        c = OpenAIClient(api_key="sk-test", base_url="https://api.openai.com/v1", api=api)
         try:
-            summary = await acollect_stream(c.astream(_user("Count from 1 to 3.")))
+            summary = await acollect_stream(c.astream(_user("Count from 1 to 3."), model=self.OPENAI_MODEL))
             self.assertEqual(summary.text, "1, 2, 3")
             self.assertEqual(summary.finish_reason, "completed")
             self.assertEqual(summary.usage.total_tokens, 5)
@@ -65,9 +69,9 @@ class TestStreamingLossless(unittest.IsolatedAsyncioTestCase):
         hc = httpx.AsyncClient(transport=httpx.MockTransport(handler))
         api = OpenAPIClient(base_url="https://api.anthropic.com", headers={"x-api-key": "k"},
             ops=anthropic_ops(), transport=AsyncTransport(client=hc))
-        c = AnthropicClient(ClientConfig(model="claude-sonnet-4-5", api_key="k", base_url="https://api.anthropic.com"), api=api)
+        c = AnthropicClient(api_key="k", base_url="https://api.anthropic.com", api=api)
         try:
-            summary = await acollect_stream(c.astream(_user("Say ok")))
+            summary = await acollect_stream(c.astream(_user("Say ok"), model=self.ANTHROPIC_MODEL))
             self.assertEqual(summary.text, "ok")
             self.assertEqual(summary.raw_events[0]["type"], "message_start")
             self.assertEqual(summary.finish_reason, "message_stop")
@@ -88,9 +92,9 @@ class TestStreamingLossless(unittest.IsolatedAsyncioTestCase):
         hc = httpx.AsyncClient(transport=httpx.MockTransport(handler))
         api = OpenAPIClient(base_url="https://generativelanguage.googleapis.com/v1beta", ops=gemini_ops(),
             transport=AsyncTransport(client=hc))
-        c = GeminiClient(ClientConfig(model="gemini-2.5-pro", api_key="g", base_url="https://generativelanguage.googleapis.com/v1beta"), api=api)
+        c = GeminiClient(api_key="g", base_url="https://generativelanguage.googleapis.com/v1beta", api=api)
         try:
-            summary = await acollect_stream(c.astream(_user("Say hello")))
+            summary = await acollect_stream(c.astream(_user("Say hello"), model=self.GEMINI_MODEL))
             self.assertEqual(summary.raw_events[0]["promptFeedback"]["blockReason"], "OTHER")
             self.assertEqual(summary.text, "hello")
             self.assertEqual(summary.finish_reason, "STOP")
@@ -164,9 +168,9 @@ class TestStreamingLossless(unittest.IsolatedAsyncioTestCase):
         hc = httpx.AsyncClient(transport=httpx.MockTransport(handler))
         api = OpenAPIClient(base_url="https://api.openai.com/v1", headers={"Authorization": "Bearer sk-test"},
             ops=openai_ops(), transport=AsyncTransport(client=hc))
-        c = OpenAIClient(ClientConfig(model="gpt-test", api_key="sk-test", base_url="https://api.openai.com/v1"), api=api)
+        c = OpenAIClient(api_key="sk-test", base_url="https://api.openai.com/v1", api=api)
         try:
-            summary = await acollect_stream(c.astream(_user("Use tool")))
+            summary = await acollect_stream(c.astream(_user("Use tool"), model=self.OPENAI_MODEL))
             self.assertEqual(len(summary.tool_calls), 1)
             self.assertEqual(summary.tool_calls[0].id, "call_abc")
             self.assertEqual(summary.tool_calls[0].name, "simple_add")
@@ -195,9 +199,10 @@ class TestStreamingLossless(unittest.IsolatedAsyncioTestCase):
         hc = httpx.AsyncClient(transport=httpx.MockTransport(handler))
         api = OpenAPIClient(base_url="https://api.openai.com/v1", headers={"Authorization": "Bearer sk-test"},
             ops=openai_ops(), transport=AsyncTransport(client=hc))
-        c = OpenAIClient(ClientConfig(model="gpt-test", api_key="sk-test", base_url="https://api.openai.com/v1"), api=api)
+        c = OpenAIClient(api_key="sk-test", base_url="https://api.openai.com/v1", api=api)
         try:
-            summary = await acollect_stream(c.achat_stream(_user("Use tool"), stream_options={"include_usage": True}))
+            summary = await acollect_stream(c.achat_stream(_user("Use tool"), model=self.OPENAI_MODEL,
+                stream_options={"include_usage": True}))
             self.assertEqual(summary.finish_reason, "stop")
             self.assertEqual(summary.usage.total_tokens, 20)
             self.assertEqual(len(summary.tool_calls), 2)

@@ -3,16 +3,19 @@ import unittest
 
 import httpx
 
-from fastllm_v2 import APIError, AnthropicClient, ClientConfig, GeminiClient, Msg, Part, RequestOptions, UnsupportedCapabilityError
-from fastllm_v2.builtin_specs import anthropic_ops, gemini_ops
-from fastllm_v2.oapi import OpenAPIClient
-from fastllm_v2.transport import AsyncTransport
+from fastllm import APIError, AnthropicClient, GeminiClient, Msg, Part, RequestOptions, UnsupportedCapabilityError
+from fastllm.spec import anthropic_ops, gemini_ops
+from fastllm.oapi import OpenAPIClient
+from fastllm.transport import AsyncTransport
 
 
 def _user(s): return [Msg(role="user", content=[Part(type="text", text=s)])]
 
 
 class TestAnthropicGemini(unittest.IsolatedAsyncioTestCase):
+    ANTHROPIC_MODEL = "claude-sonnet-4-5"
+    GEMINI_MODEL = "gemini-2.5-pro"
+
     async def test_anthropic_complete_stream_and_models(self):
         def handler(request: httpx.Request) -> httpx.Response:
             if request.url.path == "/v1/models":
@@ -36,18 +39,18 @@ class TestAnthropicGemini(unittest.IsolatedAsyncioTestCase):
         hc = httpx.AsyncClient(transport=httpx.MockTransport(handler))
         api = OpenAPIClient(base_url="https://api.anthropic.com", headers={"x-api-key": "k"},
             ops=anthropic_ops(), transport=AsyncTransport(client=hc))
-        c = AnthropicClient(ClientConfig(model="claude-sonnet-4-5", api_key="k", base_url="https://api.anthropic.com"), api=api)
+        c = AnthropicClient(api_key="k", base_url="https://api.anthropic.com", api=api)
         try:
-            res = await c.acomplete(_user("hello"), options=RequestOptions(max_tokens=32))
+            res = await c.acomplete(_user("hello"), model=self.ANTHROPIC_MODEL, options=RequestOptions(max_tokens=32))
             self.assertEqual(res.message.content[0].text, "ok")
             self.assertEqual(res.usage.total_tokens, 7)
 
             out = []
-            async for d in c.astream(_user("hello")):
+            async for d in c.astream(_user("hello"), model=self.ANTHROPIC_MODEL):
                 out.append(d.text)
             self.assertEqual("".join(out), "hi")
 
-            models = await c.alist_models()
+            models = await c.alist_models(model=self.ANTHROPIC_MODEL)
             self.assertEqual(models["data"][0]["id"], "claude-sonnet-4-5")
         finally:
             await c.aclose()
@@ -70,14 +73,14 @@ class TestAnthropicGemini(unittest.IsolatedAsyncioTestCase):
         hc = httpx.AsyncClient(transport=httpx.MockTransport(handler))
         api = OpenAPIClient(base_url="https://generativelanguage.googleapis.com/v1beta", ops=gemini_ops(),
             transport=AsyncTransport(client=hc))
-        c = GeminiClient(ClientConfig(model="gemini-2.5-pro", api_key="g", base_url="https://generativelanguage.googleapis.com/v1beta"), api=api)
+        c = GeminiClient(api_key="g", base_url="https://generativelanguage.googleapis.com/v1beta", api=api)
         try:
-            res = await c.acomplete(_user("hello"))
+            res = await c.acomplete(_user("hello"), model=self.GEMINI_MODEL)
             self.assertEqual(res.message.content[0].text, "ok")
             self.assertEqual(res.usage.total_tokens, 5)
 
             out = []
-            async for d in c.astream(_user("hello")):
+            async for d in c.astream(_user("hello"), model=self.GEMINI_MODEL):
                 out.append(d.text)
             self.assertEqual("".join(out), "hello")
         finally:
@@ -104,14 +107,14 @@ class TestAnthropicGemini(unittest.IsolatedAsyncioTestCase):
         hc = httpx.AsyncClient(transport=httpx.MockTransport(handler))
         api = OpenAPIClient(base_url="https://api.anthropic.com", headers={"x-api-key": "k"},
             ops=anthropic_ops(), transport=AsyncTransport(client=hc))
-        c = AnthropicClient(ClientConfig(model="claude-sonnet-4-5", api_key="k", base_url="https://api.anthropic.com"), api=api)
+        c = AnthropicClient(api_key="k", base_url="https://api.anthropic.com", api=api)
         msgs = [Msg(role="user", content=[
             Part(type="text", text="describe image"),
             Part(type="image", data={"source": {"type": "base64", "media_type": "image/png", "data": "AAAA"}}),
             Part(type="pdf", data={"source": {"type": "base64", "media_type": "application/pdf", "data": "BBBB"}}),
         ])]
         try:
-            res = await c.acomplete(msgs, cache=True, tool_choice="auto", reasoning_effort="low",
+            res = await c.acomplete(msgs, model=self.ANTHROPIC_MODEL, cache=True, tool_choice="auto", reasoning_effort="low",
                 tools=[{"type": "function", "function": {"name": "lookup", "parameters": {"type": "object"}}}])
             self.assertEqual(res.tool_calls[0].name, "lookup")
             blocks = seen["payload"]["messages"][0]["content"]
@@ -149,13 +152,13 @@ class TestAnthropicGemini(unittest.IsolatedAsyncioTestCase):
         hc = httpx.AsyncClient(transport=httpx.MockTransport(handler))
         api = OpenAPIClient(base_url="https://generativelanguage.googleapis.com/v1beta", ops=gemini_ops(),
             transport=AsyncTransport(client=hc))
-        c = GeminiClient(ClientConfig(model="gemini-2.5-pro", api_key="g", base_url="https://generativelanguage.googleapis.com/v1beta"), api=api)
+        c = GeminiClient(api_key="g", base_url="https://generativelanguage.googleapis.com/v1beta", api=api)
         msgs = [Msg(role="user", content=[
             Part(type="text", text="hello"),
             Part(type="image_url", data={"url": "https://img"}),
         ])]
         try:
-            res = await c.acomplete(msgs,
+            res = await c.acomplete(msgs, model=self.GEMINI_MODEL,
                 tools=[
                     {"type": "function", "function": {"name": "lookup", "parameters": {"type": "object"}}},
                     {"googleSearch": {"dynamic": True}},
@@ -166,7 +169,7 @@ class TestAnthropicGemini(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(res.usage.total_tokens, 5)
 
             ds = []
-            async for d in c.astream(msgs,
+            async for d in c.astream(msgs, model=self.GEMINI_MODEL,
                 tools=[
                     {"type": "function", "function": {"name": "lookup", "parameters": {"type": "object"}}},
                     {"googleSearch": {}},
@@ -203,13 +206,13 @@ class TestAnthropicGemini(unittest.IsolatedAsyncioTestCase):
         hc_a = httpx.AsyncClient(transport=httpx.MockTransport(anthropic_handler))
         api_a = OpenAPIClient(base_url="https://api.anthropic.com", headers={"x-api-key": "k"},
             ops=anthropic_ops(), transport=AsyncTransport(client=hc_a))
-        c_a = AnthropicClient(ClientConfig(model="claude-sonnet-4-5", api_key="k", base_url="https://api.anthropic.com"), api=api_a)
+        c_a = AnthropicClient(api_key="k", base_url="https://api.anthropic.com", api=api_a)
         msgs = [Msg(role="user", content=[
             Part(type="text", text="What's in the image?"),
             Part(type="input_image", data={"image_url": f"data:image/png;base64,{b64}"}),
         ])]
         try:
-            await c_a.acomplete(msgs)
+            await c_a.acomplete(msgs, model=self.ANTHROPIC_MODEL)
             ib = seen_a["payload"]["messages"][0]["content"][1]
             self.assertEqual(ib["type"], "image")
             self.assertEqual(ib["source"]["type"], "base64")
@@ -231,9 +234,9 @@ class TestAnthropicGemini(unittest.IsolatedAsyncioTestCase):
         hc_g = httpx.AsyncClient(transport=httpx.MockTransport(gemini_handler))
         api_g = OpenAPIClient(base_url="https://generativelanguage.googleapis.com/v1beta", ops=gemini_ops(),
             transport=AsyncTransport(client=hc_g))
-        c_g = GeminiClient(ClientConfig(model="gemini-2.5-pro", api_key="g", base_url="https://generativelanguage.googleapis.com/v1beta"), api=api_g)
+        c_g = GeminiClient(api_key="g", base_url="https://generativelanguage.googleapis.com/v1beta", api=api_g)
         try:
-            await c_g.acomplete(msgs)
+            await c_g.acomplete(msgs, model=self.GEMINI_MODEL)
             ib = seen_g["payload"]["contents"][0]["parts"][1]
             self.assertEqual(ib["inlineData"]["mimeType"], "image/png")
             self.assertEqual(ib["inlineData"]["data"], b64)
@@ -254,7 +257,7 @@ class TestAnthropicGemini(unittest.IsolatedAsyncioTestCase):
         hc = httpx.AsyncClient(transport=httpx.MockTransport(gemini_handler))
         api = OpenAPIClient(base_url="https://generativelanguage.googleapis.com/v1beta", ops=gemini_ops(),
             transport=AsyncTransport(client=hc))
-        c = GeminiClient(ClientConfig(model="gemini-2.5-pro", api_key="g", base_url="https://generativelanguage.googleapis.com/v1beta"), api=api)
+        c = GeminiClient(api_key="g", base_url="https://generativelanguage.googleapis.com/v1beta", api=api)
         msg_video = [Msg(role="user", content=[
             Part(type="text", text="Summarize video"),
             Part(type="input_video", data={"video_url": "https://example.com/demo.mp4"}),
@@ -264,8 +267,8 @@ class TestAnthropicGemini(unittest.IsolatedAsyncioTestCase):
             Part(type="input_audio", data={"input_audio": {"data": "QUFB", "format": "wav"}}),
         ])]
         try:
-            await c.acomplete(msg_video)
-            await c.acomplete(msg_audio)
+            await c.acomplete(msg_video, model=self.GEMINI_MODEL)
+            await c.acomplete(msg_audio, model=self.GEMINI_MODEL)
             v = seen["payloads"][0]["contents"][0]["parts"][1]
             a = seen["payloads"][1]["contents"][0]["parts"][1]
 
@@ -289,7 +292,7 @@ class TestAnthropicGemini(unittest.IsolatedAsyncioTestCase):
         hc = httpx.AsyncClient(transport=httpx.MockTransport(handler))
         api = OpenAPIClient(base_url="https://api.anthropic.com", headers={"x-api-key": "k"},
             ops=anthropic_ops(), transport=AsyncTransport(client=hc))
-        c = AnthropicClient(ClientConfig(model="claude-sonnet-4-5", api_key="k", base_url="https://api.anthropic.com"), api=api)
+        c = AnthropicClient(api_key="k", base_url="https://api.anthropic.com", api=api)
         msgs = [Msg(role="user", content=[
             Part(type="text", text="Analyze media"),
             Part(type="input_audio", data={"input_audio": {"data": "QUFB", "format": "wav"}}),
@@ -297,7 +300,7 @@ class TestAnthropicGemini(unittest.IsolatedAsyncioTestCase):
         ])]
         try:
             with self.assertRaises(UnsupportedCapabilityError):
-                await c.acomplete(msgs)
+                await c.acomplete(msgs, model=self.ANTHROPIC_MODEL)
         finally:
             await c.aclose()
             await hc.aclose()
@@ -319,13 +322,13 @@ class TestAnthropicGemini(unittest.IsolatedAsyncioTestCase):
         hc_a = httpx.AsyncClient(transport=httpx.MockTransport(anthropic_handler))
         api_a = OpenAPIClient(base_url="https://api.anthropic.com", headers={"x-api-key": "k"},
             ops=anthropic_ops(), transport=AsyncTransport(client=hc_a))
-        c_a = AnthropicClient(ClientConfig(model="claude-sonnet-4-5", api_key="k", base_url="https://api.anthropic.com"), api=api_a)
+        c_a = AnthropicClient(api_key="k", base_url="https://api.anthropic.com", api=api_a)
         msgs = [Msg(role="user", content=[
             Part(type="text", text="Summarize this doc"),
             Part(type="input_file", data={"filename": "doc.pdf", "file_data": b64}),
         ])]
         try:
-            await c_a.acomplete(msgs)
+            await c_a.acomplete(msgs, model=self.ANTHROPIC_MODEL)
             doc = seen_a["payload"]["messages"][0]["content"][1]
             self.assertEqual(doc["type"], "document")
             self.assertEqual(doc["source"]["type"], "base64")
@@ -348,9 +351,9 @@ class TestAnthropicGemini(unittest.IsolatedAsyncioTestCase):
         hc_g = httpx.AsyncClient(transport=httpx.MockTransport(gemini_handler))
         api_g = OpenAPIClient(base_url="https://generativelanguage.googleapis.com/v1beta", ops=gemini_ops(),
             transport=AsyncTransport(client=hc_g))
-        c_g = GeminiClient(ClientConfig(model="gemini-2.5-pro", api_key="g", base_url="https://generativelanguage.googleapis.com/v1beta"), api=api_g)
+        c_g = GeminiClient(api_key="g", base_url="https://generativelanguage.googleapis.com/v1beta", api=api_g)
         try:
-            await c_g.acomplete(msgs)
+            await c_g.acomplete(msgs, model=self.GEMINI_MODEL)
             doc = seen_g["payload"]["contents"][0]["parts"][1]
             self.assertEqual(doc["inlineData"]["mimeType"], "application/pdf")
             self.assertEqual(doc["inlineData"]["data"], b64)
@@ -374,7 +377,7 @@ class TestAnthropicGemini(unittest.IsolatedAsyncioTestCase):
         hc = httpx.AsyncClient(transport=httpx.MockTransport(handler))
         api = OpenAPIClient(base_url="https://api.anthropic.com", headers={"x-api-key": "k"},
             ops=anthropic_ops(), transport=AsyncTransport(client=hc))
-        c = AnthropicClient(ClientConfig(model="claude-sonnet-4-5", api_key="k", base_url="https://api.anthropic.com"), api=api)
+        c = AnthropicClient(api_key="k", base_url="https://api.anthropic.com", api=api)
         msgs = [
             Msg(role="user", content=[Part(type="text", text="calc")]),
             Msg(role="assistant", content=[Part(type="text", text="I'll call a tool")], data={
@@ -383,7 +386,7 @@ class TestAnthropicGemini(unittest.IsolatedAsyncioTestCase):
             Msg(role="tool", content=[Part(type="text", text="3")], data={"tool_call_id": "toolu_1", "name": "simple_add"}),
         ]
         try:
-            await c.acomplete(msgs)
+            await c.acomplete(msgs, model=self.ANTHROPIC_MODEL)
             ms = seen["payload"]["messages"]
             self.assertEqual(ms[1]["role"], "assistant")
             self.assertEqual(ms[1]["content"][1]["type"], "tool_use")
@@ -411,7 +414,7 @@ class TestAnthropicGemini(unittest.IsolatedAsyncioTestCase):
         hc = httpx.AsyncClient(transport=httpx.MockTransport(handler))
         api = OpenAPIClient(base_url="https://generativelanguage.googleapis.com/v1beta", ops=gemini_ops(),
             transport=AsyncTransport(client=hc))
-        c = GeminiClient(ClientConfig(model="gemini-2.5-pro", api_key="g", base_url="https://generativelanguage.googleapis.com/v1beta"), api=api)
+        c = GeminiClient(api_key="g", base_url="https://generativelanguage.googleapis.com/v1beta", api=api)
         msgs = [
             Msg(role="user", content=[Part(type="text", text="calc")]),
             Msg(role="assistant", content=[Part(type="text", text="calling tool")], data={
@@ -420,7 +423,7 @@ class TestAnthropicGemini(unittest.IsolatedAsyncioTestCase):
             Msg(role="tool", content=[Part(type="text", text='{"sum":3}')], data={"tool_call_id": "call_1", "name": "simple_add"}),
         ]
         try:
-            await c.acomplete(msgs)
+            await c.acomplete(msgs, model=self.GEMINI_MODEL)
             cts = seen["payload"]["contents"]
             self.assertEqual(cts[1]["role"], "model")
             self.assertEqual(cts[1]["parts"][1]["functionCall"]["id"], "call_1")
@@ -445,10 +448,10 @@ class TestAnthropicGemini(unittest.IsolatedAsyncioTestCase):
         hc = httpx.AsyncClient(transport=httpx.MockTransport(handler))
         api = OpenAPIClient(base_url="https://api.anthropic.com", headers={"x-api-key": "k"},
             ops=anthropic_ops(), transport=AsyncTransport(client=hc))
-        c = AnthropicClient(ClientConfig(model="claude-sonnet-4-5", api_key="k", base_url="https://api.anthropic.com"), api=api)
+        c = AnthropicClient(api_key="k", base_url="https://api.anthropic.com", api=api)
         try:
             with self.assertRaises(APIError) as ctx:
-                await c.acomplete(_user("hello"))
+                await c.acomplete(_user("hello"), model=self.ANTHROPIC_MODEL)
             err = ctx.exception
             self.assertEqual(err.provider, "anthropic")
             self.assertEqual(err.model, "claude-sonnet-4-5")
@@ -476,10 +479,10 @@ class TestAnthropicGemini(unittest.IsolatedAsyncioTestCase):
         hc = httpx.AsyncClient(transport=httpx.MockTransport(handler))
         api = OpenAPIClient(base_url="https://generativelanguage.googleapis.com/v1beta", ops=gemini_ops(),
             transport=AsyncTransport(client=hc))
-        c = GeminiClient(ClientConfig(model="gemini-2.5-pro", api_key="g", base_url="https://generativelanguage.googleapis.com/v1beta"), api=api)
+        c = GeminiClient(api_key="g", base_url="https://generativelanguage.googleapis.com/v1beta", api=api)
         try:
             with self.assertRaises(APIError) as ctx:
-                await c.acomplete(_user("hello"))
+                await c.acomplete(_user("hello"), model=self.GEMINI_MODEL)
             err = ctx.exception
             self.assertEqual(err.provider, "gemini")
             self.assertEqual(err.status_code, 429)

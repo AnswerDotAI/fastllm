@@ -12,7 +12,6 @@ import httpx
 from fastcore.meta import delegates
 
 from .clients import AnthropicClient, GeminiClient, OpenAIClient
-from .config import ClientConfig
 from .errors import APIError
 from .streaming import StreamSummary
 from .types import Completion, Msg, Part, RequestOptions, ToolCall
@@ -202,13 +201,13 @@ def mk_auto_client(model: str, *, api_key: str = "", base_url: str = "", provide
     family = infer_provider(raw_model, base_url=base_url)
     if family == "openai_compat": base_url = _openai_compat_base_url(raw_model, base_url=base_url)
     vendor = _openai_compat_vendor(raw_model, base_url=base_url) if family == "openai_compat" else ""
-    model = _normalize_model(raw_model, family=family, vendor=vendor)
     key = _resolve_api_key(family, model=raw_model, api_key=api_key, base_url=base_url)
     resolved_provider = "openai" if family == "openai" else ("openai_compat" if family == "openai_compat" else family)
-    cfg = ClientConfig(model=model, api_key=key, base_url=base_url, provider=resolved_provider, timeout=timeout)
-    if family == "anthropic": return AnthropicClient(cfg)
-    if family == "gemini": return GeminiClient(cfg)
-    return OpenAIClient(cfg)
+    if family == "anthropic":
+        return AnthropicClient(api_key=key, base_url=base_url, provider=resolved_provider, timeout=timeout)
+    if family == "gemini":
+        return GeminiClient(api_key=key, base_url=base_url, provider=resolved_provider, timeout=timeout)
+    return OpenAIClient(api_key=key, base_url=base_url, provider=resolved_provider, timeout=timeout)
 
 
 def _coerce_part(p: Any) -> Part:
@@ -359,24 +358,26 @@ def _merge_aliases(kwargs: dict) -> dict:
     return kw
 
 
-async def _openai_complete(c: OpenAIClient, msgs: list[Msg], opts: Optional[RequestOptions], ep: str, fallback: bool, kw: dict):
-    if ep == "chat": return await c.achat_complete(msgs, options=opts, **kw)
-    try: return await c.acomplete(msgs, options=opts, **kw)
+async def _openai_complete(c: OpenAIClient, msgs: list[Msg], model: str, opts: Optional[RequestOptions], ep: str,
+    fallback: bool, kw: dict):
+    if ep == "chat": return await c.achat_complete(msgs, model=model, options=opts, **kw)
+    try: return await c.acomplete(msgs, model=model, options=opts, **kw)
     except Exception as e:
         if not fallback or not _missing_responses_endpoint(e): raise
-        return await c.achat_complete(msgs, options=opts, **kw)
+        return await c.achat_complete(msgs, model=model, options=opts, **kw)
 
 
-async def _openai_stream(c: OpenAIClient, msgs: list[Msg], opts: Optional[RequestOptions], ep: str, fallback: bool, kw: dict):
+async def _openai_stream(c: OpenAIClient, msgs: list[Msg], model: str, opts: Optional[RequestOptions], ep: str,
+    fallback: bool, kw: dict):
     if ep == "chat":
-        async for d in c.achat_stream(msgs, options=opts, **kw): yield d
+        async for d in c.achat_stream(msgs, model=model, options=opts, **kw): yield d
         return
     try:
-        async for d in c.astream(msgs, options=opts, **kw): yield d
+        async for d in c.astream(msgs, model=model, options=opts, **kw): yield d
         return
     except Exception as e:
         if not fallback or not _missing_responses_endpoint(e): raise
-    async for d in c.achat_stream(msgs, options=opts, **kw): yield d
+    async for d in c.achat_stream(msgs, model=model, options=opts, **kw): yield d
 
 
 @delegates(RequestOptions, keep=True)
@@ -389,26 +390,28 @@ async def acompletion(model: str, messages: Any, *, stream: bool = False, api_ke
     kw = _merge_aliases(kwargs)
     msgs = _coerce_messages(messages)
     family = infer_provider(model, base_url=base_url)
+    vendor = _openai_compat_vendor(model, base_url=base_url) if family == "openai_compat" else ""
+    req_model = _normalize_model(model, family=family, vendor=vendor)
     ep = _resolve_endpoint(family, endpoint)
     c = mk_auto_client(model, api_key=api_key, base_url=base_url, timeout=timeout)
     fallback = family == "openai" and endpoint == "auto"
 
     if not stream:
         try:
-            if family == "anthropic": return await c.acomplete(msgs, options=options, **kw)
-            if family == "gemini": return await c.acomplete(msgs, options=options, **kw)
-            return await _openai_complete(c, msgs, options, ep, fallback, kw)
+            if family == "anthropic": return await c.acomplete(msgs, model=req_model, options=options, **kw)
+            if family == "gemini": return await c.acomplete(msgs, model=req_model, options=options, **kw)
+            return await _openai_complete(c, msgs, req_model, options, ep, fallback, kw)
         finally: await c.aclose()
 
     async def _gen():
         try:
             if family == "anthropic":
-                async for d in c.astream(msgs, options=options, **kw): yield d
+                async for d in c.astream(msgs, model=req_model, options=options, **kw): yield d
                 return
             if family == "gemini":
-                async for d in c.astream(msgs, options=options, **kw): yield d
+                async for d in c.astream(msgs, model=req_model, options=options, **kw): yield d
                 return
-            async for d in _openai_stream(c, msgs, options, ep, fallback, kw): yield d
+            async for d in _openai_stream(c, msgs, req_model, options, ep, fallback, kw): yield d
         finally: await c.aclose()
 
     return _gen()

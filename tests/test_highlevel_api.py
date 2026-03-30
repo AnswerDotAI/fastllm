@@ -4,7 +4,7 @@ from unittest.mock import patch
 
 import httpx
 
-from fastllm_v2 import APIError, Completion, Delta, Msg, Part, StreamSummary, ToolCall, acompletion, acollect_stream, infer_provider, mk_auto_client
+from fastllm import APIError, Completion, Delta, Msg, Part, StreamSummary, ToolCall, acompletion, acollect_stream, infer_provider, mk_auto_client
 
 
 def _resp_404():
@@ -91,10 +91,9 @@ class TestAutoClientDefaults(unittest.TestCase):
         with patch.dict(os.environ, {"MOONSHOT_API_KEY": "msk-test"}, clear=True):
             c = mk_auto_client("kimi-k2.5")
             self.addCleanup(lambda: __import__("asyncio").run(c.aclose()))
-            self.assertEqual(c.config.provider, "openai_compat")
-            self.assertEqual(c.config.base_url, "https://api.moonshot.ai/v1")
-            self.assertEqual(c.config.api_key, "msk-test")
-            self.assertEqual(c.config.model, "kimi-k2.5")
+            self.assertEqual(c.provider, "openai_compat")
+            self.assertEqual(c.base_url, "https://api.moonshot.ai/v1")
+            self.assertEqual(c.api_key, "msk-test")
 
     def test_vendor_prefix_model_uses_vendor_env_and_strips_prefix(self):
         env = {
@@ -104,17 +103,15 @@ class TestAutoClientDefaults(unittest.TestCase):
         with patch.dict(os.environ, env, clear=True):
             c = mk_auto_client("qwen/qwen-plus")
             self.addCleanup(lambda: __import__("asyncio").run(c.aclose()))
-            self.assertEqual(c.config.provider, "openai_compat")
-            self.assertEqual(c.config.base_url, env["QWEN_BASE_URL"])
-            self.assertEqual(c.config.api_key, env["QWEN_API_KEY"])
-            self.assertEqual(c.config.model, "qwen-plus")
+            self.assertEqual(c.provider, "openai_compat")
+            self.assertEqual(c.base_url, env["QWEN_BASE_URL"])
+            self.assertEqual(c.api_key, env["QWEN_API_KEY"])
 
     def test_provider_prefix_is_stripped_for_native_families(self):
         with patch.dict(os.environ, {"OPENAI_API_KEY": "sk-test"}, clear=True):
             c = mk_auto_client("openai/gpt-5-mini")
             self.addCleanup(lambda: __import__("asyncio").run(c.aclose()))
-            self.assertEqual(c.config.provider, "openai")
-            self.assertEqual(c.config.model, "gpt-5-mini")
+            self.assertEqual(c.provider, "openai")
 
     def test_unknown_vendor_prefix_uses_generic_env_convention(self):
         env = {
@@ -124,16 +121,15 @@ class TestAutoClientDefaults(unittest.TestCase):
         with patch.dict(os.environ, env, clear=True):
             c = mk_auto_client("acme/custom-model")
             self.addCleanup(lambda: __import__("asyncio").run(c.aclose()))
-            self.assertEqual(c.config.provider, "openai_compat")
-            self.assertEqual(c.config.model, "custom-model")
-            self.assertEqual(c.config.base_url, env["ACME_BASE_URL"])
-            self.assertEqual(c.config.api_key, env["ACME_API_KEY"])
+            self.assertEqual(c.provider, "openai_compat")
+            self.assertEqual(c.base_url, env["ACME_BASE_URL"])
+            self.assertEqual(c.api_key, env["ACME_API_KEY"])
 
 
 class TestHighLevelAsync(unittest.IsolatedAsyncioTestCase):
     async def test_openai_auto_falls_back_to_chat_when_responses_missing(self):
         fake = _FakeOpenAI(fail_responses=True)
-        with patch("fastllm_v2.highlevel.mk_auto_client", return_value=fake):
+        with patch("fastllm.highlevel.mk_auto_client", return_value=fake):
             res = await acompletion("gpt-5-mini", [dict(role="user", content="hi")], api_key="k", base_url="https://api.openai.com/v1")
         self.assertEqual(res.message.content[0].text, "chat-ok")
         self.assertEqual(fake.calls, ["responses", "chat"])
@@ -141,7 +137,7 @@ class TestHighLevelAsync(unittest.IsolatedAsyncioTestCase):
 
     async def test_openai_compat_auto_uses_chat_only(self):
         fake = _FakeOpenAI(fail_responses=True)
-        with patch("fastllm_v2.highlevel.mk_auto_client", return_value=fake):
+        with patch("fastllm.highlevel.mk_auto_client", return_value=fake):
             res = await acompletion("kimi-k2.5", [dict(role="user", content="hi")], api_key="k", base_url="https://api.moonshot.ai/v1")
         self.assertEqual(res.message.content[0].text, "chat-ok")
         self.assertEqual(fake.calls, ["chat"])
@@ -154,7 +150,7 @@ class TestHighLevelAsync(unittest.IsolatedAsyncioTestCase):
                 raise APIError("responses endpoint not found", provider="openai", endpoint="responses.create", status_code=404)
 
         fake = _FakeOpenAIApiErr()
-        with patch("fastllm_v2.highlevel.mk_auto_client", return_value=fake):
+        with patch("fastllm.highlevel.mk_auto_client", return_value=fake):
             res = await acompletion("gpt-5-mini", [dict(role="user", content="hi")], api_key="k", base_url="https://api.openai.com/v1")
         self.assertEqual(res.message.content[0].text, "chat-ok")
         self.assertEqual(fake.calls, ["responses", "chat"])
@@ -162,7 +158,7 @@ class TestHighLevelAsync(unittest.IsolatedAsyncioTestCase):
 
     async def test_stream_fallback_from_responses_to_chat(self):
         fake = _FakeOpenAI(fail_responses_stream=True)
-        with patch("fastllm_v2.highlevel.mk_auto_client", return_value=fake):
+        with patch("fastllm.highlevel.mk_auto_client", return_value=fake):
             it = await acompletion("gpt-5-mini", [dict(role="user", content="stream")], api_key="k", base_url="https://api.openai.com/v1", stream=True)
             out = []
             async for d in it:
@@ -181,7 +177,7 @@ class TestHighLevelAsync(unittest.IsolatedAsyncioTestCase):
                 yield Delta()  # pragma: no cover
 
         fake = _FakeOpenAIUnread()
-        with patch("fastllm_v2.highlevel.mk_auto_client", return_value=fake):
+        with patch("fastllm.highlevel.mk_auto_client", return_value=fake):
             it = await acompletion("gpt-5-mini", [dict(role="user", content="stream")], api_key="k", base_url="https://api.openai.com/v1", stream=True)
             out = []
             async for d in it:
@@ -192,7 +188,7 @@ class TestHighLevelAsync(unittest.IsolatedAsyncioTestCase):
 
     async def test_acollect_stream_accepts_acompletion_coroutine(self):
         fake = _FakeOpenAI()
-        with patch("fastllm_v2.highlevel.mk_auto_client", return_value=fake):
+        with patch("fastllm.highlevel.mk_auto_client", return_value=fake):
             summary = await acollect_stream(acompletion(
                 "gpt-5-mini",
                 [dict(role="user", content="stream")],
@@ -213,7 +209,7 @@ class TestHighLevelAsync(unittest.IsolatedAsyncioTestCase):
             seen["family"] = infer_provider(model, provider=kwargs.get("provider", ""), base_url=kwargs.get("base_url", ""))
             return fake
 
-        with patch("fastllm_v2.highlevel.mk_auto_client", side_effect=_builder):
+        with patch("fastllm.highlevel.mk_auto_client", side_effect=_builder):
             res = await acompletion("claude-sonnet-4-5", [dict(role="user", content="hi")], api_key="k")
         self.assertEqual(seen["family"], "anthropic")
         self.assertEqual(res.message.content[0].text, "anthropic-ok")
@@ -235,7 +231,7 @@ class TestHighLevelAsync(unittest.IsolatedAsyncioTestCase):
             ss,
             Msg(role="tool", content=[Part(type="text", text="3")], data={"tool_call_id": "call_1", "name": "simple_add"}),
         ]
-        with patch("fastllm_v2.highlevel.mk_auto_client", return_value=fake):
+        with patch("fastllm.highlevel.mk_auto_client", return_value=fake):
             _ = await acompletion("kimi-k2.5", msgs, api_key="k", base_url="https://api.moonshot.ai/v1")
 
         self.assertEqual(fake.calls, ["chat"])
@@ -259,7 +255,7 @@ class TestHighLevelAsync(unittest.IsolatedAsyncioTestCase):
             comp,
             Msg(role="tool", content=[Part(type="text", text="7")], data={"tool_call_id": "call_2", "name": "simple_add"}),
         ]
-        with patch("fastllm_v2.highlevel.mk_auto_client", return_value=fake):
+        with patch("fastllm.highlevel.mk_auto_client", return_value=fake):
             _ = await acompletion("kimi-k2.5", msgs, api_key="k", base_url="https://api.moonshot.ai/v1")
 
         self.assertEqual(fake.calls, ["chat"])

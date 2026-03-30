@@ -9,7 +9,7 @@ __pycache__/
 build/
 dist/
 *.egg-info/
-fastllm_v2.egg-info/
+fastllm.egg-info/
 
 # Test/tool caches
 .pytest_cache/
