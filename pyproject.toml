@@ -5,34 +5,33 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "fastllm"
 dynamic = ["version"]
-description = "OpenAPI-layered minimal LLM API client"
+description = ""
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 license = {text = "Apache-2.0"}
-authors = [{name = "AnswerDotAI", email = "support@answer.ai"}]
-keywords = ["llm", "openapi", "fastcore", "httpx", "python"]
+authors = [{name = "Kerem Turgutlu", email = "keremturgutlu@gmail.com"}]
+keywords = ['nbdev']
 classifiers = [
-  "Natural Language :: English",
-  "Intended Audience :: Developers",
-  "Development Status :: 3 - Alpha",
-  "Programming Language :: Python :: 3",
-  "Programming Language :: Python :: 3 :: Only"
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
 ]
-dependencies = [
-  "fastcore>=1.8.4",
-  "httpx>=0.27",
-  "pyyaml>=6.0"
-]
+dependencies = ['httpx', 'fastcore']
 
 [project.urls]
 Repository = "https://github.com/AnswerDotAI/fastllm"
-Documentation = "https://fastllm.answer.ai/"
+Documentation = "https://AnswerDotAI.github.io/fastllm/"
 
-[project.optional-dependencies]
-dev = ["pytest>=8", "pytest-cov>=5"]
+[project.entry-points.nbdev]
+fastllm = "fastllm._modidx:d"
 
 [tool.setuptools.dynamic]
 version = {attr = "fastllm.__version__"}
 
 [tool.setuptools.packages.find]
-include = ["fastllm*"]
+include = ["fastllm"]
+
+[tool.nbdev]
+nbs_path = "nbs"
+recursive = false
+jupyter_hooks = true
+custom_sidebar = false
