@@ -6,8 +6,8 @@
 __all__ = ['ctypes', 'OpSpec', 'snake', 'openapi_to_ops', 'discovery_to_ops', 'SpecParser']
 
 # %% ../nbs/04_spec.ipynb #7a287a95
+from fastcore.utils import *
 from dataclasses import dataclass, field
-import json, yaml
 
 # %% ../nbs/04_spec.ipynb #d448f3e9
 @dataclass(frozen=True)
