@@ -21,6 +21,7 @@ class OpSpec:
     route_params: List[str] = field(default_factory=list) # https://learn.openapis.org/specification/parameters#the-parameter-object
     query_params: List[str] = field(default_factory=list) # https://learn.openapis.org/specification/parameters#the-parameter-object
     body_params: List[str] = field(default_factory=list)
+    file_params: List[str] = field(default_factory=list)  # format: binary params (multipart file uploads)
     required_params: List[str] = field(default_factory=list)
     param_types: Dict = field(default_factory=dict)
     param_defaults: Dict = field(default_factory=dict)
@@ -139,12 +140,30 @@ def _schema_py_type(schema, spec):
     if not isinstance(schema, dict): return None
     schema = _resolve_obj(schema, spec)
     t = schema.get("type")
+    if t == "string" and schema.get("format") == "binary": return bytes
     if t in _type_map: return _type_map[t]
     if t == "null": return type(None)
     for key in ("oneOf", "anyOf", "allOf"):
         types = L(schema.get(key, [])).map(partial(_schema_py_type, spec=spec)).filter().unique()
         non_none = [o for o in types if o is not type(None)]
         if len(non_none) == 1: return non_none[0]
+
+# %% ../nbs/04_spec.ipynb #6f23c0d9
+_MISSING = object()
+
+def _prop_default(v, spec):
+    "Get default value from a property schema, resolving refs and anyOf/oneOf."
+    v = _resolve_obj(v, spec)
+    d = v.get("default", _MISSING)
+    if d is not _MISSING: return d
+    for key in ("anyOf", "oneOf"):
+        has_null = False
+        for sub in v.get(key, []):
+            sub = _resolve_obj(sub, spec)
+            if sub.get("type") == "null": has_null = True
+            elif sub.get("default", _MISSING) is not _MISSING: return sub["default"]
+        if has_null: return None  # nullable → default None
+    return _MISSING
 
 # %% ../nbs/04_spec.ipynb #24bdad18
 def _collect_params(op, path_desc, spec):
@@ -182,23 +201,6 @@ def _prop_desc(v, spec):
                 return _clean_desc(sub["description"])
     return ""
 
-# %% ../nbs/04_spec.ipynb #116b9b99
-_MISSING = object()
-
-def _prop_default(v, spec):
-    "Get default value from a property schema, resolving refs and anyOf/oneOf."
-    v = _resolve_obj(v, spec)
-    d = v.get("default", _MISSING)
-    if d is not _MISSING: return d
-    for key in ("anyOf", "oneOf"):
-        has_null = False
-        for sub in v.get(key, []):
-            sub = _resolve_obj(sub, spec)
-            if sub.get("type") == "null": has_null = True
-            elif sub.get("default", _MISSING) is not _MISSING: return sub["default"]
-        if has_null: return None  # nullable → default None
-    return _MISSING
-
 # %% ../nbs/04_spec.ipynb #415c96a8
 ctypes = ("application/json", "application/x-www-form-urlencoded", "multipart/form-data")
 
@@ -208,14 +210,16 @@ def _body_params(op, spec):
     content = rb.get("content", {})
     schema = first((content.get(ct, {}).get("schema") for ct in ctypes), noop)
     if not schema:
-        return AttrDict(body_params=[], required_params=set(), param_types={}, param_docs={}, param_defaults={})
+        return AttrDict(body_params=[], file_params=[], required_params=set(), param_types={}, param_docs={}, param_defaults={})
     props, req = _schema_props_required(schema, spec)
+    fparams = [k for k,v in props.items() if _resolve_obj(v, spec).get("format") == "binary"]
+    bparams = [k for k in props if k not in fparams]
     ptypes = {k: _schema_py_type(v, spec) for k,v in props.items()}
     pdocs = {k: d for k,v in props.items() if (d := _prop_desc(v, spec))}
     defaults = {k: d for k,v in props.items() if (d := _prop_default(v, spec)) is not _MISSING}
     # Params without a default or nullable type are required
     # req |= {k for k in props if k not in defaults} # too aggresive doesn't match when spec is incomplete
-    return AttrDict(body_params=list(props), required_params=req, param_types=ptypes, 
+    return AttrDict(body_params=bparams, file_params=fparams, required_params=req, param_types=ptypes, 
                     param_docs=pdocs, param_defaults=defaults)
 
 # %% ../nbs/04_spec.ipynb #9ab326f7
@@ -255,6 +259,7 @@ def openapi_to_ops(spec):
                     route_params=pdict.route_params or _path_params(path),
                     query_params=pdict.query_params,
                     body_params=bpdict.body_params,
+                    file_params=bpdict.file_params,
                     required_params=pdict.required_params | bpdict.required_params,
                     param_types=merge(pdict.param_types, bpdict.param_types),
                     param_defaults=merge(pdict.param_defaults, bpdict.param_defaults),

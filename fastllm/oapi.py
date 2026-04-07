@@ -30,7 +30,7 @@ def _sort_key(o):
 
 def sanitized_params(op):
     "Mapping from original param names to valid Python identifiers."
-    return {p: snake(re.sub(r'\W', '_', p).strip('_')) for p in op.route_params + op.query_params + op.body_params}
+    return {p: snake(re.sub(r'\W', '_', p).strip('_')) for p in op.route_params + op.query_params + op.body_params + op.file_params}
 
 def mk_sig(op, sparams):
     "Create a compact operation signature from an Opop."
@@ -89,6 +89,7 @@ class OpFunc:
         self.route_params  = op_spec.route_params
         self.query_params  = op_spec.query_params
         self.body_params   = op_spec.body_params
+        self.file_params   = op_spec.file_params
         self.summary       = op_spec.summary
         self.docs_url      = op_spec.docs_url
 
@@ -106,24 +107,25 @@ def _bind(self:OpFunc, args, kwargs):
 # %% ../nbs/05_oapi.ipynb #9327d89c
 @patch
 def _split(self:OpFunc, kwargs):
-    "Split kwargs into route/query/body + control kwargs."
+    "Split kwargs into route/query/body/files + control kwargs."
     stream = kwargs.get("stream", False)
     headers = kwargs.pop("_headers", {})
     # Map sanitized names back to originals
     rsparams = {v:k for k,v in self.sparams.items()}
 
-    route, query, body = {}, {}, {}
+    route, query, body, files = {}, {}, {}, {}
     for k,v in kwargs.items():
         if v is UNSET: continue
         orig = rsparams.get(k, k)
         if   orig in self.route_params: route[orig] = v
+        elif orig in self.file_params:  files[orig] = v
         elif orig in self.query_params: query[orig] = v
         elif orig in self.body_params:  body[orig] = v
 
     query.update(kwargs.pop("_query", {}))
     body.update(kwargs.pop("_body", {}))
     if self.verb in ("GET", "DELETE", "HEAD", "OPTIONS") and not body: body = None
-    return stream, headers, route, query, body
+    return stream, headers, route, query, body, files
 
 # %% ../nbs/05_oapi.ipynb #ca48c44b
 @patch
@@ -151,12 +153,15 @@ async def _stream(self:OpFunc, url, *, headers=None, query=None, body=None, **kw
 # %% ../nbs/05_oapi.ipynb #3b0399ad
 @patch
 async def __call__(self:OpFunc, *args, **kwargs):
-    stream, headers, route, query, body = self._split(self._bind(args, kwargs))
+    stream, headers, route, query, body, files = self._split(self._bind(args, kwargs))
     url = _join_url(self.base_url, _path(self.path, route_params=route))
+    if files: kw = dict(body=None, files=files, data=body or None)
+    else:     kw = dict(body=body)
     try:
-        if stream: return self._stream(url, headers=headers, query=query, body=body)
-        return     await self._request(url, headers=headers, query=query, body=body)
+        if stream: return self._stream(url, headers=headers, query=query, **kw)
+        return     await self._request(url, headers=headers, query=query, **kw)
     except Exception as e: self._raise_with_context(e, endpoint='', route=route, query=query, body=body)
+
 
 # %% ../nbs/05_oapi.ipynb #99464917
 class OpGroup:
@@ -170,68 +175,6 @@ class OpGroup:
         self.__doc__ = "\n".join(repr_md)
     
     def _repr_markdown_(self): return self.__doc__
-
-# %% ../nbs/05_oapi.ipynb #412d02a8
-# class OpenAPIClient:
-#     "Async client built from OpenAPI operation metadata."
-#     def __init__(self, base_url: str, ops: list[OpSpec], *, headers: Optional[Dict[str, str]] = None,
-#         timeout: float = 60.0, transport: Optional[AsyncTransport] = None, provider: str = ""):
-#         self.base_url = base_url.rstrip("/")
-#         self.provider = provider or ""
-#         self.transport = transport or AsyncTransport(timeout=timeout, base_headers=headers)
-#         self.ops = [_Op(o, self) for o in ops]
-#         self.func_dict = {f"{o.path}:{o.verb.upper()}": o for o in self.ops}
-#         by_group = defaultdict(list)
-#         for op in self.ops: by_group[op.group].append(op)
-#         self.groups = {k: _OpGroup(k, v) for k,v in by_group.items()}
-# 
-#     async def aclose(self):
-#         "Close underlying transport resources."
-#         await self.transport.aclose()
-# 
-#     def _url(self, path: str) -> str:
-#         "Build absolute URL from path."
-#         if path.startswith("http://") or path.startswith("https://"): return path
-#         return f"{self.base_url}{path}"
-# 
-#     def _path(self, path: str, route: Optional[Dict[str, Any]] = None) -> str:
-#         "Apply route params with URL encoding."
-#         if not route: return path
-#         for k,v in route.items():
-#             s = str(v)
-#             safe = "/" if "/" in s else ""
-#             path = path.replace("{" + k + "}", quote(s, safe=safe))
-#             path = path.replace("{+" + k + "}", quote(str(v), safe="/"))
-#         path = re.sub(r"\{\+([^}]+)\}", lambda m: "{" + m.group(1) + "}", path)
-#         return path
-# 
-#     async def call(self, path: str, verb: str, *, headers: Optional[Dict[str, str]] = None,
-#         route: Optional[Dict[str, Any]] = None, query: Optional[Dict[str, Any]] = None,
-#         body: Optional[Dict[str, Any]] = None, data: Optional[Any] = None, files: Optional[Any] = None,
-#         raw: bool = False) -> Any:
-#         "Execute an HTTP request and decode response by content type."
-#         p = self._path(path, route)
-#         return await self.transport.request(verb, self._url(p), headers=headers, params=query, json_data=body,
-#             data=data, files=files, raw=raw)
-# 
-#     async def stream(self, path: str, verb: str, *, headers: Optional[Dict[str, str]] = None,
-#         route: Optional[Dict[str, Any]] = None, query: Optional[Dict[str, Any]] = None,
-#         body: Optional[Dict[str, Any]] = None, data: Optional[Any] = None, files: Optional[Any] = None) -> AsyncIterator[Dict[str, Any]]:
-#         "Execute an SSE request yielding parsed JSON events."
-#         p = self._path(path, route)
-#         async for ev in self.transport.stream(verb, self._url(p), headers=headers, params=query, json_data=body,
-#             data=data, files=files):
-#             yield ev
-# 
-#     def __dir__(self): return super().__dir__() + list(self.groups)
-#     def __getattr__(self, k):
-#         if "groups" in vars(self) and k in self.groups: return self.groups[k]
-#         raise AttributeError(k)
-# 
-#     def __getitem__(self, k):
-#         "Lookup operation by (path, verb) tuple or path (GET)."
-#         a,b = k if isinstance(k, tuple) else (k, "GET")
-#         return self.func_dict[f"{a}:{b.upper()}"]
 
 # %% ../nbs/05_oapi.ipynb #d4ff9dd9
 class OpenAPIClient:
