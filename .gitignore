@@ -4,6 +4,7 @@
 __pycache__/
 *.py[cod]
 *.pyo
+*.mp3
 
 # Packaging/build artifacts
 build/

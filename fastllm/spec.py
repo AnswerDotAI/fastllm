@@ -26,25 +26,26 @@ class OpSpec:
     param_defaults: Dict = field(default_factory=dict)
     param_docs: Dict = field(default_factory=dict)
     docs_url: str = ""
+    
+    def mk_doc(self):
+        rows = []
+        for f,v in vars(self).items():
+            if f not in ('param_types','param_defaults','param_docs'): rows.append(f'| `{f}` | {v} |')
+        md = f'| Field | Value |\n|---|---|\n' + '\n'.join(rows)
+        all_params = self.route_params + self.query_params + self.body_params
+        if all_params:
+            md += f'\n\n| Param | Type | Default | Required | Description |\n|---|---|---|---|---|\n'
+            for p in all_params:
+                t = self.param_types.get(p, '')
+                t = t.__name__ if isinstance(t, type) else str(t)
+                d = self.param_defaults.get(p, '')
+                r = '✓' if p in self.required_params else ''
+                doc = self.param_docs.get(p, '')
+                md += f'| `{p}` | {t} | {d} | {r} | {doc} |\n'
+        return md
 
-# %% ../nbs/04_spec.ipynb #ca925942
-@patch
-def _repr_markdown_(self:OpSpec):
-    rows = []
-    for f,v in vars(self).items():
-        if f not in ('param_types','param_defaults','param_docs'): rows.append(f'| `{f}` | {v} |')
-    md = f'| Field | Value |\n|---|---|\n' + '\n'.join(rows)
-    all_params = self.route_params + self.query_params + self.body_params
-    if all_params:
-        md += f'\n\n| Param | Type | Default | Required | Description |\n|---|---|---|---|---|\n'
-        for p in all_params:
-            t = self.param_types.get(p, '')
-            t = t.__name__ if isinstance(t, type) else str(t)
-            d = self.param_defaults.get(p, '')
-            r = '✓' if p in self.required_params else ''
-            doc = self.param_docs.get(p, '')
-            md += f'| `{p}` | {t} | {d} | {r} | {doc} |\n'
-    return md
+    def __post_init__(self): object.__setattr__(self, '__doc__', self.mk_doc())
+    def _repr_markdown_(self): return self.__doc__
 
 # %% ../nbs/04_spec.ipynb #b19151cc
 _http_verbs = {"get", "post", "put", "patch", "delete", "options", "head"}
@@ -205,7 +206,7 @@ def _body_params(op, spec):
     "Extract request JSON/body params from requestBody schema."
     rb = _resolve_obj(op.get("requestBody", {}), spec)
     content = rb.get("content", {})
-    schema = first(content.get(ct, {}).get("schema") for ct in ctypes)
+    schema = first((content.get(ct, {}).get("schema") for ct in ctypes), noop)
     if not schema:
         return AttrDict(body_params=[], required_params=set(), param_types={}, param_docs={}, param_defaults={})
     props, req = _schema_props_required(schema, spec)
@@ -336,5 +337,6 @@ class SpecParser:
         "Create from a Google Discovery spec dict."
         return cls(base_url=spec.get("baseUrl", ""), ops=discovery_to_ops(spec))
 
+    # TODO: Ideally this should show how to init the object 
     def __repr__(self):
         return f"SpecParser(base_url={self.base_url!r}, ops={len(self.ops)})"
