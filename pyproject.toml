@@ -35,3 +35,4 @@ nbs_path = "nbs"
 recursive = false
 jupyter_hooks = true
 custom_sidebar = false
+allowed_metadata_keys = ['solveit_dialog_mode', 'solveit_ver']
