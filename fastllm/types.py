@@ -20,7 +20,8 @@ class Part:
     data: dict = None
 
 # %% ../nbs/00_types.ipynb #aa3cfc23
-PartType = str_enum('PartType', 'text', 'input_image', 'input_audio', 'input_video', 'input_file')
+PartType = str_enum('PartType', 'text', 'thinking', 'refusal', 'tool_use', 'tool_result',
+                    'input_image', 'input_audio', 'input_video', 'input_file')
 
 # %% ../nbs/00_types.ipynb #afeb9eef
 @dataclass(frozen=True)
