@@ -5,11 +5,10 @@
 # %% auto #0
 __all__ = ['PartType', 'Part', 'Msg', 'ToolCall', 'Usage', 'RequestOptions', 'Completion', 'Delta']
 
-# %% ../nbs/00_types.ipynb #bdde5f36
+# %% ../nbs/00_types.ipynb #b4d047fd
 from dataclasses import dataclass, field
 from fastcore.utils import *
 from fastspec.errors import *
-
 
 # %% ../nbs/00_types.ipynb #e568bade
 @dataclass(frozen=True)
@@ -38,7 +37,9 @@ class ToolCall:
     id: str
     name: str
     arguments: dict = field(default_factory=dict)
+    server: bool = False
     extra: dict = field(default_factory=dict)
+
 
 # %% ../nbs/00_types.ipynb #5092528f
 @dataclass(frozen=True)
@@ -79,7 +80,10 @@ class Completion:
 @dataclass(frozen=True)
 class Delta:
     "Normalized streaming delta event."
+    model: str
+    provider: str = None
     text: str = ""
+    thinking: str = ""
     tool_calls: List[ToolCall] = field(default_factory=list)
     finish_reason: str = None
     usage: Usage = None
