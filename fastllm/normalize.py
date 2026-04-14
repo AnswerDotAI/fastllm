@@ -189,18 +189,6 @@ def normalize_openai_response(resp, model, provider=provider.openai):
         provider=provider,
         raw=resp)
 
-# %% ../nbs/01_normalize.ipynb #3f435092
-# @delegates(model_and_provider)
-# def normalize_openai_response_event(ev, **kwargs):
-#     "Normalize OpenAI Responses API stream event into Delta."
-#     kwargs['model'],kwargs['provider'] = kwargs.get('model',None), kwargs.get('provider',None)
-#     typ = ev.get("type")
-#     if typ == "response.output_text.delta":            return Delta(text=ev.get("delta"), raw=ev, **kwargs)
-#     if typ == "response.reasoning_text.delta":         return Delta(thinking=ev.get("delta",""), raw=ev, **kwargs)
-#     if typ == "response.reasoning_summary_text.delta": return Delta(thinking=ev.get("delta",""), raw=ev, **kwargs)
-#     if typ == "response.completed":                    return Delta(raw=ev, **kwargs)
-#     if typ == "error": raise api_error_from_event(ev, provider="openai", endpoint="responses.stream")
-
 # %% ../nbs/01_normalize.ipynb #9b9bac16
 def normalize_openai_chat_completion(resp, model, provider="openai_chat"):
     "Normalize chat.completions response object into Completion."
@@ -219,22 +207,6 @@ def normalize_openai_chat_completion(resp, model, provider="openai_chat"):
         tool_calls=tcs,
         provider=provider,
         raw=resp)
-
-# %% ../nbs/01_normalize.ipynb #dc551a1e
-# @delegates(model_and_provider)
-# def normalize_openai_chat_delta(ev, **kwargs):
-#     "Normalize a chat completion stream event."
-#     kwargs['model'],kwargs['provider'] = kwargs.get('model',None), kwargs.get('provider',None)
-#     # usage always arrives as a single final event with choices: []
-#     if not (choices := ev.get("choices", [])): return Delta(usage=usage_from_openai(ev), raw=ev, **kwargs)
-#     # finish_reason arrives in its own dedicated chunk (empty delta, non-null finish_reason)
-#     if fin := nested_idx(ev, 'choices', 0, 'finish_reason'): return Delta(finish_reason=fin, raw=ev, **kwargs)
-#     # repurposed the common function
-#     tcs = openai_chat_tool_calls(ev, delta=True)
-#     thinking = nested_idx(choices, 0, 'delta', 'reasoning_content')
-#     txt = nested_idx(choices, 0, 'delta', 'content')
-#     refusal = nested_idx(choices, 0, 'delta', 'refusal')
-#     return Delta(text=txt, thinking=thinking, refusal=refusal, tool_calls=tcs, raw=ev, **kwargs)
 
 # %% ../nbs/01_normalize.ipynb #35de7b1a
 def _ant_part_type(typ):
@@ -271,34 +243,6 @@ def normalize_anthropic_message(resp, model, provider="anthropic"):
         provider=provider,
         raw=resp)
 
-# %% ../nbs/01_normalize.ipynb #ba9b0e20
-# _ANT_TC_TYPES = frozenset(("tool_use", "server_tool_use", "mcp_tool_use"))
-# 
-# @delegates(model_and_provider)
-# def normalize_anthropic_event(ev, **kwargs):
-#     "Normalize Anthropic SSE event into Delta."
-#     kwargs['model'],kwargs['provider'] = kwargs.get('model',None), kwargs.get('provider',None)
-#     typ = ev.get("type")
-#     if typ == "content_block_delta":
-#         d = ev.get("delta") or {}
-#         dtyp = d.get("type")
-#         if dtyp == "text_delta": return Delta(text=d.get("text", ""), raw=ev, **kwargs)
-#         if dtyp == "thinking_delta": return Delta(thinking=d.get("thinking", ""), raw=ev, **kwargs)
-#         if dtyp == "input_json_delta":
-#             return Delta(tool_calls=[ToolCall(id=str(ev.get("index", "")), name="",
-#                 arguments={"_delta": d.get("partial_json") or ""})], raw=ev, **kwargs)
-#         return Delta(raw=ev, **kwargs)
-#     if typ == "content_block_start":
-#         b = ev.get("content_block") or {}
-#         if b.get("type") not in _ANT_TC_TYPES: return Delta(raw=ev, **kwargs)
-#         extra = {k:v for k,v in b.items() if k not in ("type","id","name","input")}
-#         return Delta(tool_calls=[ToolCall(id=b["id"], name=b["name"], arguments=b.get("input") or {}, server=b.get("type")!="tool_use", extra=extra)], raw=ev, **kwargs)
-#     if typ == "message_delta":
-#         d = ev.get("delta") or {}
-#         return Delta(finish_reason=canon_finish(d.get("stop_reason"), 'anthropic'), usage=usage_from_anthropic(ev), raw=ev, **kwargs)
-#     if typ == "error": raise api_error_from_event(ev, provider="anthropic", endpoint="messages.stream")
-#     return Delta(raw=ev, **kwargs)
-
 # %% ../nbs/01_normalize.ipynb #2cf597b2
 def _gem_part_type(p):
     "Map Gemini part to canonical PartType."
@@ -330,18 +274,3 @@ def normalize_gemini_generate(resp, model, provider="gemini"):
         tool_calls=tcs,
         provider=provider,
         raw=resp)
-
-# %% ../nbs/01_normalize.ipynb #893319e5
-# @delegates(model_and_provider)
-# def normalize_gemini_event(ev, emitted="", **kwargs):
-#     "Normalize Gemini stream event, returning incremental text delta."
-#     kwargs['model'],kwargs['provider'] = kwargs.get('model',None), kwargs.get('provider',None)
-#     cand = nested_idx(ev, 'candidates', 0) or {}
-#     finsh_reason = canon_finish(cand.get("finishReason"), 'gemini')
-#     parts = nested_idx(cand, 'content', 'parts') or []
-#     thinking = "".join(p.get("text","") for p in parts if p.get("thought") and "text" in p)
-#     if thinking: return Delta(thinking=thinking, finish_reason=finsh_reason, usage=usage_from_gemini(ev), raw=ev, **kwargs)
-#     txt = "".join(p.get("text","") for p in parts if not p.get("thought") and "text" in p)
-#     tcs = _gemini_tool_calls(ev)
-#     delta_txt = txt[len(emitted):] if txt.startswith(emitted) else txt
-#     return Delta(text=delta_txt, tool_calls=tcs, finish_reason=finsh_reason, usage=usage_from_gemini(ev), raw=ev, **kwargs)
