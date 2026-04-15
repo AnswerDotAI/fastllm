@@ -172,7 +172,7 @@ def openai_responses_parts(resp):
             for s in item["summary"]: parts.append(Part(type=PartType.thinking, text=s['text'], data=item))
         elif typ == "function_call" or typ.endswith("_call"):
             tc = openai_responses_tool_call(item)
-            tdata = dict(id=tc.id, name=tc.name, arguments=tc.arguments, **tc.extra)
+            tdata = dict(id=tc.id, name=tc.name, arguments=tc.arguments, server=tc.server, **tc.extra)
             parts.append(Part(type=PartType.tool_use, data=tdata))
     return parts
 
@@ -198,7 +198,7 @@ def normalize_openai_chat_completion(resp, model, provider="openai_chat"):
     if cts := msg.get('content'): parts.append(Part(type="text", text=cts))
     if ref := msg.get('refusal'): parts.append(Part(type="refusal", text=ref))
     tcs = openai_chat_tool_calls(resp)
-    for tc in tcs: parts.append(Part(type="tool_use", data=dict(id=tc.id, name=tc.name, arguments=tc.arguments, **tc.extra)))
+    for tc in tcs: parts.append(Part(type="tool_use", data=dict(id=tc.id, name=tc.name, arguments=tc.arguments, server=tc.server, **tc.extra)))
     return Completion(
         model=resp.get("model") or model,
         message=Msg(role="assistant", content=parts),
@@ -231,7 +231,7 @@ def normalize_anthropic_message(resp, model, provider="anthropic"):
         if typ == PartType.thinking: parts.append(Part(type=PartType.thinking, text=b.get("thinking", ""), data=b))
         elif typ == "tool_use":
             tc = tc_map.get(b.get("id"))
-            if tc: parts.append(Part(type=PartType.tool_use, data=dict(id=tc.id, name=tc.name, arguments=tc.arguments, **tc.extra)))
+            if tc: parts.append(Part(type=PartType.tool_use, data=dict(id=tc.id, name=tc.name, arguments=tc.arguments, server=tc.server, **tc.extra)))
         else: parts.append(Part(type=typ, text=b.get("text", ""), data=b))
     if not parts: parts = [Part(type=PartType.text, text="")]
     return Completion(
@@ -263,7 +263,7 @@ def normalize_gemini_generate(resp, model, provider="gemini"):
         if typ == 'tool_use':
             fc = p.get('functionCall') or p.get('toolCall') or {}
             tc = tc_map.get(fc.get('id'))
-            if tc: parts.append(Part(type=PartType.tool_use, data=dict(id=tc.id, name=tc.name, arguments=tc.arguments, **tc.extra)))
+            if tc: parts.append(Part(type=PartType.tool_use, data=dict(id=tc.id, name=tc.name, arguments=tc.arguments, server=tc.server, **tc.extra)))
         else: parts.append(Part(type=typ, text=p.get("text",""), data=p))
     if not parts: parts = [Part(type=PartType.text, text="")]
     return Completion(
