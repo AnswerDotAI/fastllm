@@ -4,17 +4,17 @@
 
 # %% auto #0
 __all__ = ['denorm_openai_responses_tool_use', 'mk_tool_res_msg', 'denorm_openai_responses_tool_result',
-           'denorm_openai_responses_user', 'denorm_openai_responses_assistant', 'denorm_openai_responses_tool',
-           'denorm_openai_responses_msgs', 'denorm_openai_chat_tool_use', 'denorm_openai_chat_tool_result',
-           'denorm_openai_chat_user', 'denorm_openai_chat_assistant', 'denorm_openai_chat_tool',
-           'denorm_openai_chat_msgs', 'denorm_anthropic_tool_use', 'denorm_anthropic_tool_result',
-           'denorm_anthropic_user', 'denorm_anthropic_assistant', 'denorm_anthropic_tool', 'denorm_anthropic_msgs',
-           'denorm_gemini_tool_use', 'denorm_gemini_tool_result', 'denorm_gemini_user', 'denorm_gemini_assistant',
-           'denorm_gemini_tool', 'denorm_gemini_msgs', 'denorm_openai_responses_tools', 'denorm_openai_chat_tools',
-           'denorm_anthropic_tools', 'denorm_gemini_tools', 'denorm_openai_responses_tool_choice',
-           'denorm_openai_chat_tool_choice', 'denorm_anthropic_tool_choice', 'denorm_gemini_tool_choice',
-           'denorm_openai_responses_reasoning', 'denorm_openai_chat_reasoning', 'denorm_anthropic_reasoning',
-           'denorm_gemini_reasoning']
+           'denorm_openai_responses_assistant', 'denorm_openai_responses_tool', 'denorm_openai_responses_msgs',
+           'denorm_openai_chat_tool_use', 'denorm_openai_chat_tool_result', 'denorm_openai_chat_user',
+           'denorm_openai_chat_assistant', 'denorm_openai_chat_tool', 'denorm_openai_chat_msgs',
+           'denorm_anthropic_tool_use', 'denorm_anthropic_tool_result', 'denorm_anthropic_user',
+           'denorm_anthropic_assistant', 'denorm_anthropic_tool', 'denorm_anthropic_msgs', 'denorm_gemini_tool_use',
+           'denorm_gemini_tool_result', 'denorm_gemini_user', 'denorm_gemini_assistant', 'denorm_gemini_tool',
+           'denorm_gemini_msgs', 'denorm_openai_responses_tools', 'denorm_openai_chat_tools', 'denorm_anthropic_tools',
+           'denorm_gemini_tools', 'denorm_openai_responses_tool_choice', 'denorm_openai_chat_tool_choice',
+           'denorm_anthropic_tool_choice', 'denorm_gemini_tool_choice', 'denorm_openai_responses_reasoning',
+           'denorm_openai_chat_reasoning', 'denorm_anthropic_reasoning', 'denorm_gemini_reasoning',
+           'denorm_openai_responses_user']
 
 # %% ../nbs/03_acomplete.ipynb #f2f57253
 from dataclasses import dataclass, field, fields
@@ -40,12 +40,6 @@ def mk_tool_res_msg(tool_parts:Part, results:str):
 def denorm_openai_responses_tool_result(m:Part):
     "Convert canonical tool result back to OpenAI Responses function_call_output item."
     return dict(type='function_call_output', call_id=m.data.get('call_id') or m.data.get('id', ''), output=str(m.text))
-
-# %% ../nbs/03_acomplete.ipynb #f9ba213e
-def denorm_openai_responses_user(m:Msg):
-    "Convert canonical user Msg to OpenAI Responses input message."
-    parts = [{"type": "input_text", "text": p.text or ""} for p in m.content if p.type == PartType.text]
-    return {"type": "message", "role": "user", "content": parts}
 
 # %% ../nbs/03_acomplete.ipynb #8799f468
 def denorm_openai_responses_assistant(m:Msg):
@@ -126,21 +120,26 @@ def denorm_openai_chat_msgs(msgs:list[Msg]):
 
 
 # %% ../nbs/03_acomplete.ipynb #9e0007a9
+def _ant_cc(block, p):
+    "Add cache_control to block if present in Part.data."
+    if (cc := (p.data or {}).get('cache_control')): block['cache_control'] = cc
+    return block
+
 def denorm_anthropic_tool_use(p:Part):
     "Convert canonical tool_use Part to Anthropic tool_use content block."
     d = p.data or {}
     block = dict(type='tool_use', id=d.get('id',''), name=d.get('name',''), input=d.get('arguments') or {})
     if 'caller' in d: block['caller'] = d['caller']
-    return block
+    return _ant_cc(block, p)
 
 def denorm_anthropic_tool_result(p:Part):
     "Convert canonical tool_result Part to Anthropic tool_result content block."
     d = p.data or {}
-    return dict(type='tool_result', tool_use_id=d.get('id') or d.get('call_id',''), content=str(p.text))
+    return _ant_cc(dict(type='tool_result', tool_use_id=d.get('id') or d.get('call_id',''), content=str(p.text)), p)
 
 def denorm_anthropic_user(m:Msg):
     "Convert canonical user Msg to Anthropic user message."
-    parts = [dict(type='text', text=p.text or '') for p in m.content if p.type == PartType.text]
+    parts = [_ant_cc(dict(type='text', text=p.text or ''), p) for p in m.content if p.type == PartType.text]
     return dict(role='user', content=parts)
 
 def denorm_anthropic_assistant(m:Msg):
@@ -152,12 +151,12 @@ def denorm_anthropic_assistant(m:Msg):
                 srv_results.append(dict(type='tool_result', tool_use_id=srv_call_id, content=p.text or ''))
                 srv_call_id = None
             elif sig:=(p.data or {}).get('signature',''): blocks.append(dict(type='thinking', thinking=p.text or '', signature=sig))
-            else:                               blocks.append(dict(type='text', text=p.text or ''))
+            else:                               blocks.append(_ant_cc(dict(type='text', text=p.text or ''), p))
         elif p.type == PartType.text:
             if srv_call_id:
                 srv_results.append(dict(type='tool_result', tool_use_id=srv_call_id, content=p.text or ''))
                 srv_call_id = None
-            else: blocks.append(dict(type='text', text=p.text or ''))
+            else: blocks.append(_ant_cc(dict(type='text', text=p.text or ''), p))
         elif p.type == PartType.tool_use:
             if p.data.get('server') and (p.data.get('id','') or '').startswith('srvtoolu_'):
                 blocks.append(dict(type='server_tool_use', id=p.data['id'], name=p.data.get('name',''), input=p.data.get('arguments') or {}))
@@ -183,7 +182,6 @@ def denorm_anthropic_msgs(msgs:list[Msg]):
         elif m.role == 'assistant': res.extend(denorm_anthropic_assistant(m))
         elif m.role == 'tool':      res.extend(denorm_anthropic_tool(m))
     return res
-
 
 # %% ../nbs/03_acomplete.ipynb #64d54260
 def denorm_gemini_tool_use(p:Part):
@@ -333,3 +331,117 @@ def denorm_gemini_reasoning(v):
     if v is None: return None
     if isinstance(v, dict): return v
     return {'thinkingBudget': _gem_think_budgets.get(str(v).lower(), 1024)}
+
+# %% ../nbs/03_acomplete.ipynb #542fc6d7
+_ext_mime = {
+    '.jpg':'image/jpeg', '.jpeg':'image/jpeg', '.png':'image/png', '.gif':'image/gif', '.webp':'image/webp',
+    '.pdf':'application/pdf',
+    '.mp3':'audio/mpeg', '.wav':'audio/wav', '.ogg':'audio/ogg', '.flac':'audio/flac', '.m4a':'audio/mp4',
+    '.mp4':'video/mp4', '.mov':'video/quicktime', '.webm':'video/webm',
+}
+
+def _data_url(url):
+    "Parse data:mime;base64,data URL into (mime, b64_data), or None."
+    if not isinstance(url, str) or not url.startswith('data:') or ',' not in url: return None
+    header, body = url.split(',', 1)
+    if ';base64' not in header or not body: return None
+    return header[5:].split(';',1)[0].strip() or 'application/octet-stream', body
+
+def _url_mime(url, default='application/octet-stream'):
+    "Guess mime from URL extension."
+    ext = '.' + url.rsplit('.', 1)[-1].split('?')[0].lower() if '.' in url.split('?')[0].split('/')[-1] else ''
+    return _ext_mime.get(ext, default)
+
+# %% ../nbs/03_acomplete.ipynb #7b255bf7
+def denorm_openai_responses_user(m:Msg):
+    "Convert canonical user Msg to OpenAI Responses input message."
+    parts = []
+    for p in m.content:
+        if   p.type == PartType.text:        parts.append({"type": "input_text", "text": p.text or ""})
+        elif p.type == PartType.input_image: parts.append(_denorm_oai_resp_media(p))
+        elif p.type == PartType.input_audio: raise ValueError("OpenAI Responses API does not support audio input; Coming Soon.") 
+        elif p.type == PartType.input_video: raise ValueError("OpenAI Responses API does not support video input")
+        elif p.type == PartType.input_file:  parts.append(_denorm_oai_resp_file(p))
+    return {"type": "message", "role": "user", "content": parts}
+
+def denorm_openai_chat_user(m:Msg):
+    "Convert canonical user Msg to OpenAI Chat user message."
+    parts = []
+    for p in m.content:
+        if   p.type == PartType.text:        parts.append({"type": "text", "text": p.text or ""})
+        elif p.type == PartType.input_image: parts.append(_denorm_oai_chat_media(p))
+        elif p.type == PartType.input_audio: parts.append(_denorm_oai_chat_audio(p))
+        elif p.type == PartType.input_video: raise ValueError("OpenAI Chat API does not support video input")
+        elif p.type == PartType.input_file:  parts.append(_denorm_oai_chat_file(p))
+    if len(parts) == 1 and parts[0].get('type') == 'text': return dict(role='user', content=parts[0]['text'])
+    return dict(role='user', content=parts)
+
+def denorm_anthropic_user(m:Msg):
+    "Convert canonical user Msg to Anthropic user message."
+    parts = []
+    for p in m.content:
+        if   p.type == PartType.text:        parts.append(_ant_cc({"type": "text", "text": p.text or ""}, p))
+        elif p.type == PartType.input_image: parts.append(_ant_cc(_denorm_ant_media(p), p))
+        elif p.type == PartType.input_audio: raise ValueError("Anthropic does not support audio input")
+        elif p.type == PartType.input_video: raise ValueError("Anthropic does not support video input")
+        elif p.type == PartType.input_file:  parts.append(_ant_cc(_denorm_ant_file(p), p))
+    return dict(role='user', content=parts)
+
+def denorm_gemini_user(m:Msg):
+    "Convert canonical user Msg to Gemini user content."
+    parts = []
+    for p in m.content:
+        if   p.type == PartType.text:        parts.append({"text": p.text or ""})
+        elif p.type == PartType.input_image: parts.append(_denorm_gem_media(p))
+        elif p.type == PartType.input_audio: parts.append(_denorm_gem_audio(p))
+        elif p.type == PartType.input_video: parts.append(_denorm_gem_video(p))
+        elif p.type == PartType.input_file:  parts.append(_denorm_gem_file(p))
+    return dict(role='user', parts=parts)
+
+# %% ../nbs/03_acomplete.ipynb #ac00171b
+def _denorm_oai_resp_media(p): return {"type": "input_image", "image_url": p.text}
+
+def _denorm_oai_chat_media(p): return {"type": "image_url", "image_url": {"url": p.text}}
+
+def _denorm_ant_media(p):
+    if (b64:=_data_url(p.text)): return {"type": "image", "source": {"type": "base64", "media_type": b64[0], "data": b64[1]}}
+    return {"type": "image", "source": {"type": "url", "url": p.text}}
+
+def _denorm_gem_media(p):
+    if (b64:=_data_url(p.text)): return {"inlineData": {"mimeType": b64[0], "data": b64[1]}}
+    return {"fileData": {"mimeType": _url_mime(p.text, "image/*"), "fileUri": p.text}}
+
+# %% ../nbs/03_acomplete.ipynb #76450e98
+_mime_audio_fmt = {'audio/wav':'wav', 'audio/mpeg':'mp3', 'audio/mp3':'mp3'}
+
+def _denorm_oai_chat_audio(p):
+    if not (b64:=_data_url(p.text)): raise ValueError("OpenAI Chat audio input requires base64 data URL")
+    return {"type": "input_audio", "input_audio": {"data": b64[1], "format": _mime_audio_fmt.get(b64[0], 'wav')}}
+
+def _denorm_gem_audio(p): 
+    if (b64:=_data_url(p.text)): return {"inlineData": {"mimeType": b64[0], "data": b64[1]}}
+    return {"fileData": {"mimeType": _url_mime(p.text, "audio/*"), "fileUri": p.text}}
+
+# %% ../nbs/03_acomplete.ipynb #46b1b8d7
+def _denorm_gem_video(p):
+    if (b64:=_data_url(p.text)): return {"inlineData": {"mimeType": b64[0], "data": b64[1]}}
+    return {"fileData": {"mimeType": _url_mime(p.text, "video/mp4"), "fileUri": p.text}}
+
+# %% ../nbs/03_acomplete.ipynb #05433c23
+def _denorm_oai_resp_file(p):
+    if (b64:=_data_url(p.text)): return {"type": "input_file", "file_data": p.text, "filename": f"upload.{b64[0].split('/')[-1]}"}
+    return {"type": "input_file", "file_url": p.text}
+
+def _denorm_oai_chat_file(p):
+    if (b64:=_data_url(p.text)): return {"type": "file", "file": {"file_data": p.text, "filename": f"upload.{b64[0].split('/')[-1]}"}}
+    raise ValueError("OpenAI Chat file input requires base64 data URL or file_id, not URLs")
+
+def _denorm_ant_file(p):
+    b64 = _data_url(p.text)
+    if b64: return {"type": "document", "source": {"type": "base64", "media_type": b64[0], "data": b64[1]}}
+    return {"type": "document", "source": {"type": "url", "url": p.text}}
+
+def _denorm_gem_file(p):
+    b64 = _data_url(p.text)
+    if b64: return {"inlineData": {"mimeType": b64[0], "data": b64[1]}}
+    return {"fileData": {"mimeType": _url_mime(p.text, "application/pdf"), "fileUri": p.text}}
