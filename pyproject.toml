@@ -19,7 +19,6 @@ dependencies = ['httpx', 'fastcore']
 
 [project.urls]
 Repository = "https://github.com/AnswerDotAI/fastllm"
-Documentation = "https://AnswerDotAI.github.io/fastllm/"
 
 [project.entry-points.nbdev]
 fastllm = "fastllm._modidx:d"

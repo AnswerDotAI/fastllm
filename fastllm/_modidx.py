@@ -151,5 +151,4 @@ d = { 'settings': { 'branch': 'main',
                                    'fastllm.streaming.openai_chat_index_fn': ( 'streaming.html#openai_chat_index_fn',
                                                                                'fastllm/streaming.py')},
             'fastllm.types': { 'fastllm.types.Msg': ('types.html#msg', 'fastllm/types.py'),
-                               'fastllm.types.Part': ('types.html#part', 'fastllm/types.py'),
-                               'fastllm.types.RequestOptions': ('types.html#requestoptions', 'fastllm/types.py')}}}
+                               'fastllm.types.Part': ('types.html#part', 'fastllm/types.py')}}}
