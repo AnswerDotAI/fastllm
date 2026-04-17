@@ -20,8 +20,6 @@ from .normalize import *
 @dataclass
 class Delta:
     "Normalized streaming delta event."
-    model: str
-    provider: str = None
     text: str = ""
     thinking: str = ""
     refusal: str = ""
@@ -37,25 +35,23 @@ async def norm_and_yield(resp, norm_func):
         if (d := norm_func(ev)) is not None: yield d
 
 # %% ../nbs/02_streaming.ipynb #abdee3ba
-@delegates(model_and_provider)
 def normalize_openai_response_event(ev, **kwargs):
     "Normalize OpenAI Responses API stream event into Delta."
-    kwargs['model'],kwargs['provider'] = kwargs.get('model',None), kwargs.get('provider',None)
     typ = ev.get("type")
     if typ == "response.output_text.delta":            return Delta(text=ev.get("delta"), raw=ev, **kwargs)
     if typ == "response.reasoning_text.delta":         return Delta(thinking=ev.get("delta",""), raw=ev, **kwargs)
     if typ == "response.reasoning_summary_text.delta": return Delta(thinking=ev.get("delta",""), raw=ev, **kwargs)
     if typ == "response.completed":                    return Delta(raw=ev, **kwargs)
-    if typ == "error": raise api_error_from_event(ev, provider="openai", endpoint="responses.stream")
+    if typ == "error": raise api_error_from_event(ev)
 
 # %% ../nbs/02_streaming.ipynb #7e355d46
-async def _acollect_stream_openai_responses(it, model=None, provider=provider.openai):
+async def _acollect_stream_openai_responses(it, model=None, api_name=ApiName.openai, vendor_name='openai'):
     "Collect a Delta stream, yielding incremental chunks and a final StreamSummary."
     async for d in it:
         if d.text:     yield {'text': d.text}
         if d.thinking: yield {'thinking': d.thinking}
     if d.raw['type'] == 'response.completed':
-        yield normalize_openai_response(d.raw['response'], model, provider=provider)
+        yield normalize_openai_response(d.raw['response'], model, api_name=api_name, vendor_name=vendor_name)
 
 # %% ../nbs/02_streaming.ipynb #fe2464b3
 @dataclass
@@ -92,7 +88,7 @@ class PartAccum:
         self.parts = merged
 
 # %% ../nbs/02_streaming.ipynb #73b6af74
-async def _acollect_stream(it, index_fn, model=None, provider=None):
+async def _acollect_stream(it, index_fn, model=None, api_name=None, vendor_name=None):
     "Collect a Delta stream, yielding incremental chunks and a final Completion."
     part_accum = PartAccum()
     deltas = []
@@ -127,13 +123,14 @@ async def _acollect_stream(it, index_fn, model=None, provider=None):
         last_typ = typ
         deltas.append(d)
     part_accum.finalize()
-    fin = canon_finish(fin, provider, part_accum.tool_calls) # need to canon one more time with accum'd tool calls
+    fin = canon_finish(fin, api_name, part_accum.tool_calls) # need to canon one more time with accum'd tool calls
     yield Completion(d.raw.get('model', model),
             message=Msg(role="assistant", content=part_accum.parts),
             finish_reason=fin,
             usage=usg,
             tool_calls=part_accum.tool_calls,
-            provider=provider,
+            api_name=api_name,
+            vendor_name=vendor_name,
             raw={'deltas':deltas})
 
 # %% ../nbs/02_streaming.ipynb #40de5173
@@ -147,13 +144,11 @@ def openai_chat_index_fn(d, typ, last_typ, last_idx):
     return last_idx + 1, last_idx + 1
 
 # %% ../nbs/02_streaming.ipynb #b49c1972
-_acollect_stream_openai_chat = partial(_acollect_stream, index_fn=openai_chat_index_fn, provider=provider.openai_chat)
+_acollect_stream_openai_chat = partial(_acollect_stream, index_fn=openai_chat_index_fn, api_name=ApiName.openai_chat)
 
 # %% ../nbs/02_streaming.ipynb #ddeba3f7
-@delegates(model_and_provider)
 def normalize_openai_chat_delta(ev, **kwargs):
     "Normalize a chat completion stream event."
-    kwargs['model'],kwargs['provider'] = kwargs.get('model',None), kwargs.get('provider',None)
     # usage always arrives as a single final event with choices: []
     if not (choices := ev.get("choices", [])): return Delta(usage=usage_from_openai(ev), raw=ev, **kwargs)
     # finish_reason arrives in its own dedicated chunk (empty delta, non-null finish_reason)
@@ -161,11 +156,11 @@ def normalize_openai_chat_delta(ev, **kwargs):
     # repurposed the common function
     tcs = openai_chat_tool_calls(ev, delta=True)
     dlt = nested_idx(choices, 0, 'delta')
+    if ev.get("error"): raise api_error_from_event(ev)
     return Delta(text=dlt.get('content'), thinking=dlt.get('reasoning_content'), refusal=dlt.get('refusal'), tool_calls=tcs, raw=ev, **kwargs)
 
 # %% ../nbs/02_streaming.ipynb #abd27355
 def normalize_anthropic_event(ev, **kwargs):
-    kwargs['model'],kwargs['provider'] = kwargs.get('model',None), kwargs.get('provider',None)
     typ = ev.get("type")
     text, thinking, tcs = None, None, [] 
     if typ == "content_block_start":
@@ -182,7 +177,7 @@ def normalize_anthropic_event(ev, **kwargs):
     elif typ == "message_delta":
         fin = canon_finish(nested_idx(ev, 'delta', 'stop_reason'), 'anthropic')
         return Delta(finish_reason=fin, usage=usage_from_anthropic(ev), raw=ev, **kwargs)
-    elif typ == "error": raise api_error_from_event(ev, provider="anthropic", endpoint="messages.stream")
+    elif typ == "error": raise api_error_from_event(ev)
     return Delta(text=text, thinking=thinking, tool_calls=tcs, raw=ev, **kwargs)
 
 # %% ../nbs/02_streaming.ipynb #56eeb60f
@@ -191,21 +186,19 @@ def anthropic_index_fn(d, typ, last_typ, last_idx):
     return nested_idx(d, 'raw', 'index'), None
 
 # %% ../nbs/02_streaming.ipynb #55ca3b0f
-_acollect_stream_anthropic = partial(_acollect_stream, index_fn=anthropic_index_fn, provider=provider.anthropic)
+_acollect_stream_anthropic = partial(_acollect_stream, index_fn=anthropic_index_fn, api_name=ApiName.anthropic)
 
 # %% ../nbs/02_streaming.ipynb #c3a0b1e9
-@delegates(model_and_provider)
 def normalize_gemini_event(ev, **kwargs):
     "Normalize Gemini stream event into Delta."
-    kwargs['model'],kwargs['provider'] = kwargs.get('model',None), kwargs.get('provider',None)
     cand = nested_idx(ev, 'candidates', 0) or {}
     finish_reason = canon_finish(cand.get("finishReason"), 'gemini')
     parts = nested_idx(cand, 'content', 'parts') or []
     thinking = "".join(p.get("text","") for p in parts if p.get("thought") and "text" in p)
     txt = "".join(p.get("text","") for p in parts if not p.get("thought") and "text" in p)
     tcs = gemini_tool_calls(ev)
-    return Delta(text=txt, thinking=thinking, tool_calls=tcs, finish_reason=finish_reason,
-                 usage=usage_from_gemini(ev), raw=ev, **kwargs)
+    if ev.get("error"): raise api_error_from_event(ev)
+    return Delta(text=txt, thinking=thinking, tool_calls=tcs, finish_reason=finish_reason, usage=usage_from_gemini(ev), raw=ev, **kwargs)
 
 # %% ../nbs/02_streaming.ipynb #177cef9b
 def gemini_index_fn(d, typ, last_typ, last_idx):
@@ -214,13 +207,13 @@ def gemini_index_fn(d, typ, last_typ, last_idx):
     return last_idx + 1, last_idx + 1
 
 # %% ../nbs/02_streaming.ipynb #3e699dff
-_acollect_stream_gemini = partial(_acollect_stream, index_fn=gemini_index_fn, provider=provider.gemini)
+_acollect_stream_gemini = partial(_acollect_stream, index_fn=gemini_index_fn, api_name=ApiName.gemini)
 
 # %% ../nbs/02_streaming.ipynb #2232657a
-async def acollect_stream(it, model=None, provider=None):
-    _norm = {provider.openai: normalize_openai_response_event, provider.openai_chat: normalize_openai_chat_delta,
-             provider.anthropic: normalize_anthropic_event, provider.gemini: normalize_gemini_event}
-    _coll = {provider.openai: _acollect_stream_openai_responses, provider.openai_chat: _acollect_stream_openai_chat,
-             provider.anthropic: _acollect_stream_anthropic, provider.gemini: _acollect_stream_gemini}
-    if provider not in _norm: raise ValueError(f"Unknown provider: {provider}")
-    async for o in _coll[provider](norm_and_yield(it, _norm[provider]), model=model): yield o
+async def acollect_stream(it, model=None, api_name=None, vendor_name=None):
+    _norm = {ApiName.openai: normalize_openai_response_event, ApiName.openai_chat: normalize_openai_chat_delta,
+             ApiName.anthropic: normalize_anthropic_event, ApiName.gemini: normalize_gemini_event}
+    _coll = {ApiName.openai: _acollect_stream_openai_responses, ApiName.openai_chat: _acollect_stream_openai_chat,
+             ApiName.anthropic: _acollect_stream_anthropic, ApiName.gemini: _acollect_stream_gemini}
+    if api_name not in _norm: raise ValueError(f"Unknown api_name: {api_name}")
+    async for o in _coll[api_name](norm_and_yield(it, _norm[api_name]), model=model, vendor_name=vendor_name): yield o
