@@ -335,12 +335,17 @@ def denorm_anthropic_reasoning(v):
     if isinstance(v, dict): return v
     return {'type': 'enabled', 'budget_tokens': _ant_think_budgets.get(str(v).lower(), 4096)}
 
-_gem_think_budgets = dict(minimal=256, low=512, medium=1024, high=2048, max=4096)
-def denorm_gemini_reasoning(v):
-    "Map canonical reasoning_effort to Gemini thinkingConfig."
+_gem_think_budgets = dict(minimal=128, low=1024, medium=2048, high=4096)
+_gem_think_levels  = dict(minimal='low', low='low', medium='medium', high='high')
+
+def denorm_gemini_reasoning(v, model=''):
+    "Map canonical reasoning_effort to Gemini thinkingConfig (uses thinkingLevel for Gemini 3+)."
     if v is None: return None
     if isinstance(v, dict): return v
-    return {'thinkingBudget': _gem_think_budgets.get(str(v).lower(), 1024)}
+    k = str(v).lower()
+    # defaults to includeThoughts same as litellm
+    if 'gemini-3' in model: return {'thinkingLevel': _gem_think_levels.get(k, 'medium'), 'includeThoughts': True}
+    return {'thinkingBudget': _gem_think_budgets.get(str(v).lower(), 1024), 'includeThoughts': True}
 
 # %% ../nbs/03_acomplete.ipynb #542fc6d7
 _ext_mime = {
@@ -458,6 +463,7 @@ def _denorm_gem_file(p):
 
 # %% ../nbs/03_acomplete.ipynb #32ee2546
 vendor_mapping = {
+    "openai":       ('https://api.openai.com/v1', 'OPENAI_API_KEY'), # to explicitly choose responses/chat api
     "moonshot":     ("https://api.moonshot.ai/v1", "MOONSHOT_API_KEY"),
     "deepseek":     ("https://api.deepseek.com/v1", "DEEPSEEK_API_KEY"),
     "openrouter":   ("https://openrouter.ai/api/v1", "OPENROUTER_API_KEY"),
@@ -503,10 +509,11 @@ async def acomplete(msgs, model, stream=False, system=None, max_tokens=None, tem
     "Unified completion across different APIs."
     cli, api_name, vendor_name = mk_client(model, **kwargs)
     if api_name == ApiName.openai:
-        payload = dict(model=model, input=denorm_openai_responses_msgs(msgs), stream=stream)
+        payload = dict(model=model, input=denorm_openai_responses_msgs(msgs))
+        if stream: payload['stream'] = True
         if system:           payload['instructions'] = _sys_text(system)
         if max_tokens:       payload['max_output_tokens'] = max_tokens
-        if temperature:      payload['temperature'] = temperature
+        if temperature is not None: payload['temperature'] = temperature
         if tools:            payload['tools'] = denorm_openai_responses_tools(tools)
         if tool_choice:      payload['tool_choice'] = denorm_openai_responses_tool_choice(tool_choice)
         if reasoning_effort: payload['reasoning'] = denorm_openai_responses_reasoning(reasoning_effort)
@@ -515,11 +522,11 @@ async def acomplete(msgs, model, stream=False, system=None, max_tokens=None, tem
         return normalize_openai_response(resp, model=model, api_name=api_name, vendor_name=vendor_name)
 
     elif api_name == ApiName.openai_chat:
-        payload = dict(model=model, messages=denorm_openai_chat_msgs(msgs), stream=stream)
+        payload = dict(model=model, messages=denorm_openai_chat_msgs(msgs))
         if system:           payload['messages'].insert(0, {'role': 'system', 'content': _sys_text(system)})
-        if stream: payload['stream_options'] = {"include_usage": True}
+        if stream: payload.update(stream=True, stream_options={"include_usage": True})
         if max_tokens:       payload['max_tokens'] = max_tokens
-        if temperature:      payload['temperature'] = temperature
+        if temperature is not None: payload['temperature'] = temperature
         if tools:            payload['tools'] = denorm_openai_chat_tools(tools)
         if tool_choice:      payload['tool_choice'] = denorm_openai_chat_tool_choice(tool_choice)
         if reasoning_effort: payload['reasoning_effort'] = denorm_openai_chat_reasoning(reasoning_effort)
@@ -528,14 +535,15 @@ async def acomplete(msgs, model, stream=False, system=None, max_tokens=None, tem
         return normalize_openai_chat_completion(resp, model=model, api_name=api_name, vendor_name=vendor_name)
 
     elif api_name == ApiName.anthropic:
-        payload = dict(model=model, messages=denorm_anthropic_msgs(msgs), max_tokens=max_tokens or 1024, stream=stream)
+        payload = dict(model=model, messages=denorm_anthropic_msgs(msgs), max_tokens=max_tokens or 1024)
+        if stream: payload['stream'] = True
         if system:
             if isinstance(system, Part):
                 block = {'type': 'text', 'text': system.text or ''}
                 if (cc := (system.data or {}).get('cache_control')): block['cache_control'] = cc
                 payload['system'] = [block]
             else: payload['system'] = system
-        if temperature:      payload['temperature'] = temperature
+        if temperature is not None: payload['temperature'] = temperature
         if tools:            payload['tools'] = denorm_anthropic_tools(tools)
         tc = denorm_anthropic_tool_choice(tool_choice)
         if tc:               payload['tool_choice'] = tc
@@ -551,8 +559,8 @@ async def acomplete(msgs, model, stream=False, system=None, max_tokens=None, tem
     elif api_name == ApiName.gemini:
         gen_config = {}
         if max_tokens:       gen_config['maxOutputTokens'] = max_tokens
-        if temperature:      gen_config['temperature'] = temperature
-        think = denorm_gemini_reasoning(reasoning_effort)
+        if temperature is not None: gen_config['temperature'] = temperature
+        think = denorm_gemini_reasoning(reasoning_effort,model)
         if think:            gen_config['thinkingConfig'] = think
         payload = dict(model=model, contents=denorm_gemini_msgs(msgs))
         if system:           payload['system_instruction'] = {'parts': [{'text': _sys_text(system)}]}
