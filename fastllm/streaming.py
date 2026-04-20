@@ -46,12 +46,14 @@ def normalize_openai_response_event(ev, **kwargs):
 
 # %% ../nbs/02_streaming.ipynb #7e355d46
 async def _acollect_stream_openai_responses(it, model=None, api_name=ApiName.openai, vendor_name='openai'):
-    "Collect a Delta stream, yielding incremental chunks and a final StreamSummary."
+    "Collect a Delta stream, yielding incremental chunks and a final normalized response."
     async for d in it:
         if d.text:     yield {'text': d.text}
         if d.thinking: yield {'thinking': d.thinking}
-    if d.raw['type'] == 'response.completed':
-        yield normalize_openai_response(d.raw['response'], model, api_name=api_name, vendor_name=vendor_name)
+        t = d.raw.get('type')
+        if t == 'response.failed': raise api_error_from_event(d.raw)
+        if t in ('response.completed', 'response.incomplete'):
+            yield normalize_openai_response(d.raw['response'], model, api_name=api_name, vendor_name=vendor_name)
 
 # %% ../nbs/02_streaming.ipynb #fe2464b3
 @dataclass
