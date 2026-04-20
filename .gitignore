@@ -1,3 +1,5 @@
+**/specs/*.ipynb
+
 .DS_Store
 
 # Python bytecode/cache

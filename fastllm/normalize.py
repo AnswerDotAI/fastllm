@@ -265,7 +265,9 @@ def normalize_gemini_generate(resp, model, api_name=ApiName.gemini, vendor_name=
             tc = tc_map.get(fc.get('id'))
             if tc: parts.append(Part(type=PartType.tool_use, data=dict(id=tc.id, name=tc.name, arguments=tc.arguments, server=tc.server, **tc.extra)))
         else: parts.append(Part(type=typ, text=p.get("text",""), data=p))
-    if not parts: parts = [Part(type=PartType.text, text="")]
+    if citations := nested_idx(c0, 'groundingMetadata'):
+        for p in parts: 
+            if p.type == PartType.text: p.data['citations'] = citations
     return Completion(
         model=model,
         message=Msg(role="assistant", content=parts),

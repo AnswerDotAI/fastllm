@@ -29,6 +29,9 @@ version = {attr = "fastllm.__version__"}
 [tool.setuptools.packages.find]
 include = ["fastllm"]
 
+[tool.setuptools.package-data]
+fastllm = ["specs/*.yml", "specs/*.json"]
+
 [tool.nbdev]
 nbs_path = "nbs"
 recursive = false
