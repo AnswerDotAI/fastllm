@@ -24,6 +24,7 @@ class Delta:
     thinking: str = ""
     refusal: str = ""
     tool_calls: list[ToolCall] = field(default_factory=list)
+    citations: list = field(default_factory=list)
     server_tool_result: dict = None
     finish_reason: str = None
     usage: Usage = None
@@ -61,11 +62,11 @@ class PartAccum:
     parts: dict[Part|ToolCall] = field(default_factory=dict)
     tool_calls: list[ToolCall] = field(default_factory=list)
     
-    def append(self, typ, index, txt=None, **tc_kwargs):
+    def append(self, typ, index, txt='', citations=None, **tc_kwargs):
         'Create and accumulate same type sequential parts'
         if index not in self.parts: 
             if typ==PartType.tool_use: self.parts[index] = ToolCall(**tc_kwargs)
-            else:                      self.parts[index] = Part(type=typ, text=txt)
+            else:                      self.parts[index] = Part(type=typ, text=txt, data=dict(citations=citations or []))
         else:
             if typ==PartType.tool_use:
                     new_args = tc_kwargs.get('arguments', '')
@@ -73,21 +74,32 @@ class PartAccum:
                     if isinstance(new_args, str) and isinstance(cur_args, str): self.parts[index].arguments += new_args
                     elif isinstance(new_args, str) and isinstance(cur_args, dict): self.parts[index].arguments = new_args
                     else: self.parts[index].arguments = new_args
-            else:                      self.parts[index] = Part(type=typ, text=(self.parts[index].text or '') + txt)
+            else: 
+                self.parts[index].text += txt
+                # anthropic citations have matching idx
+                self.parts[index].data['citations'].extend(citations or [])
     
-    def finalize(self):
+    def finalize(self, api_name=None):
         for idx,tc in self.parts.items():
             if isinstance(tc, ToolCall):
                 if isinstance(tc.arguments, str): tc.arguments = json.loads(tc.arguments)
                 self.tool_calls.append(tc)
                 self.parts[idx] = Part(type=PartType.tool_use, data=dict(id=tc.id, name=tc.name, arguments=tc.arguments, server=tc.server, **tc.extra))
-        # Merge consecutive same-type text/thinking parts
+        
+        # Don't merge for Anthropic to be able to keep text and citations grouped
         merged = []
         for p in self.parts.values():
-            if merged and merged[-1].type == p.type and p.type in (PartType.text, PartType.thinking):
-                merged[-1] = Part(type=p.type, text=(merged[-1].text or '') + (p.text or ''))
+            if api_name != ApiName.anthropic and merged and merged[-1].type == p.type and p.type in (PartType.text, PartType.thinking):
+                merged[-1].text += p.text
+                merged[-1].data['citations'].extend(p.data['citations'])
             else: merged.append(p)
         self.parts = merged
+    
+        # Broadcast: unlike anthropic gemini returns grounding metadata at the final event
+        if api_name == ApiName.gemini:
+            if citations:=self.parts[-1].data.get('citations'):
+                for p in self.parts: 
+                    if p.type == PartType.text: p.data['citations'] = citations
 
 # %% ../nbs/02_streaming.ipynb #73b6af74
 async def _acollect_stream(it, index_fn, model=None, api_name=None, vendor_name=None):
@@ -106,6 +118,11 @@ async def _acollect_stream(it, index_fn, model=None, api_name=None, vendor_name=
             typ = PartType.thinking
             idx,last_idx = index_fn(d, typ, last_typ, last_idx)
             part_accum.append(typ, idx, d.thinking)
+        if d.citations:
+            yield {'citations': d.citations} # anthropic
+            typ = PartType.text
+            idx,last_idx = index_fn(d, typ, last_typ, last_idx)
+            part_accum.append(typ, idx, citations=d.citations)
         for tc in d.tool_calls:
             args = tc.arguments.get('_delta', '') if '_delta' in tc.arguments else tc.arguments
             tc_kwargs = dict(id=tc.id, name=tc.name, arguments=args, server=tc.server, extra=tc.extra)
@@ -124,8 +141,9 @@ async def _acollect_stream(it, index_fn, model=None, api_name=None, vendor_name=
         if d.usage: usg = d.usage
         last_typ = typ
         deltas.append(d)
-    part_accum.finalize()
+    part_accum.finalize(api_name)
     fin = canon_finish(fin, api_name, part_accum.tool_calls) # need to canon one more time with accum'd tool calls
+    # tool calls and non-anthropic citations are yielded at the end
     yield Completion(d.raw.get('model', model),
             message=Msg(role="assistant", content=part_accum.parts),
             finish_reason=fin,
@@ -164,7 +182,7 @@ def normalize_openai_chat_delta(ev, **kwargs):
 # %% ../nbs/02_streaming.ipynb #abd27355
 def normalize_anthropic_event(ev, **kwargs):
     typ = ev.get("type")
-    text, thinking, tcs = None, None, [] 
+    text, thinking, tcs, citations = None, None, [], None
     if typ == "content_block_start":
         cb = ev.get("content_block", {})
         if cb.get("type", "").endswith("_tool_result"): return Delta(server_tool_result=cb, raw=ev, **kwargs)
@@ -172,15 +190,17 @@ def normalize_anthropic_event(ev, **kwargs):
     elif typ == "content_block_delta":
         d = ev.get("delta", {})
         dtyp = d.get("type")
-        if dtyp == "text_delta": text = d.get("text")
+        if   dtyp == "text_delta": text = d.get("text")
         elif dtyp == "thinking_delta": thinking = d.get("thinking")
         elif dtyp == "input_json_delta":
             tcs = [ToolCall(id=str(ev.get("index", "")), name="", arguments={"_delta": d.get("partial_json", '')})]
+        elif dtyp == "citations_delta": 
+            citations = listify(d.get('citation',[]))
     elif typ == "message_delta":
         fin = canon_finish(nested_idx(ev, 'delta', 'stop_reason'), 'anthropic')
         return Delta(finish_reason=fin, usage=usage_from_anthropic(ev), raw=ev, **kwargs)
     elif typ == "error": raise api_error_from_event(ev)
-    return Delta(text=text, thinking=thinking, tool_calls=tcs, raw=ev, **kwargs)
+    return Delta(text=text, thinking=thinking, tool_calls=tcs, citations=citations, raw=ev, **kwargs)
 
 # %% ../nbs/02_streaming.ipynb #56eeb60f
 def anthropic_index_fn(d, typ, last_typ, last_idx):
@@ -200,7 +220,7 @@ def normalize_gemini_event(ev, **kwargs):
     txt = "".join(p.get("text","") for p in parts if not p.get("thought") and "text" in p)
     tcs = gemini_tool_calls(ev)
     if ev.get("error"): raise api_error_from_event(ev)
-    return Delta(text=txt, thinking=thinking, tool_calls=tcs, finish_reason=finish_reason, usage=usage_from_gemini(ev), raw=ev, **kwargs)
+    return Delta(text=txt, thinking=thinking, tool_calls=tcs, citations=listify(cand.get('groundingMetadata', [])), finish_reason=finish_reason, usage=usage_from_gemini(ev), raw=ev, **kwargs)
 
 # %% ../nbs/02_streaming.ipynb #177cef9b
 def gemini_index_fn(d, typ, last_typ, last_idx):

@@ -161,7 +161,8 @@ def openai_responses_parts(resp):
     for item in resp["output"]:
         if (typ:=item["type"]) == "message":
             for c in item["content"]:
-                if (ctyp := c["type"]) == "output_text": 
+                if (ctyp := c["type"]) == "output_text":
+                    c['citations'] = c.pop('annotations', [])
                     parts.append(Part(type=PartType.text, text=c['text'], data=c))
                 elif ctyp == "refusal":
                     parts.append(Part(type=PartType.refusal, text=c['refusal'], data=c))
@@ -193,8 +194,8 @@ def normalize_openai_chat_completion(resp, model, api_name=ApiName.openai_chat, 
     msg = nested_idx(resp, 'choices', 0, 'message') or {}
     parts = []
     if thinking := msg.get('reasoning_content'): parts.append(Part(type="thinking", text=thinking))
-    if cts := msg.get('content'): parts.append(Part(type="text", text=cts))
-    if ref := msg.get('refusal'): parts.append(Part(type="refusal", text=ref))
+    if cts := msg.get('content'): parts.append(Part(type="text",text=cts,data=dict(citations=msg.get('annotations',[]))))
+    if ref := msg.get('refusal'): parts.append(Part(type="refusal",text=ref))
     tcs = openai_chat_tool_calls(resp)
     for tc in tcs: parts.append(Part(type="tool_use", data=dict(id=tc.id, name=tc.name, arguments=tc.arguments, server=tc.server, **tc.extra)))
     return Completion(
@@ -210,12 +211,7 @@ def normalize_openai_chat_completion(resp, model, api_name=ApiName.openai_chat, 
 # %% ../nbs/01_normalize.ipynb #35de7b1a
 def _ant_part_type(typ):
     "Map Anthropic content block type to canonical PartType."
-    ant_parts_mapping = {'text':PartType.text, 
-                         'thinking':PartType.thinking, 
-                         'redacted_thinking':PartType.thinking, 
-                         'tool_use':PartType.tool_use, 
-                         'server_tool_use':PartType.tool_use,
-                         'mcp_tool_use':PartType.tool_use}
+    ant_parts_mapping = dict(text=PartType.text, thinking=PartType.thinking, redacted_thinking=PartType.thinking, tool_use=PartType.tool_use, server_tool_use=PartType.tool_use, mcp_tool_use=PartType.tool_use)
     if typ in ant_parts_mapping: return ant_parts_mapping[typ]
     if typ.endswith('_tool_result'): return PartType.server_tool_result
     return typ
@@ -229,10 +225,9 @@ def normalize_anthropic_message(resp, model, api_name=ApiName.anthropic, vendor_
         typ = _ant_part_type(b.get("type", "text"))
         if typ == PartType.thinking: parts.append(Part(type=PartType.thinking, text=b.get("thinking", ""), data=b))
         elif typ == "tool_use":
-            tc = tc_map.get(b.get("id"))
-            if tc: parts.append(Part(type=PartType.tool_use, data=dict(id=tc.id, name=tc.name, arguments=tc.arguments, server=tc.server, **tc.extra)))
+            if tc:=tc_map.get(b.get("id")): 
+                parts.append(Part(type=PartType.tool_use, data=dict(id=tc.id, name=tc.name, arguments=tc.arguments, server=tc.server, **tc.extra)))
         else: parts.append(Part(type=typ, text=b.get("text", ""), data=b))
-    if not parts: parts = [Part(type=PartType.text, text="")]
     return Completion(
         model=resp.get("model") or model,
         message=Msg(role="assistant", content=parts),
@@ -254,18 +249,17 @@ def _gem_part_type(p):
 def normalize_gemini_generate(resp, model, api_name=ApiName.gemini, vendor_name='gemini'):
     "Normalize Gemini generateContent response."
     c0 = nested_idx(resp, 'candidates', 0) or {}
-    gem_parts = nested_idx(c0, 'content', 'parts') or []
     tcs = gemini_tool_calls(resp)
     tc_map = {tc.id: tc for tc in tcs}
     parts = []
-    for p in gem_parts:
+    for p in nested_idx(c0, 'content', 'parts') or []:
         typ = _gem_part_type(p)
         if typ == 'tool_use':
             fc = p.get('functionCall') or p.get('toolCall') or {}
             tc = tc_map.get(fc.get('id'))
             if tc: parts.append(Part(type=PartType.tool_use, data=dict(id=tc.id, name=tc.name, arguments=tc.arguments, server=tc.server, **tc.extra)))
         else: parts.append(Part(type=typ, text=p.get("text",""), data=p))
-    if citations := nested_idx(c0, 'groundingMetadata'):
+    if citations := c0.get('groundingMetadata'):
         for p in parts: 
             if p.type == PartType.text: p.data['citations'] = citations
     return Completion(

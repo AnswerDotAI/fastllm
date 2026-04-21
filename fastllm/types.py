@@ -11,7 +11,7 @@ from fastcore.utils import *
 from fastspec.errors import *
 
 # %% ../nbs/00_types.ipynb #e568bade
-@dataclass(frozen=True)
+@dataclass
 class Part:
     "A normalized content part."
     type: str
@@ -23,7 +23,7 @@ PartType = str_enum('PartType', 'text', 'thinking', 'refusal', 'tool_use', 'serv
                     'input_image', 'input_audio', 'input_video', 'input_file')
 
 # %% ../nbs/00_types.ipynb #afeb9eef
-@dataclass(frozen=True)
+@dataclass
 class Msg:
     "A normalized message."
     role: str
