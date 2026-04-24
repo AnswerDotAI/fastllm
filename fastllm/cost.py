@@ -25,13 +25,18 @@ def model_prices_meta(): return urljson(model_prices_url)
 
 # %% ../nbs/04_cost.ipynb #08cef35a
 @flexicache(time_policy(24*60*60))
-def get_model_meta(model, vendor_name=None):
+def get_model_meta(model, vendor_name=None, tfm=noop):
     "Look up cost metadata for `model` from litellm price map, using `vendor_name` prefix if needed."
+    if vendor_name is None:
+        if "claude" in model: vendor_name = 'anthropic'
+        if "gemini" in model: vendor_name = 'gemini'
+        if "gpt" in model:    vendor_name = 'openai'
+
     mp = model_prices_meta()
-    if model in mp: return mp[model]
-    if vendor_name=='gemini' and model.startswith('models/'): key = f"gemini/{model.removeprefix('models/')}"
-    elif vendor_name:                                         key = f"{vendor_name}/{model}"
-    return dict2obj(mp.get(key))
+    if model in mp: key = model
+    elif vendor_name=='gemini' and model.startswith('models/'): key = f"gemini/{model.removeprefix('models/')}"
+    elif vendor_name:                                           key = f"{vendor_name}/{model}"
+    return dict2obj(tfm(mp.get(key), model, vendor_name))
 
 # %% ../nbs/04_cost.ipynb #47d9d2e4
 @patch(as_prop=True)

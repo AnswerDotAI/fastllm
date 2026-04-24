@@ -86,20 +86,27 @@ class PartAccum:
                 self.tool_calls.append(tc)
                 self.parts[idx] = Part(type=PartType.tool_use, data=dict(id=tc.id, name=tc.name, arguments=tc.arguments, server=tc.server, **tc.extra))
         
-        # Don't merge for Anthropic to be able to keep text and citations grouped
+        # # Don't merge for Anthropic to be able to keep text and citations grouped
+        # merged = []
+        # for p in self.parts.values():
+        #     if api_name != ApiName.anthropic and merged and merged[-1].type == p.type and p.type in (PartType.text, PartType.thinking):
+        #         merged[-1].text += p.text
+        #         merged[-1].data['citations'].extend(p.data['citations'])
+        #     else: merged.append(p)
+
+        # # Broadcast: unlike anthropic gemini returns grounding metadata at the final event
+        # if api_name == ApiName.gemini:
+        #     if citations:=merged[-1].data.get('citations'):
+        #         for p in merged: 
+        #             if p.type == PartType.text: p.data['citations'] = citations
+
+        # No need to preserve citations in Part.data, we just emit in `_acollect_stream`
         merged = []
         for p in self.parts.values():
-            if api_name != ApiName.anthropic and merged and merged[-1].type == p.type and p.type in (PartType.text, PartType.thinking):
-                merged[-1].text += p.text
-                merged[-1].data['citations'].extend(p.data['citations'])
+            if merged and merged[-1].type == p.type and p.type in (PartType.text, PartType.thinking): merged[-1].text += p.text
             else: merged.append(p)
+        
         self.parts = merged
-    
-        # Broadcast: unlike anthropic gemini returns grounding metadata at the final event
-        if api_name == ApiName.gemini:
-            if citations:=self.parts[-1].data.get('citations'):
-                for p in self.parts: 
-                    if p.type == PartType.text: p.data['citations'] = citations
 
 # %% ../nbs/02_streaming.ipynb #73b6af74
 async def _acollect_stream(it, index_fn, model=None, api_name=None, vendor_name=None):

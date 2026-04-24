@@ -8,15 +8,16 @@ __all__ = ['specs_path', 'ant_spec', 'oai_spec', 'gem_spec', 'vendor_mapping', '
            'denorm_openai_responses_msgs', 'denorm_openai_chat_tool_use', 'denorm_openai_chat_assistant',
            'denorm_openai_chat_tool', 'denorm_openai_chat_msgs', 'denorm_anthropic_tool_use',
            'denorm_anthropic_assistant', 'denorm_anthropic_tool', 'denorm_anthropic_msgs', 'denorm_gemini_tool_use',
-           'denorm_gemini_assistant', 'denorm_gemini_tool', 'denorm_gemini_msgs', 'denorm_openai_responses_tools',
-           'denorm_openai_chat_tools', 'denorm_anthropic_tools', 'denorm_gemini_tools',
+           'denorm_gemini_assistant', 'denorm_gemini_tool', 'denorm_gemini_msgs', 'denorm_openai_responses_tool_schs',
+           'denorm_openai_chat_tool_schs', 'denorm_anthropic_tool_schs', 'denorm_gemini_tool_schs',
            'denorm_openai_responses_tool_choice', 'denorm_openai_chat_tool_choice', 'denorm_anthropic_tool_choice',
            'denorm_gemini_tool_choice', 'denorm_openai_responses_reasoning', 'denorm_openai_chat_reasoning',
            'denorm_anthropic_reasoning', 'denorm_gemini_reasoning', 'denorm_openai_chat_web_search',
            'denorm_openai_responses_web_search', 'denorm_anthropic_web_search', 'denorm_gemini_web_search',
            'denorm_openai_responses_user', 'denorm_openai_chat_user', 'denorm_anthropic_user', 'denorm_gemini_user',
            'denorm_openai_responses_tool_result', 'denorm_openai_chat_tool_result', 'denorm_anthropic_tool_result',
-           'denorm_gemini_tool_result', 'infer_api_name', 'mk_client', 'ContextWindowExceededError', 'acomplete']
+           'denorm_gemini_tool_result', 'infer_api_name', 'mk_client', 'ContextWindowExceededError', 'payload_kwargs',
+           'acomplete']
 
 # %% ../nbs/03_acomplete.ipynb #f2f57253
 import nbdev, yaml, json
@@ -59,16 +60,15 @@ def denorm_openai_responses_tool(m:Msg):
         if part.type == PartType.tool_result: items.append(denorm_openai_responses_tool_result(part))
     return items
 
-# %% ../nbs/03_acomplete.ipynb #2d738251
+# %% ../nbs/03_acomplete.ipynb #50bb39b7
 def denorm_openai_responses_assistant(m:Msg):
     items, srv_call_id = [], None
     for p in m.content:
         if p.type == PartType.tool_use:
             items.append(denorm_openai_responses_tool_use(p))
-            srv_call_id = p.data.get('id') if p.data.get('server') else None
-        elif p.type in (PartType.text, PartType.thinking) and srv_call_id:
-            items.append(dict(type='function_call_output', call_id=srv_call_id, output=p.text or ''))
-            srv_call_id = None
+            if p.data.get('server'): 
+                srv_txt = f"[Server tool `{p.data['name']}` executed successfully, results are generated below]"
+                items.append(dict(type='function_call_output', call_id=p.data['id'], output=srv_txt))    
         elif p.type in (PartType.text, PartType.thinking):
             items.append(dict(type="message", role="assistant", content=[dict(type="output_text", text=p.text)]))
     return items
@@ -89,16 +89,16 @@ def denorm_openai_chat_tool_use(p:Part):
 
 def denorm_openai_chat_assistant(m:Msg):
     "Convert canonical assistant Msg to OpenAI Chat assistant message + synthetic tool responses for server tools."
-    tcs = [denorm_openai_chat_tool_use(p) for p in m.content if p.type == PartType.tool_use]
-    msg, srv_responses, non_srv_texts, srv_call_id = dict(role='assistant'), [], [], None
+    tcs, srv_responses, texts = [], [], []
     for p in m.content:
         if p.type == PartType.tool_use:
-            srv_call_id = p.data.get('id') if p.data.get('server') else None
-        elif p.type in (PartType.text, PartType.thinking) and srv_call_id:
-            srv_responses.append(dict(role='tool', tool_call_id=srv_call_id, content=p.text or ''))
-            srv_call_id = None
-        elif p.type == PartType.text: non_srv_texts.append(p)
-    if non_srv_texts: msg['content'] = non_srv_texts[0].text if len(non_srv_texts)==1 else [dict(type='text', text=p.text or '') for p in non_srv_texts]
+            tcs.append(denorm_openai_chat_tool_use(p))
+            if p.data.get('server'):
+                srv_txt = f"[Server tool `{p.data['name']}` executed successfully, results are generated]"
+                srv_responses.append(dict(role='tool', tool_call_id=p.data['id'], content=srv_txt))
+        elif p.type == PartType.text: texts.append(p)
+    msg = dict(role='assistant')
+    if texts: msg['content'] = texts[0].text if len(texts)==1 else [dict(type='text', text=p.text or '') for p in texts]
     if tcs: msg['tool_calls'] = tcs
     thinking = [p for p in m.content if p.type == PartType.thinking]
     if thinking: msg['reasoning_content'] = ''.join(p.text or '' for p in thinking)
@@ -215,7 +215,7 @@ def _fn_schema(t):
         return t.get('name',''), t.get('description',''), t.get('parameters', t.get('input_schema',{}))
     return None
 
-def denorm_openai_responses_tools(tools):
+def denorm_openai_responses_tool_schs(tools):
     "Convert canonical tools to OpenAI Responses format."
     out = []
     for t in tools:
@@ -225,11 +225,11 @@ def denorm_openai_responses_tools(tools):
         out.append(dict(type='function', name=name, description=desc, parameters=params))
     return out
 
-def denorm_openai_chat_tools(tools):
+def denorm_openai_chat_tool_schs(tools):
     "Passthrough — canonical format is already OpenAI Chat."
     return tools
 
-def denorm_anthropic_tools(tools):
+def denorm_anthropic_tool_schs(tools):
     "Convert canonical tools to Anthropic format."
     out = []
     for t in tools:
@@ -239,7 +239,7 @@ def denorm_anthropic_tools(tools):
         out.append(dict(name=name, description=desc, input_schema=params))
     return out
 
-def denorm_gemini_tools(tools):
+def denorm_gemini_tool_schs(tools):
     "Convert canonical tools to Gemini format."
     fn_decls, other = [], []
     for t in tools:
@@ -257,33 +257,29 @@ _tc_modes = {'auto', 'required', 'any', 'force', 'none', 'off', 'disabled'}
 def denorm_openai_responses_tool_choice(v):
     "Map canonical tool_choice to OpenAI Responses format."
     if v is None: return None
-    s = str(v).strip().lower()
-    if s in _tc_modes: return s if s in ('auto','none','required') else {'auto':'auto','any':'required','force':'required','off':'none','disabled':'none'}[s]
+    if v in _tc_modes: return v if v in ('auto','none','required') else {'auto':'auto','any':'required','force':'required','off':'none','disabled':'none'}[v]
     return {'type': 'function', 'name': v}
 
 def denorm_openai_chat_tool_choice(v):
     "Map canonical tool_choice to OpenAI Chat format."
     if v is None: return None
-    s = str(v).strip().lower()
-    if s in _tc_modes: return s if s in ('auto','none','required') else {'any':'required','force':'required','off':'none','disabled':'none'}[s]
+    if v in _tc_modes: return v if v in ('auto','none','required') else {'any':'required','force':'required','off':'none','disabled':'none'}[v]
     return {'type': 'function', 'function': {'name': v}}
 
 def denorm_anthropic_tool_choice(v):
     "Map canonical tool_choice to Anthropic format."
     if v is None: return None
-    s = str(v).strip().lower()
-    if s in ('auto',):                    return {'type': 'auto'}
-    if s in ('required', 'any', 'force'): return {'type': 'any'}
-    if s in ('none', 'off', 'disabled'):  return None
+    if v in ('auto',):                    return {'type': 'auto'}
+    if v in ('required', 'any', 'force'): return {'type': 'any'}
+    if v in ('none', 'off', 'disabled'):  return None
     return {'type': 'tool', 'name': v}
 
 def denorm_gemini_tool_choice(v):
     "Map canonical tool_choice to Gemini toolConfig."
     if v is None: return None
-    s = str(v).strip().lower()
-    if s in ('auto',):                    return {'functionCallingConfig': {'mode': 'AUTO'}}
-    if s in ('required', 'any', 'force'): return {'functionCallingConfig': {'mode': 'ANY'}}
-    if s in ('none', 'off', 'disabled'):  return {'functionCallingConfig': {'mode': 'NONE'}}
+    if v in ('auto',):                    return {'functionCallingConfig': {'mode': 'AUTO'}}
+    if v in ('required', 'any', 'force'): return {'functionCallingConfig': {'mode': 'ANY'}}
+    if v in ('none', 'off', 'disabled'):  return {'functionCallingConfig': {'mode': 'NONE'}}
     return {'functionCallingConfig': {'mode': 'ANY', 'allowedFunctionNames': [v]}}
 
 # %% ../nbs/03_acomplete.ipynb #acf4c79e
@@ -336,6 +332,26 @@ def denorm_anthropic_web_search(v):
     return t
 
 def denorm_gemini_web_search(v): return {"googleSearch": {}}
+
+# %% ../nbs/03_acomplete.ipynb #fe53537f
+def _sys_text(system):
+    "Extract text from system (str or Part)."
+    if system is None: return None
+    return system if isinstance(system, str) else system.text
+
+# %% ../nbs/03_acomplete.ipynb #2f50f51f
+def _part_txt(p): return p.text if isinstance(p,Part) else p
+def _denorm_openai_responses_system(sp):  return _sys_text(_part_txt(sp))
+def _denorm_openai_chat_system(sp, msgs): 
+    msgs.insert(0, dict(role='system', content=_sys_text(_part_txt(sp))))
+    return msgs
+def _denorm_anthropic_system(sp): 
+    if isinstance(sp, Part):
+        block = dict(type='text', text=sp.text)
+        if (cc := (sp.data or {}).get('cache_control')): block['cache_control'] = cc
+        return [block]
+    else: return sp
+def _denorm_gemini_system(sp): return dict(parts=[{'text': _sys_text(_part_txt(sp))}])
 
 # %% ../nbs/03_acomplete.ipynb #542fc6d7
 _ext_mime = {
@@ -452,7 +468,7 @@ def denorm_openai_responses_tool_result(m:Part):
         out = []
         for p in m.text:
             if   p.type == PartType.text:        out.append({"type": "input_text", "text": p.text or ""})
-            elif p.type == PartType.input_image: out.append(_denorm_oai_resp_media(p))
+            elif p.type == PartType.input_image: out.append(_denorm_oai_resp_image(p))
             elif p.type == PartType.input_file:  out.append(_denorm_oai_resp_file(p))
             else: raise ValueError(f"OpenAI Responses tool_result does not support {p.type}")
         return dict(type='function_call_output', call_id=cid, output=out)
@@ -473,7 +489,7 @@ def denorm_anthropic_tool_result(p:Part):
         blocks = []
         for pp in p.text:
             if   pp.type == PartType.text:        blocks.append({"type": "text", "text": pp.text or ""})
-            elif pp.type == PartType.input_image: blocks.append(_denorm_ant_media(pp))
+            elif pp.type == PartType.input_image: blocks.append(_denorm_ant_image(pp))
             elif pp.type == PartType.input_file:  blocks.append(_denorm_ant_file(pp))
             else: raise ValueError(f"Anthropic tool_result does not support {pp.type}")
         return _ant_cc(dict(type='tool_result', tool_use_id=tid, content=blocks), p)
@@ -489,7 +505,7 @@ def denorm_gemini_tool_result(p:Part):
         parts = []
         for pp in p.text:
             if   pp.type == PartType.text:        parts.append({"text": pp.text or ""})
-            elif pp.type == PartType.input_image: parts.append(_denorm_gem_media(pp))
+            elif pp.type == PartType.input_image: parts.append(_denorm_gem_image(pp))
             elif pp.type == PartType.input_file:  parts.append(_denorm_gem_file(pp))
             else: raise ValueError(f"Gemini tool_result does not support {pp.type}")
         fr['parts'] = parts
@@ -522,14 +538,16 @@ def mk_client(model, api_name=None, vendor_name=None, env_api_key=None, base_url
     elif api_name == ApiName.anthropic: spec, hdrs, vendor_name = ant_spec, {"x-api-key": os.environ['ANTHROPIC_API_KEY'], "anthropic-version": "2023-06-01"}, 'anthropic'
     elif api_name == ApiName.gemini:    spec, hdrs, vendor_name = gem_spec, {"x-goog-api-key": os.environ['GEMINI_API_KEY']}, 'gemini'
     elif api_name == ApiName.openai_chat:
-        valid_names = ', '.join(list(vendor_mapping.keys()))
-        if not (env_api_key and base_url):
-            if not vendor_name: raise ValueError(f"Model: '{model}' can't be auto inferred please pass a valid `vendor_name` : {valid_names} or `env_api_key` and `base_url`")
-            try: base_url, env_api_key = vendor_mapping[vendor_name]
-            except: raise ValueError(f"Vendor '{vendor_name}' can't be auto inferred please pass a valid one : {valid_names} or pass `env_api_key` and `base_url`")
-        cli = OpenAPIClient(oai_spec, headers={"Authorization": f"Bearer {os.environ[env_api_key]}"})
-        for op in cli.ops: op.base_url = base_url
-        return cli, api_name, vendor_name
+        if "gpt" in model: spec, hdrs, vendor_name = oai_spec, {"Authorization": f"Bearer {os.environ['OPENAI_API_KEY']}"}, 'openai'
+        else:
+            valid_names = ', '.join(list(vendor_mapping.keys()))
+            if not (env_api_key and base_url):
+                if not vendor_name: raise ValueError(f"Model: '{model}' can't be auto inferred please pass a valid `vendor_name` : {valid_names} or `env_api_key` and `base_url`")
+                try: base_url, env_api_key = vendor_mapping[vendor_name]
+                except: raise ValueError(f"Vendor '{vendor_name}' can't be auto inferred please pass a valid one : {valid_names} or pass `env_api_key` and `base_url`")
+            cli = OpenAPIClient(oai_spec, headers={"Authorization": f"Bearer {os.environ[env_api_key]}"})
+            for op in cli.ops: op.base_url = base_url
+            return cli, api_name, vendor_name
     return OpenAPIClient(spec, headers=merge(hdrs, xtra_hdrs)), api_name, vendor_name
 
 # %% ../nbs/03_acomplete.ipynb #df851a5c
@@ -566,76 +584,82 @@ async def _send(func, payload, norm, stream, model, api_name, vendor_name):
     if stream: return _classify_error_stream(acollect_stream(resp, model=model, api_name=api_name, vendor_name=vendor_name))
     return norm(resp, model=model, api_name=api_name, vendor_name=vendor_name)
 
-# %% ../nbs/03_acomplete.ipynb #09d01d6d
-def _sys_text(system):
-    "Extract text from system (str or Part)."
-    if system is None: return None
-    return system if isinstance(system, str) else system.text
+# %% ../nbs/03_acomplete.ipynb #32fb0e89
+def payload_kwargs(msgs, model, stream=False, system=None, max_tokens=None, temperature=None, tools=None, tool_choice=None, reasoning_effort=None, web_search_options=None): pass
 
-async def acomplete(msgs, model, stream=False, system=None, max_tokens=None, temperature=None, tools=None, tool_choice=None, reasoning_effort=None, web_search_options=None, api_name=None, vendor_name=None, env_api_key=None, base_url=None, xtra_hdrs={}):
+# %% ../nbs/03_acomplete.ipynb #48e17d85
+@delegates(payload_kwargs)
+def _mk_openai_responses_payload(msgs, model, **kwargs):
+    payload = dict(model=model, input=denorm_openai_responses_msgs(msgs))
+    if stream:=kwargs.get('stream'):        payload['stream'] = True
+    if sp:=kwargs.get('system'):            payload['instructions'] = _denorm_openai_responses_system(sp)
+    if mt:=kwargs.get('max_tokens'):        payload['max_output_tokens'] = mt
+    if tools:=kwargs.get('tools'):          payload['tools'] = denorm_openai_responses_tool_schs(tools)
+    if tchc:=kwargs.get('tool_choice'):     payload['tool_choice'] = denorm_openai_responses_tool_choice(tchc)
+    if thk:=kwargs.get('reasoning_effort'): payload['reasoning'] = denorm_openai_responses_reasoning(thk)
+    if (wopts:=kwargs.get('web_search_options')) is not None: payload.setdefault('tools', []).append(denorm_openai_responses_web_search(wopts))
+    if (temp:=kwargs.get('temperature')) is not None: payload['temperature'] = temp
+    return payload
+
+@delegates(payload_kwargs)
+def _mk_openai_chat_payload(msgs, model, **kwargs):
+    payload = dict(model=model, messages=denorm_openai_chat_msgs(msgs))
+    if sp:=kwargs.get('system'):            payload['messages'] = _denorm_openai_chat_system(sp, payload['messages'])
+    if kwargs.get('stream'):                payload.update(stream=True, stream_options={"include_usage": True})
+    if mt:=kwargs.get('max_tokens'):        payload['max_tokens'] = mt
+    if tools:=kwargs.get('tools'):          payload['tools'] = denorm_openai_chat_tool_schs(tools)
+    if tchc:=kwargs.get('tool_choice'):     payload['tool_choice'] = denorm_openai_chat_tool_choice(tchc)
+    if thk:=kwargs.get('reasoning_effort'): payload['reasoning_effort'] = denorm_openai_chat_reasoning(thk)
+    if (wopts:=kwargs.get('web_search_options')) is not None: payload['web_search_options'] = denorm_openai_chat_web_search(wopts)
+    if (temp:=kwargs.get('temperature')) is not None: payload['temperature'] = temp
+    return payload
+
+@delegates(payload_kwargs)
+def _mk_anthropic_payload(msgs, model, **kwargs):
+    payload = dict(model=model, messages=denorm_anthropic_msgs(msgs), max_tokens=kwargs.get('max_tokens') or 1024)
+    if kwargs.get('stream'):                payload['stream'] = True
+    if sp:=kwargs.get('system'):            payload['system'] = _denorm_anthropic_system(sp)
+    if tools:=kwargs.get('tools'):          payload['tools'] = denorm_anthropic_tool_schs(tools)
+    if tchc:=kwargs.get('tool_choice'):     payload['tool_choice'] = denorm_anthropic_tool_choice(tchc)
+    if thk:=kwargs.get('reasoning_effort'): payload.update(denorm_anthropic_reasoning(thk))
+    if (wopts:=kwargs.get('web_search_options')) is not None: payload.setdefault('tools', []).append(denorm_anthropic_web_search(wopts))
+    if (temp:=kwargs.get('temperature')) is not None: payload['temperature'] = temp
+    return payload
+
+@delegates(payload_kwargs)
+def _mk_gemini_payload(msgs, model, **kwargs):
+    payload = dict(model=model, contents=denorm_gemini_msgs(msgs))
+    if sp:=kwargs.get('system'): payload['system_instruction'] = _denorm_gemini_system(sp)
+    gen_config = {}
+    if mt:=kwargs.get('max_tokens'):        gen_config['maxOutputTokens'] = mt
+    if thk:=denorm_gemini_reasoning(kwargs.get('reasoning_effort'), model): gen_config['thinkingConfig'] = thk
+    if (temp:=kwargs.get('temperature')) is not None: gen_config['temperature'] = temp
+    if gen_config: payload['generation_config'] = gen_config
+    gem_tools = denorm_gemini_tool_schs(kwargs.get('tools')) if kwargs.get('tools') else []
+    if (wopts:=kwargs.get('web_search_options')) is not None: gem_tools.append(denorm_gemini_web_search(wopts))
+    if gem_tools:
+        payload['tools'] = gem_tools
+        has_fn  = any('functionDeclarations' in t for t in gem_tools)
+        has_srv = any(k in t for t in gem_tools for k in ('googleSearch','codeExecution','googleSearchRetrieval'))
+        if has_fn and has_srv: payload.setdefault('tool_config', {})['includeServerSideToolInvocations'] = True
+    if tchc:=denorm_gemini_tool_choice(kwargs.get('tool_choice')): payload.setdefault('tool_config', {}).update(tchc)
+    if kwargs.get('stream'): payload.update(stream=True, _query={"alt": "sse"})
+    return payload
+
+# %% ../nbs/03_acomplete.ipynb #d4adf642
+_payload_makers = {
+    ApiName.openai:      (_mk_openai_responses_payload, 'responses.create_response',       normalize_openai_response),
+    ApiName.openai_chat: (_mk_openai_chat_payload,      'chat.create_chat_completion',     normalize_openai_chat_completion),
+    ApiName.anthropic:   (_mk_anthropic_payload,        'messages.messages_post',          normalize_anthropic_message),
+    ApiName.gemini:      (_mk_gemini_payload,           'models.generate_content',         normalize_gemini_generate),
+}
+
+@delegates(payload_kwargs)
+async def acomplete(msgs, model, api_name=None, vendor_name=None, env_api_key=None, base_url=None, xtra_hdrs={}, **kwargs):
     "Unified completion across different APIs."
     cli, api_name, vendor_name = mk_client(model, api_name, vendor_name, env_api_key, base_url, xtra_hdrs)
-    if api_name == ApiName.openai:
-        payload = dict(model=model, input=denorm_openai_responses_msgs(msgs))
-        if stream:                  payload['stream'] = True
-        if system:                  payload['instructions'] = _sys_text(system)
-        if max_tokens:              payload['max_output_tokens'] = max_tokens
-        if temperature is not None: payload['temperature'] = temperature
-        if tools:                   payload['tools'] = denorm_openai_responses_tools(tools)
-        if web_search_options is not None: payload.setdefault('tools', []).append(denorm_openai_responses_web_search(web_search_options))
-        if tool_choice:      payload['tool_choice'] = denorm_openai_responses_tool_choice(tool_choice)
-        if reasoning_effort: payload['reasoning'] = denorm_openai_responses_reasoning(reasoning_effort)
-        return await _send(cli.responses.create_response, payload, normalize_openai_response, stream, model, api_name, vendor_name)
-
-    elif api_name == ApiName.openai_chat:
-        payload = dict(model=model, messages=denorm_openai_chat_msgs(msgs))
-        if system:           payload['messages'].insert(0, {'role': 'system', 'content': _sys_text(system)})
-        if stream: payload.update(stream=True, stream_options={"include_usage": True})
-        if max_tokens:       payload['max_tokens'] = max_tokens
-        if temperature is not None: payload['temperature'] = temperature
-        if tools:            payload['tools'] = denorm_openai_chat_tools(tools)
-        if web_search_options is not None: payload['web_search_options'] = denorm_openai_chat_web_search(web_search_options)
-        if tool_choice:      payload['tool_choice'] = denorm_openai_chat_tool_choice(tool_choice)
-        if reasoning_effort: payload['reasoning_effort'] = denorm_openai_chat_reasoning(reasoning_effort)
-        return await _send(cli.chat.create_chat_completion, payload, normalize_openai_chat_completion, stream, model, api_name, vendor_name)
-
-    elif api_name == ApiName.anthropic:
-        payload = dict(model=model, messages=denorm_anthropic_msgs(msgs), max_tokens=max_tokens or 1024)
-        if stream: payload['stream'] = True
-        if system:
-            if isinstance(system, Part):
-                block = {'type': 'text', 'text': system.text or ''}
-                if (cc := (system.data or {}).get('cache_control')): block['cache_control'] = cc
-                payload['system'] = [block]
-            else: payload['system'] = system
-        if temperature is not None: payload['temperature'] = temperature
-        if tools:            payload['tools'] = denorm_anthropic_tools(tools)
-        if web_search_options is not None: payload.setdefault('tools', []).append(denorm_anthropic_web_search(web_search_options))
-        tc = denorm_anthropic_tool_choice(tool_choice)
-        if tc:               payload['tool_choice'] = tc
-        think = denorm_anthropic_reasoning(reasoning_effort)
-        if think: payload.update(think)
-        return await _send(cli.messages.messages_post, payload, normalize_anthropic_message, stream, model, api_name, vendor_name)
-
-    elif api_name == ApiName.gemini:
-        gen_config = {}
-        if max_tokens:       gen_config['maxOutputTokens'] = max_tokens
-        if temperature is not None: gen_config['temperature'] = temperature
-        think = denorm_gemini_reasoning(reasoning_effort,model)
-        if think:            gen_config['thinkingConfig'] = think
-        payload = dict(model=model, contents=denorm_gemini_msgs(msgs))
-        if system:           payload['system_instruction'] = {'parts': [{'text': _sys_text(system)}]}
-        if gen_config:       payload['generation_config'] = gen_config
-        gem_tools = denorm_gemini_tools(tools) if tools else []
-        if web_search_options is not None: gem_tools.append(denorm_gemini_web_search(web_search_options))
-        if gem_tools:
-            payload['tools'] = gem_tools
-            has_fn = any('functionDeclarations' in t for t in gem_tools)
-            has_srv = any(k in t for t in gem_tools for k in ('googleSearch','codeExecution','googleSearchRetrieval'))
-            if has_fn and has_srv:
-                payload.setdefault('tool_config', {})['includeServerSideToolInvocations'] = True
-        tc = denorm_gemini_tool_choice(tool_choice)
-        if tc:               payload.setdefault('tool_config', {}).update(tc)
-        op = 'stream_generate_content' if stream else 'generate_content'
-        if stream:           payload.update(stream=True, _query={"alt": "sse"})
-        return await _send(getattr(cli.models, op), payload, normalize_gemini_generate, stream, model, api_name, vendor_name)
+    mk, op_path, norm = _payload_makers[api_name]
+    payload = mk(msgs, model, **kwargs)
+    if api_name == ApiName.gemini and kwargs.get('stream'): op_path = 'models.stream_generate_content'
+    func = attrgetter(op_path)(cli)
+    return await _send(func, payload, norm, kwargs.get('stream', False), model, api_name, vendor_name)
