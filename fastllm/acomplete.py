@@ -271,7 +271,7 @@ def denorm_anthropic_tool_choice(v):
     if v is None: return None
     if v in ('auto',):                    return {'type': 'auto'}
     if v in ('required', 'any', 'force'): return {'type': 'any'}
-    if v in ('none', 'off', 'disabled'):  return None
+    if v in ('none', 'off', 'disabled'):  return {'type': 'none'}
     return {'type': 'tool', 'name': v}
 
 def denorm_gemini_tool_choice(v):
@@ -325,6 +325,7 @@ def denorm_openai_responses_web_search(v):
 def denorm_anthropic_web_search(v):
     "Map canonical web_search_options to Anthropic hosted web_search tool."
     t = {"type": "web_search_20260209", "name": "web_search"}
+    if (typ := (v or {}).get("type")): t["type"] = typ
     if (s := (v or {}).get("search_context_size")):
         t["max_uses"] = _ant_search_max_uses.get(s, 5)
     if (u := (v or {}).get("user_location", {}).get("approximate")):
