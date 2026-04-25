@@ -61,7 +61,7 @@ class PartAccum:
     def finalize(self, api_name=None):
         for idx,tc in self.parts.items():
             if isinstance(tc, ToolCall):
-                if isinstance(tc.arguments, str): tc.arguments = json.loads(tc.arguments)
+                if isinstance(tc.arguments, str): tc.arguments = json.loads(tc.arguments) if tc.arguments else {}
                 self.tool_calls.append(tc)
                 self.parts[idx] = Part(type=PartType.tool_use, data=dict(id=tc.id, name=tc.name, arguments=tc.arguments, server=tc.server, **tc.extra))
         

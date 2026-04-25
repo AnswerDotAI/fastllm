@@ -27,11 +27,7 @@ def model_prices_meta(): return urljson(model_prices_url)
 @flexicache(time_policy(24*60*60))
 def get_model_meta(model, vendor_name=None, tfm=noop):
     "Look up cost metadata for `model` from litellm price map, using `vendor_name` prefix if needed."
-    if vendor_name is None:
-        if "claude" in model: vendor_name = 'anthropic'
-        if "gemini" in model: vendor_name = 'gemini'
-        if "gpt" in model:    vendor_name = 'openai'
-
+    vendor_name = ifnone(vendor_name, infer_api_name(model))
     mp = model_prices_meta()
     if model in mp: key = model
     elif vendor_name=='gemini' and model.startswith('models/'): key = f"gemini/{model.removeprefix('models/')}"

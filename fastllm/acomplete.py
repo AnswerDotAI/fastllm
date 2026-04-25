@@ -515,8 +515,11 @@ def denorm_gemini_tool_result(p:Part):
 
 # %% ../nbs/03_acomplete.ipynb #32ee2546
 vendor_mapping = {
-    "openai_chat":  (ApiName.openai_chat, 'https://api.openai.com/v1', 'OPENAI_API_KEY'), # to force openai_chat API with openai models
-    "codex":        (ApiName.openai, 'https://chatgpt.com/backend-api/codex', 'CHATGPT_API_KEY'), # codex with responses API
+    "openai":       (ApiName.openai, 'https://api.openai.com/v1', 'OPENAI_API_KEY'),
+    "anthropic":    (ApiName.openai, 'https://api.anthropic.com', 'ANTHROPIC_API_KEY'),
+    "gemini":       (ApiName.openai, 'https://generativelanguage.googleapis.com/', 'GEMINI_API_KEY'),
+    "openai_chat":  (ApiName.openai_chat, 'https://api.openai.com/v1', 'OPENAI_API_KEY'),
+    "codex":        (ApiName.openai, 'https://chatgpt.com/backend-api/codex', 'CHATGPT_API_KEY'),
     "moonshot":     (ApiName.openai_chat, "https://api.moonshot.ai/v1", "MOONSHOT_API_KEY"),
     "deepseek":     (ApiName.openai_chat, "https://api.deepseek.com/v1", "DEEPSEEK_API_KEY"),
     "openrouter":   (ApiName.openai_chat, "https://openrouter.ai/api/v1", "OPENROUTER_API_KEY"),
