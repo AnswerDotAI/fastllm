@@ -318,6 +318,7 @@ def denorm_openai_chat_web_search(v): return v  # passthrough
 def denorm_openai_responses_web_search(v):
     "Map canonical web_search_options to OpenAI Responses web_search_preview tool."
     t = {"type": "web_search_preview"}
+    if (typ := (v or {}).get("type")): t["type"] = typ
     if (s := (v or {}).get("search_context_size")): t["search_context_size"] = s
     if (u := (v or {}).get("user_location")): t["user_location"] = u
     return t
