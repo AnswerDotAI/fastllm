@@ -65,12 +65,10 @@ class PartAccum:
                 self.tool_calls.append(tc)
                 self.parts[idx] = Part(type=PartType.tool_use, data={**tc.extra, 'id':tc.id, 'name':tc.name, 'arguments':tc.arguments, 'server':tc.server})
         
-        # No need to preserve citations in Part.data, we just emit in `_acollect_stream`
         merged = []
         for p in self.parts.values():
             if merged and merged[-1].type == p.type and p.type in (PartType.text, PartType.thinking): merged[-1].text += p.text
-            else: merged.append(p)
-        
+            else: merged.append(p)        
         self.parts = merged
 
 # %% ../nbs/02_streaming.ipynb #72520372

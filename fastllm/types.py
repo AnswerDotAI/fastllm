@@ -8,7 +8,6 @@ __all__ = ['PartType', 'Part', 'Msg']
 # %% ../nbs/00_types.ipynb #b4d047fd
 from dataclasses import dataclass, field
 from fastcore.utils import *
-from fastspec.errors import *
 
 # %% ../nbs/00_types.ipynb #e568bade
 @dataclass
