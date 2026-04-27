@@ -92,15 +92,23 @@ class Usage:
     prompt_tokens: int = 0
     completion_tokens: int = 0
     total_tokens: int = 0
+    cached_tokens: int = 0
+    cache_creation_tokens: int = 0
+    reasoning_tokens: int = 0
     raw: dict = field(default_factory=dict)
+
 
 # %% ../nbs/01_normalize.ipynb #0088e2d7
 def usage_from_anthropic(resp):
     "Normalize Anthropic usage shape."
     if not (usg:=resp.get("usage")): return None
-    pt = int(usg.get("input_tokens", 0) or 0)
+    cached = int(usg.get("cache_read_input_tokens", 0) or 0)
+    cache_creation = int(usg.get("cache_creation_input_tokens", 0) or 0)
+    pt = int(usg.get("input_tokens", 0) or 0) + cached + cache_creation
     ct = int(usg.get("output_tokens", 0) or 0)
-    return Usage(prompt_tokens=pt, completion_tokens=ct, total_tokens=pt + ct, raw=usg)
+    return Usage(prompt_tokens=pt, completion_tokens=ct, total_tokens=pt + ct,
+                 cached_tokens=cached, cache_creation_tokens=cache_creation, raw=usg)
+
 
 # %% ../nbs/01_normalize.ipynb #1589f622
 def usage_from_openai(resp):
@@ -109,9 +117,15 @@ def usage_from_openai(resp):
     pt = int(usg.get("prompt_tokens", usg.get("input_tokens", 0)) or 0)
     ct = int(usg.get("completion_tokens", usg.get("output_tokens", 0)) or 0)
     tt = int(usg.get("total_tokens", pt + ct) or (pt + ct))
+    pd = usg.get("prompt_tokens_details") or usg.get("input_tokens_details") or {}
+    cd = usg.get("completion_tokens_details") or usg.get("output_tokens_details") or {}
+    cached = int(pd.get("cached_tokens", 0) or 0)
+    reasoning = int(cd.get("reasoning_tokens", 0) or 0)
     server_tool_use = dict(Counter(o['type'] for o in resp.get('output', []) if o.get('type') != 'function_call' and o.get('type', '').endswith('_call')))
     if server_tool_use: usg['server_tool_use'] = server_tool_use
-    return Usage(prompt_tokens=pt, completion_tokens=ct, total_tokens=tt, raw=usg)
+    return Usage(prompt_tokens=pt, completion_tokens=ct, total_tokens=tt,
+                 cached_tokens=cached, reasoning_tokens=reasoning, raw=usg)
+
 
 # %% ../nbs/01_normalize.ipynb #61c00016
 def usage_from_gemini(resp):
@@ -120,13 +134,17 @@ def usage_from_gemini(resp):
     pt = int(usg.get("promptTokenCount", 0) or 0)
     ct = int(usg.get("candidatesTokenCount", 0) or 0)
     tt = int(usg.get("totalTokenCount", pt + ct) or (pt + ct))
+    cached = int(usg.get("cachedContentTokenCount", 0) or 0)
+    reasoning = int(usg.get("thoughtsTokenCount", 0) or 0)
     parts = nested_idx(resp, 'candidates', 0, 'content', 'parts') or []
     cand = nested_idx(resp, 'candidates', 0) or {}
     stu = {}
     if any("executableCode" in p for p in parts): stu["code_execution"] = sum(1 for p in parts if "executableCode" in p)
     if "groundingMetadata" in cand: stu["google_search"] = 1
     if stu: usg['server_tool_use'] = stu
-    return Usage(prompt_tokens=pt, completion_tokens=ct, total_tokens=tt, raw=usg)
+    return Usage(prompt_tokens=pt, completion_tokens=ct, total_tokens=tt,
+                 cached_tokens=cached, reasoning_tokens=reasoning, raw=usg)
+
 
 # %% ../nbs/01_normalize.ipynb #8c65aa2a
 @dataclass(frozen=True)

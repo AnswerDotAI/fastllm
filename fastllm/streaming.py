@@ -140,7 +140,7 @@ def normalize_openai_response_event(ev, **kwargs):
         if itype == "function_call" or itype.endswith("_call"):
             tc = openai_responses_tool_call(item)
             return Delta(tool_calls=[tc], raw=ev, **kwargs)
-    if typ == "response.completed":
+    if typ in ("response.completed", "response.incomplete"):
         resp = ev.get("response", {})
         fin = canon_finish(resp.get("status"), ApiName.openai)
         return Delta(finish_reason=fin, usage=usage_from_openai(resp), raw=ev, **kwargs)
