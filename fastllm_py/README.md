@@ -1,4 +1,4 @@
-# fastllm
+# fastllm (codex vibe coded)
 
 `fastllm` is a minimal LLM client built around a generic OpenAPI operation layer.
 
