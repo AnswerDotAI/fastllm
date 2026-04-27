@@ -63,7 +63,7 @@ class PartAccum:
             if isinstance(tc, ToolCall):
                 if isinstance(tc.arguments, str): tc.arguments = json.loads(tc.arguments) if tc.arguments else {}
                 self.tool_calls.append(tc)
-                self.parts[idx] = Part(type=PartType.tool_use, data=dict(id=tc.id, name=tc.name, arguments=tc.arguments, server=tc.server, **tc.extra))
+                self.parts[idx] = Part(type=PartType.tool_use, data={**tc.extra, 'id':tc.id, 'name':tc.name, 'arguments':tc.arguments, 'server':tc.server})
         
         # No need to preserve citations in Part.data, we just emit in `_acollect_stream`
         merged = []
