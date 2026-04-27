@@ -702,6 +702,7 @@ async def acomplete(msgs, model, api_name=None, vendor_name=None, api_key=None, 
     payload = merge(payload, ifnone(xtra_body, {}))
     if vendor_name == 'codex': 
         for k in 'temperature max_tokens max_output_tokens max_completion_tokens metadata'.split(): payload.pop(k, None)
+        payload['store'] = False
     if api_name == ApiName.gemini and kwargs.get('stream'): op_path = 'models.stream_generate_content'
     func = attrgetter(op_path)(cli)
     try: return await _send(func, payload, norm, kwargs.get('stream', False), model, api_name, vendor_name)
