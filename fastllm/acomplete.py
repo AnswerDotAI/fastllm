@@ -239,6 +239,17 @@ def denorm_anthropic_tool_schs(tools):
         out.append(dict(name=name, description=desc, input_schema=params))
     return out
 
+# %% ../nbs/03_acomplete.ipynb #e46f13ba
+_valid_gemini_sch = {'type', 'format', 'title', 'description', 'nullable', 'default',
+    'items', 'minItems', 'maxItems', 'enum', 'properties', 'propertyOrdering',
+    'required', 'minProperties', 'maxProperties', 'minimum', 'maximum',
+    'minLength', 'maxLength', 'pattern', 'example', 'anyOf'}
+
+def _gem_filter_sch(s):
+    if isinstance(s, list): return [_gem_filter_sch(x) for x in s]
+    if not isinstance(s, dict): return s
+    return {k: _gem_filter_sch(v) for k,v in s.items() if k in _valid_gemini_sch}
+
 def denorm_gemini_tool_schs(tools):
     "Convert canonical tools to Gemini format."
     fn_decls, other = [], []
@@ -246,6 +257,7 @@ def denorm_gemini_tool_schs(tools):
         fn = _fn_schema(t)
         if fn is None: other.append(t); continue
         name, desc, params = fn
+        params['properties'] = {k:_gem_filter_sch(v) for k,v in params['properties'].items()}
         fn_decls.append(dict(name=name, description=desc, parameters=params))
     out = other[:]
     if fn_decls: out.insert(0, dict(functionDeclarations=fn_decls))
@@ -347,7 +359,8 @@ def _denorm_openai_responses_system(sp):  return _sys_text(_part_txt(sp))
 def _denorm_openai_chat_system(sp, msgs): 
     msgs.insert(0, dict(role='system', content=_sys_text(_part_txt(sp))))
     return msgs
-def _denorm_anthropic_system(sp): 
+def _denorm_anthropic_system(sp):
+    if isinstance(sp, Msg): sp = sp.content[0]
     if isinstance(sp, Part):
         block = dict(type='text', text=sp.text)
         if (cc := (sp.data or {}).get('cache_control')): block['cache_control'] = cc
@@ -516,10 +529,10 @@ def denorm_gemini_tool_result(p:Part):
 # %% ../nbs/03_acomplete.ipynb #32ee2546
 vendor_mapping = {
     "openai":       (ApiName.openai, 'https://api.openai.com/v1', 'OPENAI_API_KEY'),
-    "anthropic":    (ApiName.openai, 'https://api.anthropic.com', 'ANTHROPIC_API_KEY'),
-    "gemini":       (ApiName.openai, 'https://generativelanguage.googleapis.com/', 'GEMINI_API_KEY'),
+    "anthropic":    (ApiName.anthropic, 'https://api.anthropic.com', 'ANTHROPIC_API_KEY'),
+    "gemini":       (ApiName.gemini, 'https://generativelanguage.googleapis.com/', 'GEMINI_API_KEY'),
     "openai_chat":  (ApiName.openai_chat, 'https://api.openai.com/v1', 'OPENAI_API_KEY'),
-    "codex":        (ApiName.openai, 'https://chatgpt.com/backend-api/codex', 'CHATGPT_API_KEY'),
+    "codex":        (ApiName.openai, 'https://chatgpt.com/backend-api/codex', 'CODEX_AUTH_TOKEN'),
     "moonshot":     (ApiName.openai_chat, "https://api.moonshot.ai/v1", "MOONSHOT_API_KEY"),
     "deepseek":     (ApiName.openai_chat, "https://api.deepseek.com/v1", "DEEPSEEK_API_KEY"),
     "openrouter":   (ApiName.openai_chat, "https://openrouter.ai/api/v1", "OPENROUTER_API_KEY"),
@@ -538,23 +551,37 @@ def infer_api_name(model):
 # %% ../nbs/03_acomplete.ipynb #79075d95
 api2spec = {ApiName.openai:oai_spec, ApiName.openai_chat:oai_spec, ApiName.anthropic:ant_spec, ApiName.gemini:gem_spec}
 
-def get_hdrs(api_name, env_api_key=None):
-    if api_name in (ApiName.openai, ApiName.openai_chat): return {"Authorization": f"Bearer {os.environ[env_api_key or 'OPENAI_API_KEY']}"}
-    if api_name == ApiName.anthropic:                     return {"x-api-key": os.environ[env_api_key or 'ANTHROPIC_API_KEY'], "anthropic-version": "2023-06-01"}
-    if api_name == ApiName.gemini:                        return {"x-goog-api-key": os.environ[env_api_key or 'GEMINI_API_KEY']}
+def _get_key(api_key, default):
+    err = ValueError(f"Missing API key: make sure to have the expected env var name or pass `api_key`")
+    key = api_key or os.getenv(default)
+    if not key: raise err
+    return key
+
+def get_hdrs(api_name, api_key=None):
+    if api_name in (ApiName.openai, ApiName.openai_chat):
+        return {"Authorization": f"Bearer {_get_key(api_key, 'OPENAI_API_KEY')}"}
+    if api_name == ApiName.anthropic:
+        return {"x-api-key": _get_key(api_key, 'ANTHROPIC_API_KEY'), "anthropic-version": "2023-06-01"}
+    if api_name == ApiName.gemini:
+        return {"x-goog-api-key": _get_key(api_key, 'GEMINI_API_KEY')}
 
 @flexicache()
-def mk_client(model, vendor_name=None, api_name=None, env_api_key=None, base_url=None, xtra_hdrs={}):
-    if vendor_name and not (base_url and env_api_key):
-        try: api_name, base_url, env_api_key = vendor_mapping[vendor_name]
-        except KeyError: raise ValueError(f"Unknown vendor '{vendor_name}' please pass a valid one : {', '.join(list(vendor_mapping))} or pass `env_api_key` and `base_url`")
-    elif base_url and env_api_key: 
+def mk_client(model, vendor_name=None, api_name=None, api_key=None, base_url=None, xtra_hdrs=None):
+    if vendor_name:
+        try: 
+            api_name, base_url, env_api_nm = vendor_mapping[vendor_name]
+            api_key = _get_key(api_key, env_api_nm)
+        except KeyError: raise ValueError(f"Unknown vendor '{vendor_name}' please pass a valid one : {', '.join(list(vendor_mapping))} or pass `base_url` and `api_key`")
+    
+    elif base_url and api_key: 
         api_name = ApiName.openai_chat
         vendor_name = ifnone(vendor_name, 'custom')
+
     elif (api_name:=infer_api_name(model)): 
         base_url, vendor_name = None, api_name
-    spec,hdrs = api2spec[api_name], get_hdrs(api_name, env_api_key)
-    cli = OpenAPIClient(spec, headers=merge(hdrs, xtra_hdrs))
+    
+    spec, hdrs = api2spec[api_name], get_hdrs(api_name, api_key)
+    cli = OpenAPIClient(spec, headers=merge(hdrs, ifnone(xtra_hdrs, {})))
     if base_url is not None: 
         for op in cli.ops: op.base_url = base_url
     return cli, api_name, vendor_name
@@ -579,18 +606,21 @@ def _classify_error(exc):
             code=exc.code, request_id=exc.request_id, retryable=exc.retryable, raw=exc.raw)
     return exc
 
-async def _classify_error_stream(gen):
+async def _classify_error_stream(gen, func, payload, norm, stream, model, api_name, vendor_name):
     "Wrap an async generator to upgrade `APIError`s as they're raised during iteration."
     try:
         async for x in gen: yield x
-    except APIError as e: raise _classify_error(e) from e
+    except APIError as api_error: 
+        if os.getenv('FASTLLM_DEBUG'): 
+            raise Exception(f"{api_error=} {func=}, {payload=}, {norm=}, {stream=}, {model=}, {api_name=}, {vendor_name=}")
+        raise _classify_error(e) from e
 
 # %% ../nbs/03_acomplete.ipynb #53640d14
 async def _send(func, payload, norm, stream, model, api_name, vendor_name):
     "Await `func(**payload)`, classify errors, and either wrap stream or normalize response."
     try: resp = await func(**payload)
     except APIError as e: raise _classify_error(e) from e
-    if stream: return _classify_error_stream(acollect_stream(resp, model=model, api_name=api_name, vendor_name=vendor_name))
+    if stream: return _classify_error_stream(acollect_stream(resp, model=model, api_name=api_name, vendor_name=vendor_name), func, payload, norm, stream, model, api_name, vendor_name)
     return norm(resp, model=model, api_name=api_name, vendor_name=vendor_name)
 
 # %% ../nbs/03_acomplete.ipynb #32fb0e89
@@ -664,14 +694,18 @@ _payload_makers = {
 }
 
 @delegates(payload_kwargs)
-async def acomplete(msgs, model, api_name=None, vendor_name=None, env_api_key=None, base_url=None, xtra_body={}, xtra_hdrs={}, **kwargs):
+async def acomplete(msgs, model, api_name=None, vendor_name=None, api_key=None, base_url=None, xtra_body=None, xtra_hdrs=None, **kwargs):
     "Unified completion across different APIs."
-    cli, api_name, vendor_name = mk_client(model, vendor_name, api_name, env_api_key, base_url, xtra_hdrs)
+    cli, api_name, vendor_name = mk_client(model, vendor_name, api_name, api_key, base_url, xtra_hdrs)
     mk, op_path, norm = _payload_makers[api_name]
     payload = mk(msgs, model, **kwargs)
-    payload = merge(payload, xtra_body)
+    payload = merge(payload, ifnone(xtra_body, {}))
     if vendor_name == 'codex': 
         for k in 'temperature max_tokens max_output_tokens max_completion_tokens metadata'.split(): payload.pop(k, None)
     if api_name == ApiName.gemini and kwargs.get('stream'): op_path = 'models.stream_generate_content'
     func = attrgetter(op_path)(cli)
-    return await _send(func, payload, norm, kwargs.get('stream', False), model, api_name, vendor_name)
+    try: return await _send(func, payload, norm, kwargs.get('stream', False), model, api_name, vendor_name)
+    except APIError as api_error:
+        if os.getenv('FASTLLM_DEBUG'): 
+            raise Exception(f"{api_error=} {func=}, {payload=}, {norm=}, stream={kwargs.get('stream', False)}, {model=}, {api_name=}, {vendor_name=}")
+        raise api_error
