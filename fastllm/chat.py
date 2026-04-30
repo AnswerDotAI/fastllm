@@ -360,6 +360,12 @@ class AsyncChat:
         self.hist = mk_msgs(self.hist, self.cache and 'claude' in self.model, cache_idxs, self.ttl)
         msgs = self.hist
         if self.tool_reminder: msgs = _inject_tool_reminder(msgs, self.tool_reminder)
+        if 'deepseek' in self.model:
+            # The `reasoning_content` in the thinking mode must be passed back to the API.
+            for m in msgs:
+                if m.role=='assistant':
+                    if not any(p.type==PartType.thinking for p in m.content):
+                        m.content.append(Part(PartType.thinking, ''))
         return sp, msgs
     
     @property

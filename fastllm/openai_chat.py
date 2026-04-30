@@ -55,13 +55,13 @@ def norm_parts(resp):
 def norm_sse_event(ev, **kwargs):
     "Normalize a chat completion stream event."
     # usage always arrives as a single final event with choices: []
-    if not (choices := ev.get("choices", [])): return Delta(usage=norm_usage(ev), raw=ev, **kwargs)
-    # finish_reason arrives in its own dedicated chunk (empty delta, non-null finish_reason)
-    if fin := nested_idx(ev, 'choices', 0, 'finish_reason'): return Delta(finish_reason=fin, raw=ev, **kwargs)
+    fin = nested_idx(ev, 'choices', 0, 'finish_reason')
     tcs = norm_tool_calls(ev, delta=True)
-    dlt = nested_idx(choices, 0, 'delta')
+    if (dlt:=nested_idx(ev, 'choices', 0, 'delta')) is not None:
+        text, thinking, refusal = dlt.get('content'), dlt.get('reasoning_content'), dlt.get('refusal')
+    else: text, thinking, refusal = None,None,None
     if ev.get("error"): raise api_error_from_event(ev)
-    return Delta(text=dlt.get('content'), thinking=dlt.get('reasoning_content'), refusal=dlt.get('refusal'), tool_calls=tcs, raw=ev, **kwargs)
+    return Delta(text=text, thinking=thinking, refusal=refusal, tool_calls=tcs, finish_reason=fin, usage=norm_usage(ev), raw=ev, **kwargs)
 
 # %% ../nbs/03_oai_chat.ipynb #cfec45b4
 def delta_index_fn(d, typ, last_typ, last_idx):

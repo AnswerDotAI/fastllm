@@ -275,6 +275,21 @@ def get_model_info(mn, vendor_name=None):
         info.pop('mode', None)
     # codex pricing
     if vendor_name == 'codex': info = merge(info, codex_pricing)
+    # deepseek v4
+    if vendor_name == 'deepseek' and mn in ("deepseek-v4-flash", "deepseek-v4-pro"):
+        info = dict(get_model_meta("deepseek/deepseek-v3.2"))
+        info |= dict(supports_assistant_prefill=True, supports_function_calling=True, supports_prompt_caching=True,
+            supports_reasoning=True, supports_tool_choice=True)
+        info.update(input_cost_per_token=1.4e-07, input_cost_per_token_cache_hit=2.8e-09, output_cost_per_token=2.8e-07,
+            max_input_tokens=1048576, max_output_tokens=393216, max_tokens=393216)
+        if 'pro' in mn: info = {**info, 'input_cost_per_token': 4.35e-07, 'input_cost_per_token_cache_hit': 3.625e-09, 'output_cost_per_token': 8.7e-07}
+    # qwen 3p6
+    if vendor_name == 'fireworks_ai' and mn == 'accounts/fireworks/models/qwen3p6-plus':
+        info = dict(supports_vision=True, supports_reasoning=True, supports_function_calling=True, supports_tool_choice=True,
+                    supports_system_messages=True, supports_response_schema=True, supports_parallel_function_calling=True,
+                    supports_prompt_caching=True, supports_native_streaming=True, supports_native_structured_output=True,
+                    max_tokens=1000000, max_input_tokens=1000000, max_output_tokens=65536,
+                    input_cost_per_token=0.5e-6, cache_read_input_token_cost=0.1e-6, output_cost_per_token=3.0e-6)
     return dict2obj(info)
 
 # %% ../nbs/00_types.ipynb #8bfca02d
