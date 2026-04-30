@@ -179,12 +179,13 @@ _gem_think_levels  = dict(minimal='low', low='low', medium='medium', high='high'
 
 def denorm_reasoning(v, model=''):
     "Map canonical reasoning_effort to Gemini thinkingConfig (uses thinkingLevel for Gemini 3+)."
+    err = ValueError(f"Invalid reasoning effort for Gemini: {v}, accepted string values are: {list(_gem_think_budgets)} and dicts are passthrough")
     if v is None: return None
-    if isinstance(v, dict): return v
-    k = str(v).lower()
-    # defaults to includeThoughts same as litellm
-    if 'gemini-3' in model: return {'thinkingLevel': _gem_think_levels.get(k, 'medium'), 'includeThoughts': True}
-    return {'thinkingBudget': _gem_think_budgets.get(str(v).lower(), 1024), 'includeThoughts': True}
+    elif isinstance(v, dict): return v
+    elif isinstance(v, str) and v in _gem_think_budgets:
+        # defaults to includeThoughts same as litellm
+        if 'gemini-3' in model: return {'thinkingLevel': _gem_think_levels.get(v, 'medium'), 'includeThoughts': True}
+        return {'thinkingBudget': _gem_think_budgets.get(str(v).lower(), 1024), 'includeThoughts': True}
 
 # %% ../nbs/05_gemini.ipynb #8fa9fbb8
 def denorm_web_search(v): return {"googleSearch": {}}

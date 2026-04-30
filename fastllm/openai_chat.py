@@ -128,7 +128,9 @@ def denorm_tool_choice(v):
     return {'type': 'function', 'function': {'name': v}}
 
 # %% ../nbs/03_oai_chat.ipynb #02ba4ab7
-def denorm_reasoning(v): return v  # passthrough as reasoning_effort param
+def denorm_reasoning(v): 
+    if v is None: return None
+    return v  # passthrough as reasoning_effort param
 
 # %% ../nbs/03_oai_chat.ipynb #57b4969e
 def denorm_web_search(v): return v

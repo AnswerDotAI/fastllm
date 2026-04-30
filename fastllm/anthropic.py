@@ -187,9 +187,11 @@ def denorm_tool_choice(v):
 def denorm_reasoning(v):
     "Map canonical reasoning_effort to Anthropic adaptive thinking + output_config."
     mp = dict(minimal='low', low='low', medium='medium', high='high', xhigh='xhigh', max='max')
+    err = ValueError(f"Invalid reasoning effort for Anthropic: {v}, accepted string values are: {list(mp)} and dicts are passthrough")
     if v is None: return None
-    e = mp.get(str(v).lower(), 'high')
-    return {"thinking": {"type": "adaptive"}, "output_config": {"effort": e}}
+    elif isinstance(v, dict): return v
+    elif isinstance(v, str) and v in mp:  return {"thinking": {"type": "adaptive"}, "output_config": {"effort": mp.get(v)}}
+    raise err
 
 # %% ../nbs/04_anthropic.ipynb #8fa9fbb8
 def denorm_web_search(v):

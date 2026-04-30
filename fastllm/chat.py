@@ -396,13 +396,16 @@ def _handle_stop_reason(res):
     return None, None
 
 # %% ../nbs/07_chat.ipynb #19b87f53
-def _think_kw(model, think):
-    "Return completion kwargs for thinking/reasoning based on model"
+def _think_kw(model, think, vendor_name):
     if not think: return {}
-    e = effort.get(think)
     if 'opus-4-7' in model:
-        if think == 'h': e = 'xhigh'
-    return dict(reasoning_effort=e)
+        e = 'xhigh' if think=='h' else effort.get(think)
+        return dict(thinking={"type":"adaptive", "display":"summarized"}, output_config={"effort":e})
+    try: xhigh = get_model_info(model, vendor_name).get('supports_xhigh_reasoning_effort')
+    except: xhigh = False
+    eff = effort.get(think) if think!='x' else 'xhigh' if xhigh else 'high'
+    if vendor_name == 'codex': return dict(reasoning_effort={'effort':eff, 'summary':'auto'})
+    return dict(reasoning_effort=eff)
 
 # %% ../nbs/07_chat.ipynb #b3f28523
 @patch
@@ -421,7 +424,7 @@ def _prep_call(self:AsyncChat, search, max_tokens, kwargs, stream=False, think=N
     if self.api_key:       kwargs['api_key'] = self.api_key
     if self.base_url:      kwargs['base_url'] = self.base_url
     if self.extra_headers: kwargs['xtra_headers'] = self.extra_headers
-    kwargs.update(_think_kw(self.model, think))
+    kwargs.update(_think_kw(self.model, think, self.vendor_name))
     return max_tokens
 
 # %% ../nbs/07_chat.ipynb #07951b77
