@@ -52,8 +52,10 @@ api2spec = {'openai':oai_spec, 'openai_chat':oai_spec, 'anthropic':ant_spec, 'ge
 def mk_client(model, vendor_name=None, api_name=None, api_key=None, base_url=None, xtra_hdrs=None):
     err_msg = f"please pass a valid one vendor: {', '.join(list(vendor_mapping))} or pass `api_name`,`base_url` and `api_key`"
     if vendor_name:
+        override_base_url = base_url
         try: 
             api_name, base_url, env_api_nm = vendor_mapping[vendor_name]
+            base_url = override_base_url or base_url
             api_key = get_api_key(api_key, env_api_nm)
         except KeyError: raise ValueError(f"Unknown vendor '{vendor_name}', {err_msg}")
     elif api_name and base_url and api_key:  vendor_name = ifnone(vendor_name, 'custom')
@@ -103,6 +105,8 @@ async def acomplete(msgs, model, api_name=None, vendor_name=None, api_key=None, 
     if vendor_name == 'codex': 
         for k in 'temperature max_tokens max_output_tokens max_completion_tokens metadata'.split(): payload.pop(k, None)
         payload['store'] = False
+    if vendor_name == 'deepseek' and model in ("deepseek-v4-flash", "deepseek-v4-pro") and payload['messages'][-1]['role'] == 'assistant':
+        payload['messages'][-1]['prefix'] = True
     stream = kwargs.get('stream', False)
     func = attrgetter(api.op_path[stream])(cli)
     try: resp = await func(**payload)

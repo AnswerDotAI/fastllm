@@ -238,6 +238,10 @@ def _has_search(info): return bool(info.get('search_context_cost_per_query') or 
 
 # %% ../nbs/07_chat.ipynb #2d78087b
 effort = AttrDict({o[0]:o for o in ('low','medium','high')})
+effort['x'] = 'max'
+
+# %% ../nbs/07_chat.ipynb #e1facb77
+def _mk_prefill(pf): return dict(text=pf)
 
 # %% ../nbs/07_chat.ipynb #dc17f844
 class StopResponse(str): pass
@@ -348,7 +352,7 @@ class AsyncChat:
         self.use = UsageStats()
         store_attr()
     
-    def _prep_msg(self, msg=None):
+    def _prep_msg(self, msg=None, prefill=None):
         "Prepare the system prompt and messages list for the API call"
         sp = self.sp
         if sp:
@@ -359,6 +363,7 @@ class AsyncChat:
         if msg: self.hist = self.hist+[msg]
         self.hist = mk_msgs(self.hist, self.cache and 'claude' in self.model, cache_idxs, self.ttl)
         msgs = self.hist
+        if prefill: msgs = self.hist + [Msg(role='assistant', content=[Part(PartType.text, prefill)])]
         if self.tool_reminder: msgs = _inject_tool_reminder(msgs, self.tool_reminder)
         if 'deepseek' in self.model:
             # The `reasoning_content` in the thinking mode must be passed back to the API.
@@ -409,10 +414,11 @@ def _think_kw(model, think, vendor_name):
 
 # %% ../nbs/07_chat.ipynb #b3f28523
 @patch
-def _prep_call(self:AsyncChat, search, max_tokens, kwargs, stream=False, think=None):
-    "Prepare model info, search, and provider kwargs for a completion call"
+def _prep_call(self:AsyncChat, prefill, search, max_tokens, kwargs, stream=False, think=None):
+    "Prepare model info, prefill, search, and provider kwargs for a completion call"
     model_info = get_model_info(self.model, self.vendor_name)
     if max_tokens is None: max_tokens = model_info.get('max_output_tokens')
+    if not model_info.get("supports_assistant_prefill"): prefill = None
     if _has_search(model_info) and (s:=ifnone(search,self.search)):
         if 'web_search_options' not in kwargs: kwargs['web_search_options'] = {}
         kwargs['web_search_options']['search_context_size'] = effort[s]
@@ -425,7 +431,7 @@ def _prep_call(self:AsyncChat, search, max_tokens, kwargs, stream=False, think=N
     if self.base_url:      kwargs['base_url'] = self.base_url
     if self.extra_headers: kwargs['xtra_headers'] = self.extra_headers
     kwargs.update(_think_kw(self.model, think, self.vendor_name))
-    return max_tokens
+    return prefill, max_tokens
 
 # %% ../nbs/07_chat.ipynb #07951b77
 @patch
@@ -449,21 +455,25 @@ async def astream_with_complete(self, agen, postproc=noop):
 # %% ../nbs/07_chat.ipynb #baf28c01
 @patch
 @delegates(acomplete)
-async def _call(self:AsyncChat, msg=None, temp=None, think=None, search=None, stream=False, max_steps=2, step=1,
+async def _call(self:AsyncChat, msg=None, prefill=None, temp=None, think=None, search=None, stream=False, max_steps=2, step=1,
         final_prompt=None, tool_choice=None, max_tokens=None, n_workers=8, pause=0.001, tc_timeout=7200, **kwargs):
     if step>max_steps+1: return
-    max_tokens = self._prep_call(search, max_tokens, kwargs, stream=stream, think=think)
-    sp,msgs    = self._prep_msg(msg)
+    prefill, max_tokens = self._prep_call(prefill, search, max_tokens, kwargs, stream=stream, think=think)
+    sp,msgs = self._prep_msg(msg,prefill)
+    if prefill and self.vendor_name == 'deepseek' and self.model in ("deepseek-v4-flash", "deepseek-v4-pro"): 
+        kwargs['base_url'] = 'https://api.deepseek.com/beta'
     # TODO: num_retries=2 is this needed? If so add.
     # caching removed, cache checkpoints are added for Anthropic and other providers do implicit caching
     res = await acomplete(msgs, self.model, system=sp, stream=stream, 
         tools=self.tool_schemas, tool_choice=tool_choice, max_tokens=int(max_tokens),
         temperature=None if think else ifnone(temp,self.temp), **kwargs)
     if stream:
+        if prefill: yield _mk_prefill(prefill)
         res = astream_with_complete(res, postproc=postproc)
         async for chunk in res: yield chunk
         res = res.value
     m=contents(res)
+    if prefill: m.content[0].text = prefill + m.content[0].text
     self.hist.append(m)
     action, msg = _handle_stop_reason(res)
     if action == 'warning': add_warning(res, msg)
@@ -488,13 +498,13 @@ async def _call(self:AsyncChat, msg=None, temp=None, think=None, search=None, st
         else: prompt = None
         try:
             async for result in self._call(
-                prompt, temp, think, search, stream, max_steps, step+1,
+                prompt, prefill, temp, think, search, stream, max_steps, step+1,
                 final_prompt, tool_choice=tool_choice, **kwargs): yield result
         except ContextWindowExceededError:
             for p in tmsg.content:
                 if len(p.text)>1000: p.text = _cwe_msg + _trunc_str(p.text, mx=1000)
             async for result in self._call(
-                prompt, temp, think, search, stream, max_steps, step+1,
+                prompt, prefill, temp, think, search, stream, max_steps, step+1,
                 final_prompt, tool_choice='none', **kwargs): yield result
 
 # %% ../nbs/07_chat.ipynb #1361515a
@@ -503,6 +513,7 @@ async def _call(self:AsyncChat, msg=None, temp=None, think=None, search=None, st
 async def __call__(
     self:AsyncChat,
     msg=None,          # Message str, or list of multiple message parts
+    prefill=None,      # Prefill AI response if model supports it
     temp=None,         # Override temp set on chat initialization
     think=None,        # Thinking (l,m,h)
     search=None,       # Override search set on chat initialization (l,m,h)
@@ -513,7 +524,7 @@ async def __call__(
     **kwargs
 ):
     self.use = UsageStats()
-    result_gen = self._call(msg, temp, think, search, stream, max_steps, 1, final_prompt, **kwargs)
+    result_gen = self._call(msg, prefill, temp, think, search, stream, max_steps, 1, final_prompt, **kwargs)
     if stream or return_all: return result_gen
     async for res in result_gen: pass
     return res # normal chat behavior only return last msg
