@@ -420,9 +420,9 @@ def _prep_call(self:AsyncChat, search, max_tokens, kwargs, stream=False, think=N
 
 # %% ../nbs/07_chat.ipynb #07951b77
 @patch
-def print_hist(self:Chat):
+def print_hist(self:AsyncChat):
     "Print each message on a different line"
-    for r in self.hist: print(r, end='\n\n')
+    return display_list(self.hist)
 
 # %% ../nbs/07_chat.ipynb #bf84d49a
 async def _alite_call_func(tc, tool_schemas, ns):
