@@ -10,9 +10,8 @@ Clone and install locally into your `aai-ws` env
 ## Setup
 
 ``` python
+from fastllm.types import Msg, Part, PartType, Completion
 from fastllm.acomplete import acomplete, mk_tool_res_msg
-from fastllm.types import Msg, Part, PartType
-from fastllm.normalize import Completion
 import asyncio, json
 
 # Helpers
@@ -36,31 +35,29 @@ mtok = 1024
 
 ## Chat — One Interface, Every Provider
 
-The same
-[`acomplete`](https://AnswerDotAI.github.io/fastllm/acomplete.html#acomplete)
-call works with Claude, GPT, Gemini, and Kimi. Just change the model
-name:
+The same [`acomplete`](./acomplete.html#acomplete) call works with
+Claude, GPT, Gemini, and Kimi. Just change the model name:
 
 ``` python
 models = [
     ('claude-sonnet-4-20250514', {}),
     ('gpt-4o-mini', {}),
     ('models/gemini-3-flash-preview', {}),
-    ('kimi-k2.5', dict(third_party_name='moonshot')),
+    ('accounts/fireworks/models/kimi-k2p5', dict(vendor_name='fireworks_ai'))
 ]
 for name, kw in models:
     r = await acomplete([user("Say 'hello' in French.")], model=name, max_tokens=mtok, **kw)
     print(f"{name:>30s} → {r.message.content[0].text.strip()}")
 ```
 
-          claude-sonnet-4-20250514 → Bonjour
+          claude-sonnet-4-20250514 → Bonjour!
                        gpt-4o-mini → "Hello" in French is "Bonjour."
-     models/gemini-3-flash-preview → Bonjour OR Salut (informal)
-                         kimi-k2.5 → The user is asking me to say "hello" in French. This is a very simple request. The French word for "hello" is "bonjour". 
+     models/gemini-3-flash-preview → Bonjour.
+    accounts/fireworks/models/kimi-k2p5 → The user wants me to say "hello" in French. The word for "hello" in French is "Bonjour". 
 
-    I should provide a direct, helpful response. I can also add a bit of context like pronunciation or usage if helpful, but the core answer is simply "bonjour".
+    This is a simple, straightforward request. I should provide the translation and perhaps a bit of context (like when it's used), but the main thing is to say "Bonjour".
 
-    Let me provide the answer clearly.
+    I should not overcomplicate this. Just provide the French word for hello.
 
 ## Multi-Turn — Swap Providers Mid-Conversation
 
@@ -93,16 +90,16 @@ print("Gemini: ", end='')
 r3 = await stream(msgs, model='models/gemini-3-flash-preview', max_tokens=mtok)
 ```
 
-    Gemini: The conversation identified the three largest planets in the solar system and established that Saturn currently has the most moons.
+    Gemini: We identified the largest planets in our solar system and confirmed that Saturn currently has the most moons.
 
 ``` python
 # Turn 4: Switch to Kimi — works the same way
 msgs += [r3.message, user("Thanks! What's one surprising fact about Saturn?")]
 print("Kimi: ", end='')
-r4 = await stream(msgs, model='kimi-k2.5', max_tokens=mtok, third_party_name='moonshot')
+r4 = await stream(msgs, model='accounts/fireworks/models/kimi-k2p5', vendor_name='fireworks_ai', max_tokens=mtok)
 ```
 
-    Kimi: 🧠🧠🧠🧠🧠🧠🧠🧠🧠🧠Saturn is less dense than water, meaning it would theoretically float if you could find a bathtub big enough to hold it.
+    Kimi: 🧠🧠🧠🧠🧠🧠🧠🧠🧠🧠Saturn is the only planet less dense than water, meaning it would theoretically float in a giant bathtub.
 
 ## System Prompts
 
@@ -120,32 +117,28 @@ print("Gemini: ", end='')
 r = await stream([user("What should I do today?")], model='models/gemini-3-flash-preview', system=sys, max_tokens=mtok)
 ```
 
-    Claude: Ahoy there, me hearty! *tips chef's hat with a feather*
+    Claude: Ahoy there, me hearty! *tips pirate hat* 
 
-    Why, ye should be settin' sail for the galley, of course! Here be some fine suggestions for yer day's adventures:
+    Ye be askin' what to do today, eh? Well, as a seasoned sea cook, I'd say ye should start by raidin' yer galley for some fine grub! Perhaps whip up some hearty hardtack biscuits or a steamin' bowl of seafarer's stew with potatoes and salted pork, arrr!
 
-    **In the Kitchen:**
-    - Whip up a hearty batch of ship's biscuits (hardtack) - they'll keep ye fed through many a storm!
-    - Try yer hand at cookin' some fresh caught fish with a splash of rum and lime
-    - Bake a treasure chest cake filled with golden dubloons (chocolate coins, savvy?)
+    If ye be feelin' adventurous, why not venture out to the market like ye be searchin' for buried treasure? Hunt down the finest fish, the ripest tropical fruits, and maybe some exotic spices from distant shores! 
 
-    **On Dry Land:**
-    - Visit the local market to plunder the finest spices and provisions for yer pantry
-    - Practice yer knife skills - every good pirate chef needs to slice and dice like the wind!
-    - Share a feast with yer crew (or landlubber friends) and swap tales over tankards of grog
+    And if the weather be fair, consider cookin' outdoors on the deck - er, I mean yer patio! Fire up the grill and roast some catch of the day with a side of ship's biscuits. Nothing beats the taste of food cooked under the open sky, savvy?
 
-    Remember, matey - a well-fed crew be a loyal crew! The way to any pirate's heart be through their belly, filled with good grub and adventure!
+    Whatever ye choose to do, make sure ye don't sail on an empty stomach, ye scallywag! A well-fed pirate be a happy pirate! 
 
-    What say ye? Does any of this tickle yer fancy, or be there some other culinary quest ye have in mind? *brandishes wooden spoon like a cutlass*
-    Gemini: Ahoy there, ye salty dog! If ye be lookin' for a way to spend the tide, I've got a plan for ye that'll keep yer belly from rumblin' like a storm at sea.
+    *waves wooden spoon in the air* 
 
-    First, hoist the sails and head for the nearest market! Ye should be huntin' for the finest treasures a galley could dream of—I'm talkin' plump citrus fruits to ward off the scurvy and a slab o' salted pork that's tougher than a kraken's beak. 
+    Now off with ye, and may yer day be filled with delicious adventures! Arrr! 🏴‍☠️
+    Gemini: Ahoy there, ye scurvy dog! If ye be lookin' for a way to spend the tide, I’ve got a recipe for adventure—and a belly full of grub!
 
-    Once ye’ve gathered yer booty, spend the afternoon over a hot stove! There’s nothin’ like a thick bowl o' **lobscouse**—that’s a hearty stew o’ meat, ship's biscuit, and whatever onions ye managed to swipe from the captain’s pantry. Make sure ye season it with enough black pepper to make a mermaid sneeze!
+    First, haul yer carcass down to the galley! A true buccaneer starts the day by breakin' his fast with a bowl of **Salmagundi**—that be a fine mess of chopped meats, pickled herrings, and whatever greens we haven't fed to the parrots yet. 
 
-    And when the sun dips below the horizon, crack open a coconut, splash in a bit o' rum, and feast like a king o' the high seas. Just don't let the ship's cat near yer plate, or ye'll be fightin' for every scrap o' that grilled red snapper!
+    Once yer belly is lined with **salted pork and hardtack**, ye ought to sharpen yer cutlass and go huntin' for the greatest treasure of all: a merchant ship carryin' a fresh crate of **cinnamon and exotic nutmeg**! 
 
-    Now move yer barnacle-covered boots and get to cookin'! Arrr!
+    If the winds be calm, ye can spend the afternoon fishin' off the stern for some **mahi-mahi**. We’ll grill it over a charcoal brazier with a squeeze of **sour lime** to keep the scurvy from claimin' yer teeth!
+
+    Now scurry off before I make ye peel a mountain of **onions** for me famous "Shipwreck Stew"! Arrr!
 
 ## Tool Calling — Define Once, Use Anywhere
 
@@ -167,13 +160,12 @@ r1 = await stream(msgs, model='claude-sonnet-4-20250514', tools=tools, max_token
 print("Tool calls:", r1.tool_calls)
 ```
 
-    I'll check the current weather in Paris for you.
-    Tool calls: [ToolCall(id='toolu_01TnN16XYqhDH8KHEJytrJPF', name='get_weather', arguments={'city': 'Paris'}, server=False, extra={'caller': {'type': 'direct'}})]
+    I'll get the current weather information for Paris.
+    Tool calls: [ToolCall(id='toolu_01JNRNBQxzxT7uMXFQh16g8H', name='get_weather', arguments={'city': 'Paris'}, server=False, extra={'caller': {'type': 'direct'}})]
 
 ``` python
 # Provide the tool result
-tool_parts = [p for p in r1.message.content if p.type == PartType.tool_use]
-msgs += [r1.message, mk_tool_res_msg(tool_parts, ['22°C, sunny with light clouds'])]
+msgs += [r1.message, mk_tool_res_msg(r1.tool_calls, ['22°C, sunny with light clouds'])]
 
 # Turn 2: Switch to GPT to interpret the result
 msgs.append(user("Should I bring a jacket?"))
@@ -181,19 +173,19 @@ print("GPT: ", end='')
 r2 = await stream(msgs, model='gpt-4o-mini', tools=tools, max_tokens=mtok)
 ```
 
-    GPT: With the current temperature of 22°C and sunny, you likely won't need a jacket. It's warm, but you might want to bring a light sweater if you tend to feel cold in the evening.
+    GPT: With the current temperature in Paris at 22°C and sunny with light clouds, you likely won't need a jacket. A light layer might be comfortable if you're out in the evening, but otherwise, it should be warm enough.
 
 ``` python
 # Turn 3: Gemini sees the full cross-provider tool history
 msgs += [r2.message, user("How about tomorrow — will it rain?")]
-r3 = await stream(msgs, model='models/gemini-3-flash-preview', tools=tools, max_tokens=mtok)
-print("Tool calls:", r3.tool_calls)
+r3 = await stream(msgs, model='models/gemini-3-flash-preview', tools=tools, max_tokens=mtok, web_search_options={})
 ```
 
-    I'll check the weather forecast for Paris tomorrow to see if rain is expected.
+    No, it's not expected to rain in Paris tomorrow, Thursday, April 30. 
 
+    The forecast is looking very pleasant with sunny skies throughout the day and clear conditions at night. You can expect a high of around **24°C (75°F)** and a low of **11°C (52°F)**. It should be a great day for outdoor activities, though the temperature will drop in the evening, so you might want that jacket if you're out late! 
 
-    Tool calls: [ToolCall(id='o6g6wxhb', name='get_weather', arguments={'city': 'Paris tomorrow'}, server=False, extra={'thoughtSignature': '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'})]
+    Rain is currently predicted to return on Friday, May 1.
 
 ## Tool Choice
 
@@ -211,9 +203,9 @@ r = await stream([user("What's the weather?")], model='claude-sonnet-4-20250514'
 ```
 
 
-    Forced: [ToolCall(id='toolu_01KXyFbVrdSG3JSNMwpveupZ', name='get_weather', arguments={'city': '<UNKNOWN>'}, server=False, extra={'caller': {'type': 'direct'}})]
+    Forced: [ToolCall(id='toolu_01PvVn1rxozZjW3FBwmVPHms', name='get_weather', arguments={'city': '<UNKNOWN>'}, server=False, extra={'caller': {'type': 'direct'}})]
 
-    No tools: I'd be happy to help you check the weather! However, I need to know which city you'd like me to check the weather for. Could you please tell me the city name?
+    No tools: I'd be happy to help you check the weather! However, I need to know which city you'd like me to check the weather for. Could you please tell me the name of the city?
 
 ## Thinking / Extended Reasoning
 
@@ -224,62 +216,41 @@ Thinking tokens stream as 🧠:
 ``` python
 # Claude with thinking
 print("Claude: ", end='')
-r = await stream([user("What is 127 × 849?")], model='claude-sonnet-4-20250514', reasoning_effort='low', max_tokens=8192)
+r = await stream([user("What is 127 × 849?")], model='claude-sonnet-4-6', reasoning_effort='low', max_tokens=8192)
 for p in r.message.content:
     if p.type == PartType.thinking: print(f"\n🧠 {p.text[:150]}...")
 
 # Kimi with thinking — same interface
 print("\nKimi: ", end='')
-r = await stream([user("What is 127 × 849?")], model='kimi-k2.5', reasoning_effort='low', max_tokens=8192, third_party_name='moonshot')
+r = await stream([user("What is 127 × 849?")], model='accounts/fireworks/models/kimi-k2p5', vendor_name='fireworks_ai', reasoning_effort='low', max_tokens=8192)
 for p in r.message.content:
     if p.type == PartType.thinking: print(f"\n🧠 {p.text[:150]}...")
 ```
 
-    Claude: 🧠🧠🧠🧠🧠🧠🧠🧠I'll calculate 127 × 849 step by step.
+    Claude: 🧠🧠🧠## Calculating 127 × 849
 
-    127 × 849
-
-    Breaking this down:
-    - 127 × 9 = 1,143
-    - 127 × 40 = 5,080  
+    **Breaking it down:**
     - 127 × 800 = 101,600
+    - 127 × 40 = 5,080
+    - 127 × 9 = 1,143
 
-    Adding these together:
-    1,143 + 5,080 + 101,600 = 107,823
+    **Adding the parts:**
+    101,600 + 5,080 + 1,143 = **107,823**
 
-    Therefore, 127 × 849 = 107,823
+    🧠 127 × 849:
+    127 × 800 = 101,600
+    127 × 49 = 127 × 50 - 127 = 6,350 - 127 = 6,223
+    Total: 107,823...
 
-    🧠 I need to calculate 127 × 849.
+    Kimi: 🧠🧠🧠🧠🧠🧠🧠🧠🧠🧠$127 \times 849 = 107{,}823$
 
-    Let me do this step by step using the standard multiplication algorithm.
+    🧠 The user is asking for the product of 127 and 849. I need to calculate this.
 
+    Let me break it down:
     127 × 849
 
-    I'll multiply 127 by each digit o...
-
-    Kimi: 🧠🧠🧠🧠🧠🧠🧠🧠🧠🧠To calculate $127 \times 849$:
-
-    **Method 1: Breaking it down**
-    $$\begin{align}
-    127 \times 849 &= 127 \times (800 + 40 + 9) \\
-    &= (127 \times 800) + (127 \times 40) + (127 \times 9) \\
-    &= 101{,}600 + 5{,}080 + 1{,}143 \\
-    &= 107{,}823
-    \end{align}$$
-
-    **Method 2: Verification**
-    $127 \times 850 = 107{,}950$
-    Since $127 \times 849$ is one less group of 127:
-    $107{,}950 - 127 = 107{,}823$
-
-    **Answer: $107{,}823$**
-
-    🧠 This is a straightforward multiplication problem. I need to calculate 127 × 849.
-
-    Let me break this down:
-    127 × 849
-
-    I can use the distributive proper...
+    I can use the distributive property:
+    12...
 
 ## Web Search (Server Tools)
 
@@ -293,19 +264,11 @@ r = await stream([user("What is the latest Python release?")], model='gpt-4o-min
 print(f"\nServer tools used: {[tc.name for tc in r.tool_calls if tc.server]}")
 ```
 
-    GPT + web search: As of April 16, 2026, the latest stable release of Python is version 3.14.4, which was released on April 7, 2026. ([python.org](https://www.python.org/getit/?utm_source=openai)) This release includes several bug fixes and improvements over previous versions.
+    GPT + web search: As of April 29, 2026, the latest stable release of Python is version 3.14.4, which was released on April 7, 2026. ([ivyml.space](https://ivyml.space/downloads/?utm_source=openai)) This version is currently in the "bugfix" phase, receiving full support for bug fixes and security updates. Python 3.14 was first released on October 7, 2025, and is scheduled to receive support until October 31, 2030. ([eol.wiki](https://eol.wiki/python/?utm_source=openai))
 
-    Python 3.14 introduced several significant features, including:
+    Python 3.15 is currently in the alpha development phase, with the first alpha release (3.15.0a1) planned for October 14, 2025. ([peps.python.org](https://peps.python.org/pep-0790/?utm_source=openai)) The stable release of Python 3.15 is expected in October 2026.
 
-    - **PEP 779**: Official support for free-threaded Python, allowing for improved concurrency.
-    - **PEP 649**: Deferred evaluation of annotations, enhancing the semantics of using annotations.
-    - **PEP 750**: Introduction of template string literals (t-strings) for custom string processing, utilizing the familiar syntax of f-strings.
-    - **PEP 734**: Support for multiple interpreters in the standard library.
-    - **PEP 784**: A new module `compression.zstd` providing support for the Zstandard compression algorithm.
-
-    For a comprehensive list of changes and new features in Python 3.14, you can refer to the official release notes. ([docs.python.org](https://docs.python.org/3/whatsnew/3.14.html?utm_source=openai))
-
-    If you're considering upgrading to Python 3.14.4, it's advisable to review the release notes to understand the specific improvements and fixes included in this version. 
+    For more information on Python releases and their support statuses, you can visit the official Python documentation. ([python.org](https://www.python.org/doc/versions/?utm_source=openai)) 
 
     Server tools used: ['web_search']
 
@@ -328,41 +291,43 @@ r2 = await stream([user("How about Saturn?")], model='claude-sonnet-4-20250514',
 print(f"Usage: {r2.usage}")
 ```
 
-    Call 1: Jupiter's mass is approximately 1.898 × 10²⁷ kilograms (or 1,898,000,000,000,000,000,000,000,000 kg).
+    Call 1: Jupiter's mass is approximately 1.898 × 10^27 kilograms (or 1,898,000,000,000,000,000,000,000,000 kg).
 
     To put this in perspective:
     - Jupiter is about 318 times more massive than Earth
     - It contains more than twice the mass of all other planets in our solar system combined
-    - Its mass is roughly 1/1000th the mass of our Sun
+    - It's about 1/1047th the mass of our Sun
 
-    This enormous mass is what makes Jupiter such a dominant gravitational force in our solar system, influencing asteroid trajectories, capturing numerous moons (95 confirmed so far), and acting as a "cosmic vacuum cleaner" that helps protect the inner planets from potential impacts.
-    Usage: Usage(prompt_tokens=12, completion_tokens=160, total_tokens=172, raw={'input_tokens': 12, 'cache_creation_input_tokens': 1802, 'cache_read_input_tokens': 0, 'output_tokens': 160})
-    Call 2: Saturn is truly one of the most spectacular planets in our solar system! Here are some key facts about this magnificent gas giant:
+    This enormous mass is what makes Jupiter such a dominant gravitational force in our solar system, allowing it to capture and hold onto its 95+ known moons and play a crucial role in shaping the orbits of other celestial bodies.
+    Usage: Usage(prompt_tokens=1814, completion_tokens=151, total_tokens=1965, cached_tokens=0, cache_creation_tokens=1802, reasoning_tokens=0, raw={'input_tokens': 12, 'cache_creation_input_tokens': 1802, 'cache_read_input_tokens': 0, 'output_tokens': 151})
+    Call 2: Saturn is truly one of the most spectacular planets in our solar system! Here are some key facts about this magnificent world:
 
-    **Basic Characteristics:**
-    - Saturn is the 6th planet from the Sun and the second-largest planet in our solar system
-    - It's a gas giant composed primarily of hydrogen and helium
-    - Has a diameter of about 72,400 miles (116,500 km) - roughly 9 times wider than Earth
-    - Despite its large size, it's actually the least dense planet - it would float in water if you had a bathtub big enough!
+    **Basic characteristics:**
+    - The sixth planet from the Sun and second-largest in our solar system
+    - A gas giant composed primarily of hydrogen and helium
+    - About 9.5 times Earth's distance from the Sun
+    - Takes about 29.5 Earth years to orbit the Sun
 
-    **Famous Ring System:**
-    - Saturn's rings are its most distinctive feature, made up of countless ice and rock particles
-    - The ring system spans up to 175,000 miles (282,000 km) in diameter but is surprisingly thin - only about 30 feet thick in most places
-    - There are several main ring groups (A, B, C rings being most prominent) separated by gaps
+    **Famous ring system:**
+    - Saturn's rings are its most iconic feature - made of countless ice and rock particles
+    - The main rings span about 175,000 miles across but are surprisingly thin (often less than 30 feet thick)
+    - There are several distinct ring groups (A, B, C rings are the most prominent)
+    - The rings may be relatively young - possibly only 10-100 million years old
+
+    **Physical properties:**
+    - Diameter about 9 times larger than Earth
+    - Surprisingly low density - it would actually float in water!
+    - Rotates very quickly (about 10.5 hour days), causing it to bulge at the equator
+    - Has beautiful banded cloud patterns in its atmosphere
 
     **Moons:**
-    - Saturn has 146 confirmed moons, with Titan being the largest
-    - Titan is larger than Mercury and has a thick atmosphere and liquid methane lakes
-    - Enceladus is another fascinating moon with geysers of water ice erupting from its south pole
+    - Saturn has 146 confirmed moons, including Titan (larger than Mercury, with lakes of liquid methane) and Enceladus (which shoots geysers of water ice from its south pole)
 
-    **Other Notable Features:**
-    - A day on Saturn lasts about 10.7 hours
-    - It takes about 29.5 Earth years to orbit the Sun
-    - Has hexagonal storm patterns at its north pole
-    - Wind speeds can reach up to 1,100 mph (1,800 km/h)
+    **Exploration:**
+    - Visited by Pioneer 11, Voyager 1 & 2, and most extensively by the Cassini mission (2004-2017)
 
     What aspect of Saturn interests you most?
-    Usage: Usage(prompt_tokens=10, completion_tokens=359, total_tokens=369, raw={'input_tokens': 10, 'cache_creation_input_tokens': 0, 'cache_read_input_tokens': 1802, 'output_tokens': 359})
+    Usage: Usage(prompt_tokens=1812, completion_tokens=350, total_tokens=2162, cached_tokens=1802, cache_creation_tokens=0, reasoning_tokens=0, raw={'input_tokens': 10, 'cache_creation_input_tokens': 0, 'cache_read_input_tokens': 1802, 'output_tokens': 350})
 
 ## Media Inputs
 
@@ -381,19 +346,26 @@ for name, kw in [('claude-sonnet-4-20250514', {}), ('gpt-4o-mini', {}), ('models
     r = await stream([img_msg], model=name, max_tokens=mtok, **kw)
 ```
 
-          claude-sonnet-4-20250514: I see a beautiful, serene landscape with a calm lake that creates perfect mirror reflections. In the foreground, there's a wooden deck or pier made of weathered planks. The lake reflects the surrounding scenery almost like glass - showing the dense forest of evergreen trees that line the shoreline, and the majestic snow-capped mountains in the background. The mountains appear to have multiple layers, creating a sense of depth and grandeur. The lighting suggests either early morning or late afternoon, giving the scene a peaceful, golden quality. The overall composition is very tranquil and picturesque, typical of an alpine or mountain lake setting.
-                       gpt-4o-mini: The image depicts a tranquil landscape featuring a lake surrounded by mountains in the background. The water is calm, reflecting the trees and mountains, which appear to be lush and primarily green. The sky is clear with some clouds, adding to the serene atmosphere. In the foreground, there is a wooden deck or platform that enhances the view of the natural scenery.
-     models/gemini-3-flash-preview: This image shows a serene and misty mountain landscape, framed from the perspective of someone standing on a wooden deck.
+          claude-sonnet-4-20250514: I see a beautiful, serene landscape featuring:
 
-    The scene is composed of several layers:
+    - A calm lake or body of water that creates perfect mirror-like reflections
+    - Snow-capped mountains in the background creating a dramatic backdrop
+    - Dense forest of evergreen trees (likely pine or fir) lining the shoreline
+    - A wooden deck or boardwalk in the foreground with weathered planks
+    - Clear blue sky with some clouds
+    - The scene has a peaceful, pristine quality typical of alpine or mountain lake environments
 
-    *   **Foreground:** At the bottom of the image is a **wooden deck** or platform made of several weathered, dark brown planks. The perspective suggests the viewer is standing on this deck looking out over the landscape.
-    *   **Middle Ground:** Directly in front of the deck is a **large, calm lake**. The water is a deep blue-grey and is so still that it creates a perfect mirror-like reflection of the trees and mountains above it. 
-    *   **Shoreline:** Along the far edge of the lake is a thin strip of yellowish-green marshland or grass. Behind this sits a **dense forest** of evergreen trees, appearing in various shades of deep green and dark silhouette.
-    *   **Background:** Towering above the trees are **massive, rugged mountains**. The closer peaks are shrouded in a hazy blue mist, while the taller, more distant peaks are covered in bright white snow and glaciers.
-    *   **Sky:** The sky is a pale, washed-out blue, with soft, white clouds clinging to the highest mountain peaks. 
+    The composition creates a sense of tranquility and natural beauty, with the wooden platform providing a viewing point to take in this scenic mountain landscape. The perfect reflections in the still water double the visual impact of the mountains and trees.
+                       gpt-4o-mini: The image shows a serene landscape featuring a calm lake that reflects surrounding mountains and trees. The foreground includes a wooden deck or platform, which adds a sense of depth to the scene. In the background, the mountains are partially covered by mist, creating a peaceful and tranquil atmosphere. The overall color palette is dominated by blues and greens, evoking a natural and serene vibe.
+     models/gemini-3-flash-preview: This image is a serene landscape featuring a mountain lake. It is composed of several distinct layers:
 
-    The overall atmosphere of the image is quiet, cold, and majestic.
+    *   **Foreground:** At the bottom of the image, there is a rustic **wooden deck or platform** made of dark brown, weathered planks. The perspective makes it look as though the viewer is standing on this deck looking out at the view.
+    *   **Middle Ground:** A **calm, blue lake** sits directly behind the deck. The water is so still that it acts like a mirror, perfectly reflecting the trees and mountains above it.
+    *   **Shoreline:** Along the edge of the water, there is a thin strip of golden-yellow grass or low-lying vegetation. This is followed by a **dense line of green trees**, including some tall, dark conifers.
+    *   **Background:** In the far distance, **massive mountains** rise up. They are a hazy blue-grey color, with their peaks covered in snow and ice. 
+    *   **Sky:** The sky is a very pale blue, almost white, with soft, bright light suggesting a sunny but perhaps slightly hazy day.
+
+    The overall atmosphere of the image is peaceful and majestic.
 
 `fastllm` supports four media part types via `PartType`. Provider
 support varies:
