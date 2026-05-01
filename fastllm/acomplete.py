@@ -30,12 +30,13 @@ oai_spec  = SpecParser.from_openapi(dict2obj(yaml.safe_load((specs_path/'openai.
 gem_spec  = SpecParser.from_discovery(dict2obj(json.loads((specs_path/'gemini.json').read_text())))
 
 # %% ../nbs/06_acomplete.ipynb #32ee2546
+_codex_json = '~/.codex/auth.json', 'tokens','access_token'
 vendor_mapping = {
     "openai":       ('openai', 'https://api.openai.com/v1', 'OPENAI_API_KEY'),
     "anthropic":    ('anthropic', 'https://api.anthropic.com', 'ANTHROPIC_API_KEY'),
     "gemini":       ('gemini', 'https://generativelanguage.googleapis.com/', 'GEMINI_API_KEY'),
     "openai_chat":  ('openai_chat', 'https://api.openai.com/v1', 'OPENAI_API_KEY'),
-    "codex":        ('openai', 'https://chatgpt.com/backend-api/codex', 'CODEX_AUTH_TOKEN'),
+    "codex":        ('openai', 'https://chatgpt.com/backend-api/codex', 'CODEX_AUTH_TOKEN', _codex_json),
     "moonshot":     ('openai_chat', "https://api.moonshot.ai/v1", "MOONSHOT_API_KEY"),
     "deepseek":     ('openai_chat', "https://api.deepseek.com/v1", "DEEPSEEK_API_KEY"),
     "openrouter":   ('openai_chat', "https://openrouter.ai/api/v1", "OPENROUTER_API_KEY"),
@@ -54,8 +55,12 @@ def mk_client(model, vendor_name=None, api_name=None, api_key=None, base_url=Non
     if vendor_name:
         override_base_url = base_url
         try: 
-            api_name, base_url, env_api_nm = vendor_mapping[vendor_name]
+            api_name, base_url, env_api_nm, *auth_json = vendor_mapping[vendor_name]
             base_url = override_base_url or base_url
+            if auth_json and not api_key and not os.getenv(env_api_nm):
+                fn,keys = auth_json[0]
+                auth_fn = Path(fn).expanduser()
+                if auth_fn.exists(): api_key = nested_idx(json.loads(auth_fn.read_text()), *keys)
             api_key = get_api_key(api_key, env_api_nm)
         except KeyError: raise ValueError(f"Unknown vendor '{vendor_name}', {err_msg}")
     elif api_name and base_url and api_key:  vendor_name = ifnone(vendor_name, 'custom')
