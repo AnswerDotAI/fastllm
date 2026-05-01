@@ -105,8 +105,9 @@ async def acomplete(msgs, model, api_name=None, vendor_name=None, api_key=None, 
     if vendor_name == 'codex': 
         for k in 'temperature max_tokens max_output_tokens max_completion_tokens metadata'.split(): payload.pop(k, None)
         payload['store'] = False
-    if vendor_name == 'deepseek' and model in ("deepseek-v4-flash", "deepseek-v4-pro") and payload['messages'][-1]['role'] == 'assistant':
-        payload['messages'][-1]['prefix'] = True
+    if nested_idx(payload, 'messages', -1, 'role') == 'assistant':
+        if vendor_name == 'deepseek' and 'v4' in model:   payload['messages'][-1]['prefix'] = True
+        if vendor_name == 'moonshot' and 'kimi' in model: payload['messages'][-1]['partial'] = True
     stream = kwargs.get('stream', False)
     func = attrgetter(api.op_path[stream])(cli)
     try: resp = await func(**payload)

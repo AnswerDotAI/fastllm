@@ -269,6 +269,7 @@ def get_model_info(mn, vendor_name=None):
         if 'k2p6' in mn: info = get_model_meta(mn.replace('k2p6', 'k2p5'), vendor_name)
         info['supports_reasoning'] = True
         info['supports_vision'] = True
+        if vendor_name == 'moonshot': info['supports_assistant_prefill'] = True
     # add web search to gpt
     if mn in ("gpt-5.4", "gpt-5.4-mini"):
         info['supports_web_search'] = True
