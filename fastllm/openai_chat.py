@@ -15,7 +15,7 @@ from fastspec.errors import api_error_from_event
 
 from .types import *
 from .streaming import *
-from .streaming import _acollect_stream
+from .streaming import mk_acollect_stream
 from .openai_responses import norm_usage
 
 # %% ../nbs/03_oai_chat.ipynb #b4f0e4d0
@@ -74,9 +74,9 @@ def delta_index_fn(d, typ, last_typ, last_idx):
     return last_idx + 1, last_idx + 1
 
 # %% ../nbs/03_oai_chat.ipynb #e7f8965b
-@delegates(_acollect_stream, but=['index_fn', 'api_name'])
+@delegates(mk_acollect_stream, but=['index_fn', 'api_name'])
 async def acollect_stream(resp, **kwargs):
-    res = _acollect_stream(norm_and_yield(resp, norm_sse_event), index_fn=delta_index_fn, api_name='openai_chat', **kwargs)
+    res = mk_acollect_stream(norm_and_yield(resp, norm_sse_event), index_fn=delta_index_fn, api_name='openai_chat', **kwargs)
     async for o in res: yield o
 
 # %% ../nbs/03_oai_chat.ipynb #5a7129f1

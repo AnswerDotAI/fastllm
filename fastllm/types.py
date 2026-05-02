@@ -53,10 +53,8 @@ class Msg:
     role: str
     content: List[Part]
 
-# %% ../nbs/00_types.ipynb #16deffad
-@patch
-def _repr_markdown_(self: Msg):
-    return f"""**Msg**
+    def _repr_markdown_(self):
+        return f"""**Msg**
 
 - role: `{self.role}`
 
@@ -219,7 +217,7 @@ def url_mime(url, default='application/octet-stream'):
     return _ext_mime.get(ext, default)
 
 # %% ../nbs/00_types.ipynb #28c698fe
-def payload_kwargs(msgs, model, stream=False, system=None, max_tokens=None, temperature=None, tools=None, tool_choice=None, reasoning_effort=None, web_search_options=None): pass
+def payload_kwargs(msgs, model, stream=False, system=None, max_tokens=None, temperature=None, tools=None, tool_choice=None, reasoning_effort=None, web_search_options=None, stop_callables=None, stop_sequences=None): pass
 
 # %% ../nbs/00_types.ipynb #c2a2cb49
 def get_api_key(api_key, default):

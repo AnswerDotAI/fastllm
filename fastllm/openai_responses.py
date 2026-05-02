@@ -15,7 +15,7 @@ from fastspec.errors import api_error_from_event
 
 from .types import *
 from .streaming import *
-from .streaming import _acollect_stream
+from .streaming import mk_acollect_stream
 
 # %% ../nbs/02_oai_responses.ipynb #479243ae
 def norm_tool_call(item):
@@ -104,9 +104,9 @@ def delta_index_fn(d, typ, last_typ, last_idx):
     return idx, idx
 
 # %% ../nbs/02_oai_responses.ipynb #021b5257
-@delegates(_acollect_stream, but=['index_fn', 'api_name'])
+@delegates(mk_acollect_stream, but=['index_fn', 'api_name'])
 async def acollect_stream(resp, **kwargs):
-    res = _acollect_stream(norm_and_yield(resp, norm_sse_event), index_fn=delta_index_fn, api_name='openai', **kwargs)
+    res = mk_acollect_stream(norm_and_yield(resp, norm_sse_event), index_fn=delta_index_fn, api_name='openai', **kwargs)
     async for o in res: yield o
 
 # %% ../nbs/02_oai_responses.ipynb #b746c82b

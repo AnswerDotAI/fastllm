@@ -19,6 +19,7 @@ from fastspec.errors import APIError
 from .types import *
 from .streaming import *
 from .openai_responses import *
+from .streaming import stop_sequences as _stop_sequences
 from .openai_chat import *
 from .anthropic import *
 from .gemini import *
@@ -101,11 +102,13 @@ async def _classify_error_stream(gen):
 
 # %% ../nbs/06_acomplete.ipynb #2379ec94
 @delegates(payload_kwargs)
-async def acomplete(msgs, model, api_name=None, vendor_name=None, api_key=None, base_url=None, xtra_body=None, xtra_hdrs=None, **kwargs):
+async def acomplete(msgs, model, api_name=None, vendor_name=None, api_key=None, base_url=None, xtra_body=None, xtra_hdrs=None, 
+    stream=False, stop_callables=None, stop_sequences=None, **kwargs):
     "Unified completion across different APIs."
     cli, api_name, vendor_name = mk_client(model, vendor_name, api_name, api_key, base_url, xtra_hdrs)
     api = api_registry.apis[api_name]
-    payload = api.mk_payload(msgs, model, **kwargs)
+    if stop_sequences: stop_callables = L(stop_callables) + [_stop_sequences(stop_sequences)]
+    payload = api.mk_payload(msgs, model, stream=stream, stop_callables=stop_callables, **kwargs)
     payload = merge(payload, ifnone(xtra_body, {}))
     if vendor_name == 'codex': 
         for k in 'temperature max_tokens max_output_tokens max_completion_tokens metadata'.split(): payload.pop(k, None)
@@ -113,9 +116,8 @@ async def acomplete(msgs, model, api_name=None, vendor_name=None, api_key=None, 
     if nested_idx(payload, 'messages', -1, 'role') == 'assistant':
         if vendor_name == 'deepseek' and 'v4' in model:   payload['messages'][-1]['prefix'] = True
         if vendor_name == 'moonshot' and 'kimi' in model: payload['messages'][-1]['partial'] = True
-    stream = kwargs.get('stream', False)
     func = attrgetter(api.op_path[stream])(cli)
     try: resp = await func(**payload)
     except APIError as e: raise _classify_error(e) from e
-    if stream: return _classify_error_stream(api.acollect_stream(resp, model=model, vendor_name=vendor_name))
+    if stream: return _classify_error_stream(api.acollect_stream(resp, model=model, vendor_name=vendor_name, stop_callables=stop_callables))
     return mk_completion(resp, model=model, api_name=api_name, vendor_name=vendor_name)
