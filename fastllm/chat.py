@@ -4,10 +4,10 @@
 
 # %% auto #0
 __all__ = ['tool_dtls_tag', 're_tools', 'token_dtls_tag', 're_token', 'effort', 'remove_cache_ckpts', 'contents', 'stop_reason',
-           'mk_msg', 'split_tools', 'fmt2hist', 'mk_msgs', 'cite_footnote', 'postproc', 'lite_mk_func', 'ToolResponse',
-           'structured', 'StopResponse', 'FullResponse', 'search_count', 'UsageStats', 'AsyncChat', 'add_warning',
-           'astream_with_complete', 'mk_tr_details', 'mk_srv_tc_details', 'StreamFormatter', 'AsyncStreamFormatter',
-           'adisplay_stream']
+           'mk_msg', 'extract_fence_call', 'split_tools', 'fmt2hist', 'mk_msgs', 'cite_footnote', 'postproc',
+           'lite_mk_func', 'ToolResponse', 'structured', 'StopResponse', 'FullResponse', 'search_count', 'UsageStats',
+           'FenceToolStop', 'AsyncChat', 'add_warning', 'astream_with_complete', 'run_fence_tool', 'mk_tr_details',
+           'mk_srv_tc_details', 'StreamFormatter', 'AsyncStreamFormatter', 'adisplay_stream']
 
 # %% ../nbs/07_chat.ipynb #d5a3bc1f
 import asyncio, base64, json, mimetypes, random, string, ast, warnings
@@ -22,6 +22,7 @@ from dataclasses import dataclass
 
 from .types import *
 from .acomplete import *
+from .streaming import completion_text
 
 # %% ../nbs/07_chat.ipynb #90f55ad4
 def _bytes2content(data):
@@ -94,6 +95,44 @@ token_dtls_tag = "<details class='token-usage-details'>"
 re_token = re.compile(fr"^{re.escape(token_dtls_tag)}<summary>.*?</summary>\n*\n*`.*?`\n*\n*</details>\n?",
                       flags=re.DOTALL|re.MULTILINE)
 
+# %% ../nbs/07_chat.ipynb #be998131
+_fence_back = '`````'
+_fence_re = re.compile(f'\n{_fence_back}(py|bash)\n(.*?)\n{_fence_back}\n', re.DOTALL)
+_result_re = re.compile(f'\n{_fence_back}result\n(.*?)\n{_fence_back}\n', re.DOTALL)
+_lang2tool = dict(py='python', bash='bash')
+
+# %% ../nbs/07_chat.ipynb #c65da4e0
+def extract_fence_call(text):
+    "Return (lang, code) if text ends with terminated py/bash fence, else None"
+    ms = list(_fence_re.finditer(text))
+    if not ms: return None
+    m = ms[-1]
+    if m.end() == len(text): return m.group(1), m.group(2)
+
+# %% ../nbs/07_chat.ipynb #1de7e4d2
+def _mk_result_fence(output): return f"\n{_fence_back}result\n{output}\n{_fence_back}\n"
+
+def _split_msg_on_fences(msg):
+    "Split an assistant Msg on result fences, return list of Msgs"
+    if msg.role != 'assistant': return [msg]
+    if any(p.type != PartType.text for p in msg.content): return [msg]
+    text = ''.join(p.text or '' for p in msg.content)
+    if not _result_re.search(text): return [msg]
+    parts = _result_re.split(text)
+    res = []
+    for i,p in enumerate(parts):
+        if not p: continue
+        if i % 2 == 0:
+            if p.strip(): res.append(Msg(role='assistant', content=[Part(type=PartType.text, text=p.strip())]))
+        else: res.append(Msg(role='user', content=[Part(type=PartType.text, text=_mk_result_fence(p))]))
+    return res
+
+def _split_fence_msgs(msgs):
+    "Split all assistant msgs on result fences for wire protocol"
+    res = []
+    for m in msgs: res.extend(_split_msg_on_fences(m))
+    return res
+
 # %% ../nbs/07_chat.ipynb #45ada210
 def _extract_tool_parts(text:str):
     "Extract (tool_use_part, tool_result_part) from <details> json block"
@@ -110,10 +149,13 @@ def split_tools(s):
     "Split formatted output into (text, summary, tooljson) chunks"
     return [(txt,summ,tj) for txt,_,summ,tj in chunked(re_tools.split(s.strip()), 4, pad=True)]
 
+# %% ../nbs/07_chat.ipynb #44060a78
 def fmt2hist(outp:str)->list[Msg]:
     "Transform a formatted output string into fastllm canonical Msgs"
     if token_dtls_tag in outp: outp = re_token.sub('', outp)
-    if tool_dtls_tag not in outp: return [Msg(role='assistant', content=[Part(type=PartType.text, text=outp.strip())])]
+    if tool_dtls_tag not in outp:
+        msg = Msg(role='assistant', content=[Part(type=PartType.text, text=outp.strip())])
+        return _split_msg_on_fences(msg)
     hist, asst_parts, tool_parts = [], [], []
     def flush():
         if tool_parts:
@@ -122,17 +164,18 @@ def fmt2hist(outp:str)->list[Msg]:
             asst_parts.clear(); tool_parts.clear()
     for txt,_,tj in split_tools(outp):
         if txt and txt.strip():
-            if tool_parts: flush()   # text after tool results => new assistant turn
+            if tool_parts: flush()
             asst_parts.append(Part(type=PartType.text, text=txt.strip()))
         if tj and (tp := _extract_tool_parts(tj)):
             asst_parts.append(tp[0])
             tool_parts.append(tp[1])
     flush()
     if asst_parts: hist.append(Msg(role='assistant', content=asst_parts))
-    # TODO: Is this needed?
-    # if hist and hist[-1].role == 'tool':
-    #     hist.append(Msg(role='assistant', content=[Part(type=PartType.text, text='.')]))
-    return hist
+    result = []
+    for msg in hist:
+        if msg.role == 'assistant': result.extend(_split_msg_on_fences(msg))
+        else: result.append(msg)
+    return result
 
 # %% ../nbs/07_chat.ipynb #8de5ce8d
 def _apply_cache_idxs(msgs, cache_idxs=[-1], ttl=None):
@@ -309,6 +352,21 @@ def _inject_tool_reminder(msgs, reminder):
     msgs[i] = m
     return msgs
 
+# %% ../nbs/07_chat.ipynb #e7eb2032
+def _active_fence_langs(tool_schemas):
+    "Return set of active fence langs whose mapped tool is registered"
+    if not tool_schemas: return set()
+    names = {nested_idx(t, 'function', 'name') for t in tool_schemas}
+    return {lang for lang, tname in _lang2tool.items() if tname in names}
+
+# %% ../nbs/07_chat.ipynb #3cf99fcd
+class FenceToolStop:
+    def __init__(self, langs): self.langs = langs
+    def __call__(self, c):
+        "Return non-string truthy if complete fence detected in active lang"
+        m = _fence_re.search(completion_text(c))
+        return m and m.group(1) in self.langs
+
 # %% ../nbs/07_chat.ipynb #e9a14051
 class AsyncChat:
     def __init__(
@@ -352,6 +410,7 @@ class AsyncChat:
         self.hist = mk_msgs(self.hist, self.cache and 'claude' in self.model, cache_idxs, self.ttl)
         msgs = self.hist
         if prefill: msgs = self.hist + [Msg(role='assistant', content=[Part(PartType.text, prefill)])]
+        msgs = _split_fence_msgs(msgs)
         if self.tool_reminder: msgs = _inject_tool_reminder(msgs, self.tool_reminder)
         if 'deepseek' in self.model:
             # The `reasoning_content` in the thinking mode must be passed back to the API.
@@ -419,7 +478,11 @@ def _prep_call(self:AsyncChat, prefill, search, max_tokens, kwargs, stream=False
     if self.base_url:      kwargs['base_url'] = self.base_url
     if self.extra_headers: kwargs['xtra_headers'] = self.extra_headers
     kwargs.update(_think_kw(self.model, think, self.vendor_name))
+    if (langs := _active_fence_langs(self.tool_schemas)):
+        if not any(isinstance(s, FenceToolStop) for s in kwargs.get('stop_callables', [])):
+            kwargs['stop_callables'] = kwargs.get('stop_callables', []) + [FenceToolStop(langs)]
     return prefill, max_tokens
+
 
 # %% ../nbs/07_chat.ipynb #07951b77
 @patch
@@ -494,6 +557,29 @@ async def _call(self:AsyncChat, msg=None, prefill=None, temp=None, think=None, s
             async for result in self._call(
                 prompt, prefill, temp, think, search, stream, max_steps, step+1,
                 final_prompt, tool_choice='none', **kwargs): yield result
+
+    elif (langs := _active_fence_langs(self.tool_schemas)):
+        m = self.hist[-1]
+        if m.role == 'assistant':
+            text = ''.join(p.text or '' for p in m.content if p.type == PartType.text)
+            if fence := extract_fence_call(text):
+                lang, code = fence
+                out = await run_fence_tool(lang, code, self.ns)
+                for p in reversed(m.content):
+                    if p.type == PartType.text: p.text += out; break
+                if stream: yield {'text': out}
+                if step <= max_steps:
+                    async for result in self._call(
+                        None, prefill, temp, think, search, stream, max_steps, step+1,
+                        final_prompt, tool_choice, **kwargs): yield result
+
+# %% ../nbs/07_chat.ipynb #4dc002da
+async def run_fence_tool(lang, code, ns):
+    "Run the mapped tool for `lang` with the code, return result fence"
+    tname = _lang2tool[lang]
+    arg = dict(code=code) if lang == 'py' else dict(command=code)
+    res = _mk_tool_result(await call_func_async(tname, arg, ns=ns, raise_on_err=False))
+    return _mk_result_fence(_trunc_str(str(res)))
 
 # %% ../nbs/07_chat.ipynb #1361515a
 @patch
