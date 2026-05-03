@@ -7,8 +7,7 @@ __all__ = ['specs_path', 'ant_spec', 'oai_spec', 'gem_spec', 'vendor_mapping', '
            'ContextWindowExceededError', 'acomplete']
 
 # %% ../nbs/06_acomplete.ipynb #f2f57253
-import nbdev, yaml, json
-from dataclasses import dataclass, field, fields
+import yaml, json
 from importlib.resources import files
 from fastcore.utils import *
 from fastcore.meta import *
@@ -55,11 +54,11 @@ def mk_client(model, vendor_name=None, api_name=None, api_key=None, base_url=Non
     err_msg = f"please pass a valid one vendor: {', '.join(list(vendor_mapping))} or pass `api_name`,`base_url` and `api_key`"
     if vendor_name:
         override_base_url = base_url
-        try: 
+        try:
             api_name, base_url, env_api_nm, *auth_json = vendor_mapping[vendor_name]
             base_url = override_base_url or base_url
             if auth_json and not api_key and not os.getenv(env_api_nm):
-                fn,keys = auth_json[0]
+                fn,keys = auth_json[0]  # pyright: ignore[reportAssignmentType]
                 auth_fn = Path(fn).expanduser()
                 if auth_fn.exists(): api_key = nested_idx(json.loads(auth_fn.read_text()), *keys)
             api_key = get_api_key(api_key, env_api_nm)
@@ -70,8 +69,8 @@ def mk_client(model, vendor_name=None, api_name=None, api_key=None, base_url=Non
     api = api_registry.apis[api_name]
     spec, hdrs = api2spec[api_name], api.get_hdrs(api_key)
     cli = OpenAPIClient(spec, headers=merge(hdrs, ifnone(xtra_hdrs, {})))
-    if base_url is not None: 
-        for op in cli.ops: op.base_url = base_url
+    if base_url is not None:
+        for op in cli.ops: op.base_url = base_url  # pyright: ignore[reportAttributeAccessIssue]
     return cli, api_name, vendor_name
 
 # %% ../nbs/06_acomplete.ipynb #df851a5c
@@ -102,7 +101,7 @@ async def _classify_error_stream(gen):
 
 # %% ../nbs/06_acomplete.ipynb #2379ec94
 @delegates(payload_kwargs)
-async def acomplete(msgs, model, api_name=None, vendor_name=None, api_key=None, base_url=None, xtra_body=None, xtra_hdrs=None, 
+async def acomplete(msgs, model, api_name=None, vendor_name=None, api_key=None, base_url=None, xtra_body=None, xtra_hdrs=None,
     stream=False, stop_callables=None, stop_sequences=None, **kwargs):
     "Unified completion across different APIs."
     cli, api_name, vendor_name = mk_client(model, vendor_name, api_name, api_key, base_url, xtra_hdrs)
@@ -110,7 +109,7 @@ async def acomplete(msgs, model, api_name=None, vendor_name=None, api_key=None, 
     if stop_sequences: stop_callables = L(stop_callables) + [_stop_sequences(stop_sequences)]
     payload = api.mk_payload(msgs, model, stream=stream, stop_callables=stop_callables, **kwargs)
     payload = merge(payload, ifnone(xtra_body, {}))
-    if vendor_name == 'codex': 
+    if vendor_name == 'codex':
         for k in 'temperature max_tokens max_output_tokens max_completion_tokens metadata'.split(): payload.pop(k, None)
         payload['store'] = False
     if nested_idx(payload, 'messages', -1, 'role') == 'assistant':
