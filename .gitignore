@@ -1,3 +1,4 @@
+*.egg-info/
 **/specs/*.ipynb
 _docs/
 _proc/
@@ -152,3 +153,4 @@ checklink/cookies.txt
 
 # Quarto
 .quarto
+*.egg-info/

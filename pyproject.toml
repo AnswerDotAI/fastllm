@@ -3,7 +3,7 @@ requires = ["setuptools>=64"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "fastllm"
+name = "python-fastllm"
 dynamic = ["version"]
 description = ""
 readme = "README.md"
@@ -15,7 +15,7 @@ classifiers = [
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3 :: Only",
 ]
-dependencies = ['fastspec']
+dependencies = ['fastspec', 'toolslm']
 
 [project.urls]
 Repository = "https://github.com/AnswerDotAI/fastllm"
