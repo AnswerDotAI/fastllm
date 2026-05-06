@@ -27,7 +27,7 @@ fastllm = "fastllm._modidx:d"
 version = {attr = "fastllm.__version__"}
 
 [tool.setuptools.packages.find]
-include = ["fastllm"]
+include = ["fastllm*"]
 
 [tool.setuptools.package-data]
 fastllm = ["specs/*.yml", "specs/*.json"]
