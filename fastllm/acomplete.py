@@ -8,6 +8,7 @@ __all__ = ['specs_path', 'ant_spec', 'oai_spec', 'gem_spec', 'vendor_mapping', '
 
 # %% ../nbs/06_acomplete.ipynb #f2f57253
 import yaml, json
+from dataclasses import dataclass, field, fields
 from importlib.resources import files
 from fastcore.utils import *
 from fastcore.meta import *
@@ -23,10 +24,10 @@ from .openai_chat import *
 from .anthropic import *
 from .gemini import *
 
-# %% ../nbs/06_acomplete.ipynb #08a84488
+# %% ../nbs/06_acomplete.ipynb #6d11ac28
 specs_path = files('fastllm') / 'specs'
-ant_spec  = SpecParser.from_openapi(dict2obj(yaml.safe_load((specs_path/'anthropic.yml').read_text())))
-oai_spec  = SpecParser.from_openapi(dict2obj(yaml.safe_load((specs_path/'openai.with-code-samples.yml').read_text())))
+ant_spec  = SpecParser.from_openapi(dict2obj(json.loads((specs_path/'anthropic.json').read_text())))
+oai_spec  = SpecParser.from_openapi(dict2obj(json.loads((specs_path/'openai.with-code-samples.json').read_text())))
 gem_spec  = SpecParser.from_discovery(dict2obj(json.loads((specs_path/'gemini.json').read_text())))
 
 # %% ../nbs/06_acomplete.ipynb #32ee2546

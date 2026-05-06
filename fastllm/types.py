@@ -12,7 +12,6 @@ __all__ = ['PartType', 'FinishReason', 'api_registry', 'model_prices_url', 'code
 from dataclasses import dataclass, field
 from fastcore.net import urljson
 from fastcore.utils import *
-from IPython.display import Markdown, display
 
 # %% ../nbs/00_types.ipynb #e568bade
 @dataclass
@@ -88,7 +87,9 @@ def _repr_markdown_(self: ToolCall):
 
 </details>"""
 
-def display_list(l): display(Markdown('\n\n'.join(o._repr_markdown_() for o in l)))
+def display_list(l): 
+    from IPython.display import Markdown, display
+    display(Markdown('\n\n'.join(o._repr_markdown_() for o in l)))
 
 # %% ../nbs/00_types.ipynb #802ad832
 @dataclass(frozen=True)
