@@ -1,0 +1,9 @@
+project:
+  output-dir: _docs
+
+website:
+  title: "fastllm"
+  site-url: "/"
+  description: ""
+  repo-branch: main
+  repo-url: "https://github.com/AnswerDotAI/fastllm"
