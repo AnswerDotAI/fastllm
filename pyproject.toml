@@ -35,3 +35,5 @@ fastllm = ["specs/*.yml", "specs/*.json"]
 [tool.nbdev]
 allowed_metadata_keys = ['solveit']
 allowed_cell_metadata_keys = ['solveit_ai']
+custom_sidebar = false
+lib_path = "fastllm"
