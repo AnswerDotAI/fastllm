@@ -18,7 +18,6 @@ from fastspec.errors import APIError
 from .types import *
 from .streaming import *
 from .openai_responses import *
-from .streaming import stop_sequences as _stop_sequences
 from .openai_chat import *
 from .anthropic import *
 from .gemini import *
@@ -106,7 +105,6 @@ async def acomplete(msgs, model, api_name=None, vendor_name=None, api_key=None, 
     "Unified completion across different APIs."
     cli, api_name, vendor_name = mk_client(model, vendor_name, api_name, api_key, base_url, xtra_hdrs)
     api = api_registry.apis[api_name]
-    if stop_sequences: stop_callables = L(stop_callables) + [_stop_sequences(stop_sequences)]
     payload = api.mk_payload(msgs, model, stream=stream, stop_callables=stop_callables, **kwargs)
     payload = merge(payload, ifnone(xtra_body, {}))
     if vendor_name == 'codex':
