@@ -4,10 +4,10 @@
 
 # %% auto #0
 __all__ = ['tool_dtls_tag', 're_tools', 'token_dtls_tag', 're_token', 'effort', 'remove_cache_ckpts', 'contents', 'stop_reason',
-           'mk_msg', 'extract_fence_call', 'split_tools', 'fmt2hist', 'mk_msgs', 'cite_footnote', 'postproc',
-           'lite_mk_func', 'ToolResponse', 'structured', 'StopResponse', 'FullResponse', 'search_count', 'UsageStats',
-           'FenceToolStop', 'AsyncChat', 'add_warning', 'astream_with_complete', 'run_fence_tool', 'mk_tr_details',
-           'mk_srv_tc_details', 'StreamFormatter', 'AsyncStreamFormatter', 'adisplay_stream']
+           'mk_msg', 'FenceToolStop', 'extract_fence_call', 'stop_sequences', 'split_tools', 'fmt2hist', 'mk_msgs',
+           'cite_footnote', 'postproc', 'lite_mk_func', 'ToolResponse', 'structured', 'StopResponse', 'FullResponse',
+           'search_count', 'UsageStats', 'AsyncChat', 'add_warning', 'astream_with_complete', 'run_fence_tool',
+           'mk_tr_details', 'mk_srv_tc_details', 'StreamFormatter', 'AsyncStreamFormatter', 'adisplay_stream']
 
 # %% ../nbs/07_chat.ipynb #d5a3bc1f
 import asyncio, base64, json, mimetypes, random, string, ast, warnings
@@ -22,7 +22,6 @@ from dataclasses import dataclass
 
 from .types import *
 from .acomplete import *
-from .streaming import completion_text
 
 # %% ../nbs/07_chat.ipynb #90f55ad4
 def _bytes2content(data):
@@ -97,17 +96,24 @@ re_token = re.compile(fr"^{re.escape(token_dtls_tag)}<summary>.*?</summary>\n*\n
 
 # %% ../nbs/07_chat.ipynb #be998131
 _fence_back = '`````'
-_fence_re = re.compile(f'\n{_fence_back}(py|bash)\n(.*?)\n{_fence_back}\n', re.DOTALL)
+_fence_re = re.compile(f'{_fence_back}(py|bash)\n(.*?)\n{_fence_back}', re.DOTALL)
 _result_re = re.compile(f'\n{_fence_back}result\n(.*?)\n{_fence_back}\n', re.DOTALL)
 _lang2tool = dict(py='python', bash='bash')
 
-# %% ../nbs/07_chat.ipynb #c65da4e0
+class FenceToolStop:
+    def __init__(self, langs): self.langs = langs
+    def __call__(self, text):
+        "Return trim result if complete fence detected in active lang"
+        m = _fence_re.search(text)
+        if m and m.group(1) in self.langs: return m.group(0)
+
+# %% ../nbs/07_chat.ipynb #e6360e96
 def extract_fence_call(text):
     "Return (lang, code) if text ends with terminated py/bash fence, else None"
     ms = list(_fence_re.finditer(text))
     if not ms: return None
     m = ms[-1]
-    if m.end() == len(text): return m.group(1), m.group(2)
+    if not text[m.end():].strip(): return m.group(1), m.group(2)
 
 # %% ../nbs/07_chat.ipynb #1de7e4d2
 def _mk_result_fence(output): return f"\n{_fence_back}result\n{output}\n{_fence_back}\n"
@@ -132,6 +138,15 @@ def _split_fence_msgs(msgs):
     res = []
     for m in msgs: res.extend(_split_msg_on_fences(m))
     return res
+
+# %% ../nbs/07_chat.ipynb #b161ca9e
+def stop_sequences(seqs):
+    "Stop when any sequence appears in the accumulated completion text."
+    seqs = L(seqs)
+    def _stop(text):
+        for s in seqs:
+            if s in text: return text[:text.find(s)+len(s)]
+    return _stop
 
 # %% ../nbs/07_chat.ipynb #45ada210
 def _extract_tool_parts(text:str):
@@ -358,14 +373,6 @@ def _active_fence_langs(tool_schemas):
     if not tool_schemas: return set()
     names = {nested_idx(t, 'function', 'name') for t in tool_schemas}
     return {lang for lang, tname in _lang2tool.items() if tname in names}
-
-# %% ../nbs/07_chat.ipynb #3cf99fcd
-class FenceToolStop:
-    def __init__(self, langs): self.langs = langs
-    def __call__(self, c):
-        "Return non-string truthy if complete fence detected in active lang"
-        m = _fence_re.search(completion_text(c))
-        return m and m.group(1) in self.langs
 
 # %% ../nbs/07_chat.ipynb #e9a14051
 class AsyncChat:
@@ -682,15 +689,15 @@ class AsyncStreamFormatter(StreamFormatter):
         "Format the response stream for markdown display."
         async for o in rs: yield self.format_item(o)
 
-# %% ../nbs/07_chat.ipynb #f4345023
+# %% ../nbs/07_chat.ipynb #944bcd25
 @delegates(AsyncStreamFormatter)
 async def adisplay_stream(rs, **kwargs):
     "Use IPython.display to markdown display the response stream."
     try: from IPython.display import display, Markdown
     except ModuleNotFoundError: raise ModuleNotFoundError("This function requires ipython. Please run `pip install ipython` to use.")
     fmt = AsyncStreamFormatter(**kwargs)
-    md = ''
+    md,h = '',display(Markdown(' '), display_id=True)
     async for o in fmt.format_stream(rs):
-        md+=o
-        display(Markdown(md),clear=True)
+        md += o
+        if md: h.update(Markdown(md))
     return fmt
