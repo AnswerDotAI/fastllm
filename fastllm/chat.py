@@ -510,6 +510,11 @@ async def astream_with_complete(self, agen, postproc=noop):
         if not isinstance(chunk, Completion): yield postproc(chunk)
     self.value = chunk
 
+# %% ../nbs/07_chat.ipynb #f2a27c9e
+@patch(as_prop=True)
+def text(self:Msg):
+    return ''.join(p.text or '' for p in self.content if p.type == PartType.text)
+
 # %% ../nbs/07_chat.ipynb #baf28c01
 @patch
 @delegates(acomplete)
@@ -544,16 +549,27 @@ async def _call(self:AsyncChat, msg=None, prefill=None, temp=None, think=None, s
     self._track(res)
     yield res
 
+    toolloop, prompt = False, None
+    if (langs := _active_fence_langs(self.tool_schemas)):
+        if m := last(self.hist, lambda o: o.role == 'assistant'):
+            if fence := extract_fence_call(m.text):
+                lang, code = fence
+                out = await run_fence_tool(lang, code, self.ns)
+                for p in reversed(m.content):
+                    if p.type == PartType.text: p.text += out; break
+                if stream: yield {'text': out}
+                toolloop = True
     if stcs:= _srvtools(res.tool_calls): 
         for tc in stcs: yield tc
     if tcs := _usrtools(res.tool_calls):
         tres = await parallel_async(_alite_call_func, tcs, timeout=tc_timeout, n_workers=n_workers, pause=pause, **self.tcdict)
         tmsg = mk_tool_res_msg(tcs, tres)
-        # TODO: We yield tool calls at the end with their results, fastllm doesn't yield streaming tool calls during streaming as once the collation is done for simplicity, but it can
         for r in tmsg.content: yield r
         self.hist.append(tmsg)
         if step>=max_steps-1 or _has_stop(tmsg.content): prompt,tool_choice,search = mk_msg(final_prompt),'none',False
-        else: prompt = None
+        toolloop = True
+
+    if toolloop and step <= max_steps:
         try:
             async for result in self._call(
                 prompt, prefill, temp, think, search, stream, max_steps, step+1,
@@ -564,21 +580,6 @@ async def _call(self:AsyncChat, msg=None, prefill=None, temp=None, think=None, s
             async for result in self._call(
                 prompt, prefill, temp, think, search, stream, max_steps, step+1,
                 final_prompt, tool_choice='none', **kwargs): yield result
-
-    elif (langs := _active_fence_langs(self.tool_schemas)):
-        m = self.hist[-1]
-        if m.role == 'assistant':
-            text = ''.join(p.text or '' for p in m.content if p.type == PartType.text)
-            if fence := extract_fence_call(text):
-                lang, code = fence
-                out = await run_fence_tool(lang, code, self.ns)
-                for p in reversed(m.content):
-                    if p.type == PartType.text: p.text += out; break
-                if stream: yield {'text': out}
-                if step <= max_steps:
-                    async for result in self._call(
-                        None, prefill, temp, think, search, stream, max_steps, step+1,
-                        final_prompt, tool_choice, **kwargs): yield result
 
 # %% ../nbs/07_chat.ipynb #4dc002da
 async def run_fence_tool(lang, code, ns):
