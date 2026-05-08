@@ -268,13 +268,13 @@ codex_pricing = {
 
 _codex_overrides = {
     codex53spark: dict(
-        supports_vision=False, supports_image_input=False, supports_web_search=True,
+        supports_vision=False, supports_image_input=False, supports_web_search=True, supports_reasoning=True,
         max_tokens=128000, max_input_tokens=128000, max_output_tokens=128000)
 }
 
 # %% ../nbs/00_types.ipynb #fbfdeb0a
 def get_model_info(mn, vendor_name=None):
-    info = get_model_meta(mn, vendor_name)
+    info = get_model_meta(mn, 'chatgpt' if vendor_name=='codex' else vendor_name)
     # anthropic web search 
     if 'search_context_cost_per_query' in info: info['supports_web_search'] = True
     # kimi
@@ -288,7 +288,7 @@ def get_model_info(mn, vendor_name=None):
         info['supports_web_search'] = True
         info.pop('mode', None)
     # codex updates
-    if vendor_name == 'codex': 
+    if vendor_name == 'codex':
         info = merge(info, codex_pricing)
         info |= _codex_overrides.get(mn, {})
     # deepseek v4
