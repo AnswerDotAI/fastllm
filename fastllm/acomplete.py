@@ -29,7 +29,7 @@ oai_spec  = SpecParser.from_openapi(dict2obj(json.loads((specs_path/'openai.with
 gem_spec  = SpecParser.from_discovery(dict2obj(json.loads((specs_path/'gemini.json').read_text())))
 
 # %% ../nbs/06_acomplete.ipynb #32ee2546
-_codex_json = '~/.codex/auth.json', 'tokens','access_token'
+_codex_json = '~/.codex/auth.json', ('tokens','access_token')
 vendor_mapping = {
     "openai":       ('openai', 'https://api.openai.com/v1', 'OPENAI_API_KEY'),
     "anthropic":    ('anthropic', 'https://api.anthropic.com', 'ANTHROPIC_API_KEY'),
