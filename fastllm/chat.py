@@ -96,7 +96,7 @@ re_token = re.compile(fr"^{re.escape(token_dtls_tag)}<summary>.*?</summary>\n*\n
 
 # %% ../nbs/07_chat.ipynb #be998131
 _fence_back = '`````'
-_fence_re = re.compile(f'{_fence_back}(py|bash)\n(.*?)\n{_fence_back}', re.DOTALL)
+_fence_re = re.compile(f'^{_fence_back}(py|bash)\n(.*?)\n{_fence_back}', re.DOTALL | re.MULTILINE)
 _result_re = re.compile(f'\n{_fence_back}result\n(.*?)\n{_fence_back}\n', re.DOTALL)
 _lang2tool = dict(py='python', bash='bash')
 
@@ -115,22 +115,27 @@ def extract_fence_call(text):
     m = ms[-1]
     if not text[m.end():].strip(): return m.group(1), m.group(2)
 
+# %% ../nbs/07_chat.ipynb #215183bf
+@patch(as_prop=True)
+def text(self:Msg): return ''.join(p.text or '' for p in self.content if p.type == PartType.text)
+
 # %% ../nbs/07_chat.ipynb #1de7e4d2
 def _mk_result_fence(output): return f"\n{_fence_back}result\n{output}\n{_fence_back}\n"
 
 def _split_msg_on_fences(msg):
     "Split an assistant Msg on result fences, return list of Msgs"
     if msg.role != 'assistant': return [msg]
-    if any(p.type != PartType.text for p in msg.content): return [msg]
-    text = ''.join(p.text or '' for p in msg.content)
-    if not _result_re.search(text): return [msg]
-    parts = _result_re.split(text)
-    res = []
-    for i,p in enumerate(parts):
-        if not p: continue
-        if i % 2 == 0:
-            if p.strip(): res.append(Msg(role='assistant', content=[Part(type=PartType.text, text=p.strip())]))
-        else: res.append(Msg(role='user', content=[Part(type=PartType.text, text=_mk_result_fence(p))]))
+    if not _result_re.search(msg.text): return [msg]
+    res, asst_parts, tool_parts = [], [], []
+    for msg_part in msg.content:
+        if msg_part.type == PartType.thinking: asst_parts.append(msg_part)
+        elif msg_part.type == PartType.tool_use: tool_parts.append(msg_part)
+        elif parts := _result_re.split(msg_part.text or ''):
+            for i,p in enumerate(parts):
+                if not p: continue
+                if i % 2 == 0: res.append(Msg(role='assistant', content=asst_parts+[Part(type=PartType.text, text=p.strip())]))
+                else:          res.append(Msg(role='user', content=[Part(type=PartType.text, text=_mk_result_fence(p))]))
+    if tool_parts: res.append(Msg(role='assistant', content=tool_parts))
     return res
 
 def _split_fence_msgs(msgs):
@@ -509,11 +514,6 @@ async def astream_with_complete(self, agen, postproc=noop):
     async for chunk in agen:
         if not isinstance(chunk, Completion): yield postproc(chunk)
     self.value = chunk
-
-# %% ../nbs/07_chat.ipynb #f2a27c9e
-@patch(as_prop=True)
-def text(self:Msg):
-    return ''.join(p.text or '' for p in self.content if p.type == PartType.text)
 
 # %% ../nbs/07_chat.ipynb #baf28c01
 @patch
