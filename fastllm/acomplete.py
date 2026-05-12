@@ -49,7 +49,7 @@ api2spec = {'openai':oai_spec, 'openai_chat':oai_spec, 'anthropic':ant_spec, 'ge
 
 # %% ../nbs/06_acomplete.ipynb #79075d95
 @flexicache()
-def mk_client(model, vendor_name=None, api_name=None, api_key=None, base_url=None, xtra_hdrs=None):
+def mk_client(model=None, vendor_name=None, api_name=None, api_key=None, base_url=None, xtra_hdrs=None):
     err_msg = f"please pass a valid one vendor: {', '.join(list(vendor_mapping))} or pass `api_name`,`base_url` and `api_key`"
     if vendor_name:
         override_base_url = base_url
