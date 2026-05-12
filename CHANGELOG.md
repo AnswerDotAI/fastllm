@@ -2,6 +2,22 @@
 
 <!-- do not remove -->
 
+## 0.0.5
+
+
+### Bugs Squashed
+
+- `get_model_info` `strict` param ([#8](https://github.com/AnswerDotAI/fastllm/issues/8))
+  - If a model can't be resolved in `get_model_info` you can pass `strict=False` to get placeholder price values to avoid errors with `AsyncChat`. For example, we use `strict=True` in solveit and `strict=False` in shell sage where users can pass their custom models with custom base urls.
+
+- Unresolved model fixes ([#7](https://github.com/AnswerDotAI/fastllm/issues/7))
+  - When a model and it's info can't be resolved:
+
+- Default to `openai_chat` api if not provided
+- Default max tokens to 32k
+- Set pricing to codex values
+
+
 ## 0.0.4
 
 ### Bugs Squashed
