@@ -2,6 +2,14 @@
 
 <!-- do not remove -->
 
+## 0.0.6
+
+
+### Bugs Squashed
+
+- `model` param in `mk_client` should be optional ([#9](https://github.com/AnswerDotAI/fastllm/issues/9))
+
+
 ## 0.0.5
 
 
