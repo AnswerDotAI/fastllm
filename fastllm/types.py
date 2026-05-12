@@ -273,7 +273,7 @@ _codex_overrides = {
 }
 
 # %% ../nbs/00_types.ipynb #fbfdeb0a
-def get_model_info(mn, vendor_name=None):
+def get_model_info(mn, vendor_name=None, strict=False):
     info = get_model_meta(mn, 'chatgpt' if vendor_name=='codex' else vendor_name)
     # anthropic web search 
     if 'search_context_cost_per_query' in info: info['supports_web_search'] = True
@@ -308,7 +308,7 @@ def get_model_info(mn, vendor_name=None):
                     input_cost_per_token=0.5e-6, cache_read_input_token_cost=0.1e-6, output_cost_per_token=3.0e-6)
     
     # unresolved models
-    if not info: info = info | codex_pricing
+    if not info and not strict: info = info | codex_pricing
     return dict2obj(info)
 
 # %% ../nbs/00_types.ipynb #8bfca02d
