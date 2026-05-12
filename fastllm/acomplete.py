@@ -62,7 +62,7 @@ def mk_client(model, vendor_name=None, api_name=None, api_key=None, base_url=Non
                 if auth_fn.exists(): api_key = nested_idx(json.loads(auth_fn.read_text()), *keys)
             api_key = get_api_key(api_key, env_api_nm)
         except KeyError: raise ValueError(f"Unknown vendor '{vendor_name}', {err_msg}")
-    elif api_name and base_url and api_key:  vendor_name = ifnone(vendor_name, 'custom')
+    elif base_url and api_key: vendor_name, api_name = ifnone(vendor_name, 'custom'), ifnone(api_name, 'openai_chat')
     elif (api_name:=infer_api_name(model)):  base_url, vendor_name = None, api_name
     else: raise ValueError(f"Model {model} can't be auto resolved, {err_msg}")
     api = api_registry.apis[api_name]

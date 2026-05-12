@@ -240,7 +240,7 @@ def infer_api_name(model):
 def get_model_meta(model, vendor_name=None, tfm=noop):
     "Look up cost metadata for `model` from litellm price map, using `vendor_name` prefix if needed."
     vendor_name = ifnone(vendor_name, infer_api_name(model))
-    mp = model_prices_meta()
+    mp, key = model_prices_meta(), ''
     if model in mp: key = model
     elif vendor_name=='gemini' and model.startswith('models/'): key = f"gemini/{model.removeprefix('models/')}"
     elif vendor_name:                                           key = f"{vendor_name}/{model}"
@@ -306,6 +306,9 @@ def get_model_info(mn, vendor_name=None):
                     supports_prompt_caching=True, supports_native_streaming=True, supports_native_structured_output=True,
                     max_tokens=1000000, max_input_tokens=1000000, max_output_tokens=65536,
                     input_cost_per_token=0.5e-6, cache_read_input_token_cost=0.1e-6, output_cost_per_token=3.0e-6)
+    
+    # unresolved models
+    if not info: info = info | codex_pricing
     return dict2obj(info)
 
 # %% ../nbs/00_types.ipynb #8bfca02d

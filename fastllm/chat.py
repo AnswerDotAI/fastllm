@@ -476,7 +476,7 @@ def _think_kw(model, think, vendor_name):
 def _prep_call(self:AsyncChat, prefill, search, max_tokens, kwargs, stream=False, think=None):
     "Prepare model info, prefill, search, and provider kwargs for a completion call"
     model_info = get_model_info(self.model, self.vendor_name)
-    if max_tokens is None: max_tokens = model_info.get('max_output_tokens')
+    if max_tokens is None: max_tokens = ifnone(model_info.get('max_output_tokens'), 32_000)
     if not model_info.get("supports_assistant_prefill"): prefill = None
     if _has_search(model_info) and (s:=ifnone(search,self.search)):
         if 'web_search_options' not in kwargs: kwargs['web_search_options'] = {}
