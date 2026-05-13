@@ -116,7 +116,7 @@ async def mk_acollect_stream(it, index_fn, model=None, api_name=None, vendor_nam
     stop, stop_yielded = False, False
     async for d in it:
         # Check stop condition and yield stop delta
-        stop = stop_and_trim(part_accum, d, stop_callables)
+        if not stop: stop = stop_and_trim(part_accum, d, stop_callables)
         if stop and not stop_yielded:
             for r in _yield_parts(d): yield r
             stop_yielded = True

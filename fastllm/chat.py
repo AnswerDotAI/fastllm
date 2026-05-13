@@ -55,7 +55,7 @@ def remove_cache_ckpts(msg):
     return msg
 
 def _mk_content(o):
-    if isinstance(o, str): return Part(type=PartType.text, text=o.strip())
+    if isinstance(o, str): return Part(type=PartType.text, text=o)
     elif isinstance(o,bytes): return _bytes2content(o)
     return o
 
@@ -96,7 +96,7 @@ re_token = re.compile(fr"^{re.escape(token_dtls_tag)}<summary>.*?</summary>\n*\n
 
 # %% ../nbs/07_chat.ipynb #be998131
 _fence_back = '`````'
-_fence_re = re.compile(f'^{_fence_back}(py|bash)\n(.*?)\n{_fence_back}', re.DOTALL | re.MULTILINE)
+_fence_re = re.compile(f'^{_fence_back}(py|bash)\n(.*?)\n{_fence_back}$', re.DOTALL | re.MULTILINE)
 _result_re = re.compile(f'\n{_fence_back}result\n(.*?)\n{_fence_back}\n', re.DOTALL)
 _lang2tool = dict(py='python', bash='bash')
 
