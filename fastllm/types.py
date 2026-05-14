@@ -40,7 +40,7 @@ def _repr_markdown_(self: Part):
 
 {body}
 
-<details>
+<details markdown='1'>
 
 - data: `{data}`
 
@@ -80,7 +80,7 @@ def _repr_markdown_(self: ToolCall):
     extra = _trunc_strs(self.extra)
     return f"""🔧 **{self.name}**(`{self.arguments}`)
 
-<details>
+<details markdown='1'>
 
 - id: `{self.id}`
 - server: `{self.server}`
@@ -135,7 +135,7 @@ def _repr_markdown_(self: Completion):
     det_str = '\n- '.join(details)    
     return f"""{content}
 
-<details>
+<details markdown='1'>
 
 - {det_str}
 
