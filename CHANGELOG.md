@@ -2,6 +2,24 @@
 
 <!-- do not remove -->
 
+## 0.0.7
+
+### New Features
+
+- AsyncChat callback system ([#11](https://github.com/AnswerDotAI/fastllm/issues/11))
+
+### Bugs Squashed
+
+- markdown='1' ([#12](https://github.com/AnswerDotAI/fastllm/issues/12))
+
+- `stop` status getting reset in streaming loop ([#10](https://github.com/AnswerDotAI/fastllm/issues/10))
+  - Fix is to only check the stop condition if it's not met yet, e.g. 
+
+```py
+if not stop: stop = stop_and_trim(part_accum, d, stop_callables)
+```
+
+
 ## 0.0.6
 
 
