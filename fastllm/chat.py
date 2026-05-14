@@ -4,10 +4,12 @@
 
 # %% auto #0
 __all__ = ['tool_dtls_tag', 're_tools', 'token_dtls_tag', 're_token', 'effort', 'remove_cache_ckpts', 'contents', 'stop_reason',
-           'mk_msg', 'FenceToolStop', 'extract_fence_call', 'stop_sequences', 'split_tools', 'fmt2hist', 'mk_msgs',
-           'cite_footnote', 'postproc', 'lite_mk_func', 'ToolResponse', 'structured', 'StopResponse', 'FullResponse',
-           'search_count', 'UsageStats', 'AsyncChat', 'add_warning', 'astream_with_complete', 'run_fence_tool',
-           'mk_tr_details', 'mk_srv_tc_details', 'StreamFormatter', 'AsyncStreamFormatter', 'adisplay_stream']
+           'mk_msg', 'FenceToolStop', 'extract_fence_call', 'split_tools', 'fmt2hist', 'mk_msgs', 'cite_footnote',
+           'postproc', 'lite_mk_func', 'ToolResponse', 'structured', 'StopResponse', 'FullResponse', 'search_count',
+           'UsageStats', 'AsyncChat', 'astream_with_complete', 'ChatCallback', 'DeepseekMsgsCallback',
+           'DeepseekPrefillCallback', 'add_warning', 'StopReasonCallback', 'run_fence_tool', 'FenceToolCallback',
+           'ToolReminderCallback', 'stop_sequences', 'StopSequencesCallback', 'mk_tr_details', 'mk_srv_tc_details',
+           'StreamFormatter', 'AsyncStreamFormatter', 'adisplay_stream']
 
 # %% ../nbs/07_chat.ipynb #d5a3bc1f
 import asyncio, base64, json, mimetypes, random, string, ast, warnings
@@ -143,15 +145,6 @@ def _split_fence_msgs(msgs):
     res = []
     for m in msgs: res.extend(_split_msg_on_fences(m))
     return res
-
-# %% ../nbs/07_chat.ipynb #b161ca9e
-def stop_sequences(seqs):
-    "Stop when any sequence appears in the accumulated completion text."
-    seqs = L(seqs)
-    def _stop(text):
-        for s in seqs:
-            if s in text: return text[:text.find(s)+len(s)]
-    return _stop
 
 # %% ../nbs/07_chat.ipynb #45ada210
 def _extract_tool_parts(text:str):
@@ -362,24 +355,7 @@ class UsageStats:
         summ = f"${self.cost:.4f}" if self.cost else f"{self.total_tokens:,} tokens"
         return f"\n\n{token_dtls_tag}<summary>{summ}</summary>\n\n`{self!r}`\n\n</details>\n"
 
-# %% ../nbs/07_chat.ipynb #67fd51cb
-def _inject_tool_reminder(msgs, reminder):
-    i = len(msgs)
-    while i>0 and msgs[i-1].role=='tool': i-=1
-    if i>=len(msgs): return msgs
-    msgs,m = list(msgs),msgs[i]
-    m.content.append(Part(type=PartType.text, text=reminder))
-    msgs[i] = m
-    return msgs
-
-# %% ../nbs/07_chat.ipynb #e7eb2032
-def _active_fence_langs(tool_schemas):
-    "Return set of active fence langs whose mapped tool is registered"
-    if not tool_schemas: return set()
-    names = {nested_idx(t, 'function', 'name') for t in tool_schemas}
-    return {lang for lang, tname in _lang2tool.items() if tname in names}
-
-# %% ../nbs/07_chat.ipynb #e9a14051
+# %% ../nbs/07_chat.ipynb #cb3d7e77
 class AsyncChat:
     def __init__(
         self,
@@ -399,7 +375,8 @@ class AsyncChat:
         base_url=None,            # API base url when model can't be resolved or vendor_name is not known
         extra_headers=None,       # Extra HTTP headers for custom providers
         markup=0,                 # Cost markup multiplier (e.g. 0.5 for 50%)
-        tool_reminder=None,       # Prepended as a block to the first trailing tool result (transient)
+        cbs:list=None,            # Chat callbacks
+        default_cbs=True          # Whether to include default callbacks
     ):
         "LiteLLM chat client."
         self.model = model
@@ -408,7 +385,10 @@ class AsyncChat:
         elif ns is None: ns = globals()
         self.tool_schemas = [lite_mk_func(t) for t in tools] if tools else None
         self.use = UsageStats()
-        store_attr()
+        store_attr(but='cbs')
+        self.cbs = L()
+        if default_cbs: self.add_cbs(defaults.chat_callbacks)
+        self.add_cbs(cbs)
     
     def _prep_msg(self, msg=None, prefill=None):
         "Prepare the system prompt and messages list for the API call"
@@ -422,14 +402,6 @@ class AsyncChat:
         self.hist = mk_msgs(self.hist, self.cache and 'claude' in self.model, cache_idxs, self.ttl)
         msgs = self.hist
         if prefill: msgs = self.hist + [Msg(role='assistant', content=[Part(PartType.text, prefill)])]
-        msgs = _split_fence_msgs(msgs)
-        if self.tool_reminder: msgs = _inject_tool_reminder(msgs, self.tool_reminder)
-        if 'deepseek' in self.model:
-            # The `reasoning_content` in the thinking mode must be passed back to the API.
-            for m in msgs:
-                if m.role=='assistant':
-                    if not any(p.type==PartType.thinking for p in m.content):
-                        m.content.append(Part(PartType.thinking, ''))
         return sp, msgs
     
     @property
@@ -439,25 +411,20 @@ class AsyncChat:
         u.cost *= (1 + self.markup)
         self.use += u
 
+    def add_cb(self, cb):
+        if isinstance(cb, type): cb = cb()
+        cb.chat = self
+        self.cbs.append(cb)
+        return self
+
+    def add_cbs(self, cbs):
+        if cbs is None: return self
+        L(cbs).map(self.add_cb)
+        return self
+
 # %% ../nbs/07_chat.ipynb #2e469ea1
 def _srvtools(tcs): return L(tcs).filter(lambda o: o.server) if tcs else None
 def _usrtools(tcs): return L(tcs).filter(lambda o: not o.server) if tcs else None
-
-# %% ../nbs/07_chat.ipynb #a2e70fbb
-def add_warning(r, msg):
-    wrn = Part(PartType.text, f"<warning>{msg}</warning>")
-    if r.message.content: r.message.content.append(wrn)
-    else: r.message.content = [wrn]
-
-# %% ../nbs/07_chat.ipynb #e16195f9
-def _handle_stop_reason(res):
-    "Returns (action, warning_msg) - action is 'warning', 'pause', or None"
-    sr = stop_reason(res)
-    if sr == 'length': return 'warning', 'Response was cut off at token limit.'
-    if sr == 'refusal': return 'warning', 'AI server provider content filter was applied to this request'
-    if sr == 'content_filter': return 'warning', 'AI server provider content filter was applied to this request.'
-    # if sr == 'pause_turn': return 'retry', None # TODO: Not a canonical finish reason
-    return None, None
 
 # %% ../nbs/07_chat.ipynb #19b87f53
 def _think_kw(model, think, vendor_name):
@@ -471,7 +438,7 @@ def _think_kw(model, think, vendor_name):
     if vendor_name == 'codex': return dict(reasoning_effort={'effort':eff, 'summary':'auto'})
     return dict(reasoning_effort=eff)
 
-# %% ../nbs/07_chat.ipynb #b3f28523
+# %% ../nbs/07_chat.ipynb #06e898fd
 @patch
 def _prep_call(self:AsyncChat, prefill, search, max_tokens, kwargs, stream=False, think=None):
     "Prepare model info, prefill, search, and provider kwargs for a completion call"
@@ -483,18 +450,13 @@ def _prep_call(self:AsyncChat, prefill, search, max_tokens, kwargs, stream=False
         kwargs['web_search_options']['search_context_size'] = effort[s]
         if self.vendor_name == 'codex': kwargs['web_search_options']['type'] = 'web_search'
     else: kwargs.pop('web_search_options', None)
-    # kwargs['additional_drop_params'] = ['temperature'] # TODO: What is this for?
     if self.api_name:      kwargs['api_name'] = self.api_name
     if self.vendor_name:   kwargs['vendor_name'] = self.vendor_name
     if self.api_key:       kwargs['api_key'] = self.api_key
     if self.base_url:      kwargs['base_url'] = self.base_url
     if self.extra_headers: kwargs['xtra_headers'] = self.extra_headers
     kwargs.update(_think_kw(self.model, think, self.vendor_name))
-    if (langs := _active_fence_langs(self.tool_schemas)):
-        if not any(isinstance(s, FenceToolStop) for s in kwargs.get('stop_callables', [])):
-            kwargs['stop_callables'] = kwargs.get('stop_callables', []) + [FenceToolStop(langs)]
     return prefill, max_tokens
-
 
 # %% ../nbs/07_chat.ipynb #07951b77
 @patch
@@ -515,50 +477,35 @@ async def astream_with_complete(self, agen, postproc=noop):
         if not isinstance(chunk, Completion): yield postproc(chunk)
     self.value = chunk
 
-# %% ../nbs/07_chat.ipynb #baf28c01
+# %% ../nbs/07_chat.ipynb #a049cf52
 @patch
 @delegates(acomplete)
 async def _call(self:AsyncChat, msg=None, prefill=None, temp=None, think=None, search=None, stream=False, max_steps=2, step=1,
         final_prompt=None, tool_choice=None, max_tokens=None, n_workers=8, pause=0.001, tc_timeout=7200, **kwargs):
     if step>max_steps+1: return
-    prefill, max_tokens = self._prep_call(prefill, search, max_tokens, kwargs, stream=stream, think=think)
-    sp,msgs = self._prep_msg(msg,prefill)
-    if prefill and self.vendor_name == 'deepseek' and self.model in ("deepseek-v4-flash", "deepseek-v4-pro"): 
-        kwargs['base_url'] = 'https://api.deepseek.com/beta'
-    # TODO: num_retries=2 is this needed? If so add.
-    # caching removed, cache checkpoints are added for Anthropic and other providers do implicit caching
-    res = await acomplete(msgs, self.model, system=sp, stream=stream, 
+    self.prefill, max_tokens = self._prep_call(prefill, search, max_tokens, kwargs, stream=stream, think=think)
+    self.turn_sysp, self.turn_msgs = self._prep_msg(msg, prefill)
+    async for o in self._call_cbs('after_msgs'): yield o
+
+    self.turn_kwargs, self.stream = kwargs, stream
+    async for o in self._call_cbs('before_acomplete'): yield o
+    res = await acomplete(self.turn_msgs, self.model, system=self.turn_sysp, stream=stream, 
         tools=self.tool_schemas, tool_choice=tool_choice, max_tokens=int(max_tokens),
-        temperature=None if think else ifnone(temp,self.temp), **kwargs)
+        temperature=None if think else ifnone(temp,self.temp), **self.turn_kwargs)
     if stream:
-        if prefill: yield _mk_prefill(prefill)
+        if self.prefill: yield _mk_prefill(self.prefill)
         res = astream_with_complete(res, postproc=postproc)
         async for chunk in res: yield chunk
         res = res.value
-    m=contents(res)
-    if prefill: m.content[0].text = prefill + m.content[0].text
-    self.hist.append(m)
-    action, msg = _handle_stop_reason(res)
-    if action == 'warning': add_warning(res, msg)
-    elif action == 'retry':
-        async for result in self._call(
-            None, prefill, temp, think, search, stream, max_steps, step,
-            final_prompt, tool_choice, **kwargs): yield result
-        self.hist.pop(-2) # rm incomplete srvtoolu_
-        return
-    self._track(res)
+    self.turn_res, self.turn_msg = res, contents(res)
+    if self.prefill: self.turn_msg.content[0].text = self.prefill + self.turn_msg.content[0].text
+    self.hist.append(self.turn_msg)
+    async for o in self._call_cbs('after_acomplete'): yield o
+    self._track(self.turn_res)
     yield res
 
-    toolloop, prompt = False, None
-    if (langs := _active_fence_langs(self.tool_schemas)):
-        if m := last(self.hist, lambda o: o.role == 'assistant'):
-            if fence := extract_fence_call(m.text):
-                lang, code = fence
-                out = await run_fence_tool(lang, code, self.ns)
-                for p in reversed(m.content):
-                    if p.type == PartType.text: p.text += out; break
-                if stream: yield {'text': out}
-                toolloop = True
+    self.toolloop, self.prompt, tmsg = False, None, None
+    async for o in self._call_cbs('before_tool_calls'): yield o
     if stcs:= _srvtools(res.tool_calls): 
         for tc in stcs: yield tc
     if tcs := _usrtools(res.tool_calls):
@@ -566,28 +513,22 @@ async def _call(self:AsyncChat, msg=None, prefill=None, temp=None, think=None, s
         tmsg = mk_tool_res_msg(tcs, tres)
         for r in tmsg.content: yield r
         self.hist.append(tmsg)
-        if step>=max_steps-1 or _has_stop(tmsg.content): prompt,tool_choice,search = mk_msg(final_prompt),'none',False
-        toolloop = True
+        if step>=max_steps-1 or _has_stop(tmsg.content): self.prompt,tool_choice,search = mk_msg(final_prompt),'none',False
+        self.toolloop = True
 
-    if toolloop and step <= max_steps:
+    async for o in self._call_cbs('after_tool_calls'): yield o
+    if self.toolloop and step <= max_steps:
         try:
             async for result in self._call(
-                prompt, prefill, temp, think, search, stream, max_steps, step+1,
+                self.prompt, None, temp, think, search, stream, max_steps, step+1,
                 final_prompt, tool_choice=tool_choice, **kwargs): yield result
         except ContextWindowExceededError:
-            for p in tmsg.content:
-                if len(p.text)>1000: p.text = _cwe_msg + _trunc_str(p.text, mx=1000)
+            if tmsg is not None:
+                for p in tmsg.content:
+                    if len(p.text)>1000: p.text = _cwe_msg + _trunc_str(p.text, mx=1000)
             async for result in self._call(
-                prompt, prefill, temp, think, search, stream, max_steps, step+1,
+                self.prompt, None, temp, think, search, stream, max_steps, step+1,
                 final_prompt, tool_choice='none', **kwargs): yield result
-
-# %% ../nbs/07_chat.ipynb #4dc002da
-async def run_fence_tool(lang, code, ns):
-    "Run the mapped tool for `lang` with the code, return result fence"
-    tname = _lang2tool[lang]
-    arg = dict(code=code) if lang == 'py' else dict(command=code)
-    res = _mk_tool_result(await call_func_async(tname, arg, ns=ns, raise_on_err=False))
-    return _mk_result_fence(_trunc_str(str(res)))
 
 # %% ../nbs/07_chat.ipynb #1361515a
 @patch
@@ -610,6 +551,141 @@ async def __call__(
     if stream or return_all: return result_gen
     async for res in result_gen: pass
     return res # normal chat behavior only return last msg
+
+# %% ../nbs/07_chat.ipynb #a4bbd2ce
+class ChatCallback(GetAttr):
+    order,_default,chat,run = 0,'chat',None,True
+    def __repr__(self): return type(self).__name__
+
+# %% ../nbs/07_chat.ipynb #2f02135c
+@patch
+async def _call_cbs(self:AsyncChat, event):
+    for cb in self.cbs.sorted('order'):
+        if cb.run and hasattr(cb, event):
+            async for o in getattr(cb, event)(): yield o
+
+# %% ../nbs/07_chat.ipynb #cf3f064c
+class DeepseekMsgsCallback(ChatCallback):
+    order = 10
+    async def after_msgs(self):
+        if 'deepseek' not in self.model: return
+        for m in self.turn_msgs:
+            if m.role=='assistant' and not any(p.type==PartType.thinking for p in m.content):
+                m.content.append(Part(PartType.thinking, ''))
+        if False: yield
+
+# %% ../nbs/07_chat.ipynb #14baac3e
+class DeepseekPrefillCallback(ChatCallback):
+    order = 10
+    async def before_acomplete(self):
+        if self.prefill and self.vendor_name == 'deepseek' and self.model.startswith("deepseek-"):
+            self.chat.turn_kwargs['base_url'] = 'https://api.deepseek.com/beta'
+        if False: yield
+
+# %% ../nbs/07_chat.ipynb #ce47dc4a
+def add_warning(r, msg):
+    wrn = Part(PartType.text, f"<warning>{msg}</warning>")
+    if r.message.content: r.message.content.append(wrn)
+    else: r.message.content = [wrn]
+
+# %% ../nbs/07_chat.ipynb #b6ea161d
+def _handle_stop_reason(res):
+    "Returns (action, warning_msg) - action is 'warning', 'pause', or None"
+    sr = stop_reason(res)
+    if sr == 'length': return 'warning', 'Response was cut off at token limit.'
+    if sr == 'refusal': return 'warning', 'AI server provider content filter was applied to this request'
+    if sr == 'content_filter': return 'warning', 'AI server provider content filter was applied to this request.'
+    # if sr == 'pause_turn': return 'retry', None # TODO: Not a canonical finish reason
+    return None, None
+
+# %% ../nbs/07_chat.ipynb #daf876f4
+class StopReasonCallback(ChatCallback):
+    order = 40
+    async def after_acomplete(self):        
+        action, msg = _handle_stop_reason(self.turn_res)
+        if action == 'warning': add_warning(self.chat.turn_res, msg)
+        if False: yield
+
+# %% ../nbs/07_chat.ipynb #aa7630b2
+def _active_fence_langs(tool_schemas):
+    "Return set of active fence langs whose mapped tool is registered"
+    if not tool_schemas: return set()
+    names = {nested_idx(t, 'function', 'name') for t in tool_schemas}
+    return {lang for lang, tname in _lang2tool.items() if tname in names}
+
+# %% ../nbs/07_chat.ipynb #72274cdc
+async def run_fence_tool(lang, code, ns):
+    "Run the mapped tool for `lang` with the code, return result fence"
+    tname = _lang2tool[lang]
+    arg = dict(code=code) if lang == 'py' else dict(command=code)
+    res = _mk_tool_result(await call_func_async(tname, arg, ns=ns, raise_on_err=False))
+    return _mk_result_fence(_trunc_str(str(res)))
+
+# %% ../nbs/07_chat.ipynb #740ee3a4
+class FenceToolCallback(ChatCallback):
+    order = 20
+
+    async def after_msgs(self):
+        self.chat.turn_msgs = _split_fence_msgs(self.turn_msgs)
+        if False: yield
+
+    async def before_acomplete(self):
+        if langs := _active_fence_langs(self.tool_schemas):
+            if not any(isinstance(s, FenceToolStop) for s in self.turn_kwargs.get('stop_callables', [])):
+                self.chat.turn_kwargs['stop_callables'] = self.turn_kwargs.get('stop_callables', []) + [FenceToolStop(langs)]
+        if False: yield
+
+    async def before_tool_calls(self):
+        if not _active_fence_langs(self.tool_schemas): return
+        if m := last(self.hist, lambda o: o.role == 'assistant'):
+            if fence := extract_fence_call(m.text):
+                lang, code = fence
+                out = await run_fence_tool(lang, code, self.ns)
+                for p in reversed(m.content):
+                    if p.type == PartType.text: p.text += out; break
+                self.chat.toolloop = True
+                if self.stream: yield {'text': out}
+
+# %% ../nbs/07_chat.ipynb #1897aea2
+def _inject_tool_reminder(msgs, reminder):
+    i = len(msgs)
+    while i>0 and msgs[i-1].role=='tool': i-=1
+    if i>=len(msgs): return msgs
+    msgs,m = list(msgs),msgs[i]
+    m.content.append(Part(type=PartType.text, text=reminder))
+    msgs[i] = m
+    return msgs
+
+# %% ../nbs/07_chat.ipynb #1b404e0f
+_tool_reminder = '\n<system-reminder>After *EVERY* tool call result, no matter how small, briefly summarise in prose what you found, before continuing or calling another tool.</system-reminder>'
+
+# %% ../nbs/07_chat.ipynb #fab308b7
+class ToolReminderCallback(ChatCallback):
+    order = 30
+    def __init__(self, tool_reminder=_tool_reminder): store_attr()
+    async def after_msgs(self):
+        self.chat.turn_msgs = _inject_tool_reminder(self.turn_msgs, self.tool_reminder)
+        if False: yield
+
+# %% ../nbs/07_chat.ipynb #423caa31
+def stop_sequences(seqs):
+    "Stop when any sequence appears in the accumulated completion text."
+    seqs = L(seqs)
+    def _stop(text):
+        for s in seqs:
+            if s in text: return text[:text.find(s)+len(s)]
+    return _stop
+
+# %% ../nbs/07_chat.ipynb #663eee29
+class StopSequencesCallback(ChatCallback):
+    order = 30
+    def __init__(self, seqs): self.seqs = L(seqs)
+    async def before_acomplete(self):
+        self.chat.turn_kwargs['stop_callables'] = self.turn_kwargs.get('stop_callables', []) + [stop_sequences(self.seqs)]
+        if False: yield
+
+# %% ../nbs/07_chat.ipynb #318ee856
+defaults.chat_callbacks = [DeepseekPrefillCallback, FenceToolCallback, ToolReminderCallback, StopReasonCallback]
 
 # %% ../nbs/07_chat.ipynb #115fd94f
 def _trunc_param(v, mx=40):
