@@ -433,7 +433,8 @@ def _think_kw(model, think, vendor_name):
     if not think: return {}
     if 'opus-4-7' in model:
         e = 'xhigh' if think=='h' else effort.get(think)
-        return dict(thinking={"type":"adaptive", "display":"summarized"}, output_config={"effort":e})
+        eff = dict(thinking={"type":"adaptive", "display":"summarized"}, output_config={"effort":e})
+        return dict(reasoning_effort=eff)
     try: xhigh = get_model_info(model, vendor_name).get('supports_xhigh_reasoning_effort')
     except: xhigh = False
     eff = effort.get(think) if think!='x' else 'xhigh' if xhigh else 'high'
