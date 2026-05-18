@@ -299,9 +299,11 @@ def _has_stop(tres_parts): return any(isinstance(p.text, StopResponse) for p in 
 def _trunc_str(s, mx=2000, skip=10, replace="TRUNCATED"):
     "Truncate `s` to `mx` chars max, adding `replace` if truncated"
     if not isinstance(s, str): s = str(s)
-    if len(s)>2 and s[0]=='𝍁' and s[-1]=='𝍁': return s[1:-1]
+    s = s.rstrip()
+    if len(s)>2 and s[0]=='𝍁' and s[-1]=='𝍁':
+        s = s[1:-1]
+        if replace: return s
     if isinstance_str(s, ('FullResponse','Safe')): return s
-    s = str(s).strip()
     if len(s)<=mx: return s
     s = s[skip:mx-skip]
     ss = s.split(' ')
@@ -694,7 +696,7 @@ defaults.chat_callbacks = [DeepseekPrefillCallback, FenceToolCallback, ToolRemin
 def _trunc_param(v, mx=40):
     "Truncate and escape param value for display"
     tp = _trunc_str(str(v).replace('`', r'\`'), mx=mx, replace=None, skip=0)
-    try: return dumps(tp)
+    try: return dumps(tp, ensure_ascii=False)
     except Exception: return repr(tp).replace('\\\\', '\\')
 
 # %% ../nbs/07_chat.ipynb #80c0abdb
@@ -724,7 +726,7 @@ def mk_tr_details(tr, mx=2000):
            'call':{'function': tr.data['name'], 'arguments': args},
            'result':_trunc_content(tr.text, mx=mx),}
     summ = f"<summary>{_tc_summary(tr)}</summary>"
-    return f"\n\n{tool_dtls_tag}\n{summ}\n\n```json\n{dumps(res, indent=2)}\n```\n\n</details>\n\n"
+    return f"\n\n{tool_dtls_tag}\n{summ}\n\n```json\n{dumps(res, indent=2, ensure_ascii=False)}\n```\n\n</details>\n\n"
 
 # %% ../nbs/07_chat.ipynb #3049001c
 def mk_srv_tc_details(tc, mx=2000):
@@ -732,7 +734,7 @@ def mk_srv_tc_details(tc, mx=2000):
     args = {k:_trunc_str(v, mx=mx*5) for k,v in tc.arguments.items()}
     res = {'id':tc.id, 'server':True, 'call':{'function': tc.name, 'arguments': args}, 'result':"Server tool call executed."}
     summ = f"<summary>{_srv_tc_summary(tc)}</summary>"
-    return f"\n\n{tool_dtls_tag}\n{summ}\n\n```json\n{dumps(res, indent=2)}\n```\n\n</details>\n\n"
+    return f"\n\n{tool_dtls_tag}\n{summ}\n\n```json\n{dumps(res, indent=2, ensure_ascii=False)}\n```\n\n</details>\n\n"
 
 # %% ../nbs/07_chat.ipynb #f0d984ec
 # status_re = re.compile(r'^- ⏳ <code>(.*)</code> ⏳$|^🧠+$', re.MULTILINE) # TODO: Need to yield tool calls as they are done collated in fastllm `_acollect_stream`
