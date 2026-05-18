@@ -93,7 +93,7 @@ tool_dtls_tag = "<details class='tool-usage-details' markdown='1'>"
 re_tools = re.compile(fr"^({tool_dtls_tag}\n*(?:<summary>(?P<summary>.*?)</summary>\n*)?\n*```json\n+(.*?)\n+```\n+</details>)",
                       flags=re.DOTALL|re.MULTILINE)
 token_dtls_tag = "<details class='token-usage-details' markdown='1'>"
-re_token = re.compile(fr"^{re.escape(token_dtls_tag)}<summary>.*?</summary>\n*\n*`.*?`\n*\n*</details>\n?",
+re_token = re.compile(fr"^{re.escape(token_dtls_tag)}\n*<summary>.*?</summary>\n*\n*`.*?`\n*\n*</details>\n?",
                       flags=re.DOTALL|re.MULTILINE)
 
 # %% ../nbs/07_chat.ipynb #be998131
@@ -209,7 +209,9 @@ def mk_msgs(
     "Create a list of fastllm canonical Msgs."
     if not msgs: return []
     if not isinstance(msgs, list): msgs = [msgs]
-    msgs = L(msgs).map(lambda m: fmt2hist(m) if isinstance(m,str) and tool_dtls_tag in m else [m]).concat()
+    msgs = L(msgs).map(lambda m:
+        fmt2hist(m) if isinstance(m,str) and (tool_dtls_tag in m or token_dtls_tag in m) else [m]
+    ).concat()
     res, role = [], 'user'
     for m in msgs:
         res.append(msg := remove_cache_ckpts(mk_msg(m, role=role)))
@@ -691,7 +693,7 @@ defaults.chat_callbacks = [DeepseekPrefillCallback, FenceToolCallback, ToolRemin
 def _trunc_param(v, mx=40):
     "Truncate and escape param value for display"
     tp = _trunc_str(str(v).replace('`', r'\`'), mx=mx, replace=None, skip=0)
-    try: return ast.literal_eval(tp)
+    try: return dumps(tp)
     except Exception: return repr(tp).replace('\\\\', '\\')
 
 # %% ../nbs/07_chat.ipynb #80c0abdb

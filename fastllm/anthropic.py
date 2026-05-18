@@ -41,8 +41,10 @@ def norm_usage(resp):
     cache_creation = int(usg.get("cache_creation_input_tokens", 0) or 0)
     pt = int(usg.get("input_tokens", 0) or 0) + cached + cache_creation
     ct = int(usg.get("output_tokens", 0) or 0)
-    return Usage(prompt_tokens=pt, completion_tokens=ct, total_tokens=pt + ct,
-                 cached_tokens=cached, cache_creation_tokens=cache_creation, raw=usg)
+    rc = '\n'.join((b.get("thinking") or '') for b in resp.get("content", []) if b.get("type") == "thinking")
+    rt = min(int(len(rc.split())*1.5), ct) if rc else 0
+    return Usage(prompt_tokens=pt, completion_tokens=ct-rt, total_tokens=pt + ct,
+                 cached_tokens=cached, cache_creation_tokens=cache_creation, reasoning_tokens=rt, raw=usg)
 
 # %% ../nbs/04_anthropic.ipynb #7a8b1f8f
 def norm_finish(resp, tcs=None):
