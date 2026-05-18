@@ -199,7 +199,7 @@ def denorm_reasoning(v):
 def denorm_web_search(v):
     "Map canonical web_search_options to Anthropic hosted web_search tool."
     _max_uses = {"low": 1, "medium": 5, "high": 10}
-    t = {"type": "web_search_20260209", "name": "web_search"}
+    t = {"type": "web_search_20250305", "name": "web_search"}
     if (typ := (v or {}).get("type")): t["type"] = typ
     if (s := (v or {}).get("search_context_size")):
         t["max_uses"] = _max_uses.get(s, 5)
