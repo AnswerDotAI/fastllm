@@ -2,6 +2,26 @@
 
 <!-- do not remove -->
 
+## 0.0.8
+
+### New Features
+
+- Add `finalize_usage` to fix anthropic reasoning token tracking; Add debug `brief` mode ([#18](https://github.com/AnswerDotAI/fastllm/issues/18))
+
+- make old web search tool `web_search_20250305` the default ([#16](https://github.com/AnswerDotAI/fastllm/issues/16))
+
+- fastllm chat debug mode ([#15](https://github.com/AnswerDotAI/fastllm/issues/15))
+  - <img width="1244" height="823" alt="Image" src="https://github.com/user-attachments/assets/4a13d627-d069-4fdf-9807-03162e559141" />
+
+- Track reasoning tokens in Anthropic usage; handle token details in mk_msgs; fix _trunc_param escaping; add codex auth module ([#13](https://github.com/AnswerDotAI/fastllm/issues/13))
+
+### Bugs Squashed
+
+- `𝍁...𝍁` `print()` rstrip, summary truncation, non-ascii fix ([#17](https://github.com/AnswerDotAI/fastllm/issues/17))
+
+- `claude-opus-4-7` thinking bug ([#14](https://github.com/AnswerDotAI/fastllm/issues/14))
+
+
 ## 0.0.7
 
 ### New Features
