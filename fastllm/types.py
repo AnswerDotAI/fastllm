@@ -147,24 +147,28 @@ FinishReason = str_enum('finish_reason', 'stop', 'tool_calls', 'length', 'conten
 # %% ../nbs/00_types.ipynb #fc681c52
 class APIRegistry:
     def __init__(self): self.apis = {}
-    def register(self, name, **kwargs): self.apis[name] = SimpleNamespace(**kwargs)
+    def register(self, name, finalize_usage=noop, **kwargs): self.apis[name] = SimpleNamespace(finalize_usage=finalize_usage, **kwargs)
 
 api_registry = APIRegistry()
+
 
 # %% ../nbs/00_types.ipynb #d58a5f96
 def mk_completion(resp, model, api_name, vendor_name):
     "Normalize an api response into Completion."
     api = api_registry.apis[api_name]
     tcs = api.norm_tool_calls(resp)
+    parts = api.norm_parts(resp)
+    usg = api.finalize_usage(api.norm_usage(resp), parts)
     return Completion(
         model=resp.get("model") or model,
-        message=Msg(role="assistant", content=api.norm_parts(resp)),
+        message=Msg(role="assistant", content=parts),
         finish_reason=api.norm_finish(resp, tcs),
-        usage=api.norm_usage(resp),
+        usage=usg,
         tool_calls=tcs,
         api_name=api_name,
         vendor_name=vendor_name,
         raw=resp)
+
 
 # %% ../nbs/00_types.ipynb #d5322db5
 def mk_tool_res_msg(tool_calls:list[ToolCall], results:list[str|list]):

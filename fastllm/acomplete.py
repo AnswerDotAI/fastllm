@@ -102,9 +102,11 @@ async def _classify_error_stream(gen):
 defaults = SimpleNamespace(debug_mode=False)
 
 def _debug_print(model, api_name, vendor_name, payload, func):
-    "Pretty-print acomplete inputs when defaults.debug_mode is True"
+    "Pretty-print acomplete inputs when defaults.debug_mode is set"
     from pprint import pformat
     p = dict(payload)
+    if defaults.debug_mode == 'brief' and 'tools' in p:
+        p['tools'] = '; '.join(o.get('name', o.get('type', o)) for o in p['tools'])
     print('━'*60)
     print(f"\033[1;36mfastllm debug\033[0m  model={model} vendor={vendor_name} api={api_name} base_url={func.base_url} path={func.path}")
     print('─'*60)
