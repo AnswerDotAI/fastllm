@@ -8,7 +8,7 @@ __all__ = ['PartType', 'FinishReason', 'api_registry', 'model_prices_url', 'haik
            'deepseek_v4_common', 'codex_pricing', 'Part', 'Msg', 'ToolCall', 'display_list', 'Usage', 'Completion',
            'APIRegistry', 'mk_completion', 'mk_tool_res_msg', 'fn_schema', 'sys_text', 'part_txt', 'data_url',
            'url_mime', 'payload_kwargs', 'get_api_key', 'model_prices_meta', 'infer_api_name', 'get_model_meta',
-           'register_model_info', 'get_model_info', 'get_model_pricing']
+           'register_model_info', 'get_model_info', 'get_model_pricing', 'approx_pricing']
 
 # %% ../nbs/00_types.ipynb #b4d047fd
 from dataclasses import dataclass, field
@@ -295,15 +295,17 @@ register_model_info('gemini-3.5-flash', vendor_name='gemini', base='gemini-3-fla
 for model in ('gpt-5.4', 'gpt-5.4-mini'):
     register_model_info(model, vendor_name='openai', base=model, supports_web_search=True, mode=None)
 
-for model in ('fireworks_ai/accounts/fireworks/models/kimi-k2p6', 'fireworks_ai/kimi-k2p6'):
-    register_model_info(model, vendor_name='fireworks_ai', base=model.replace('k2p6', 'k2p5'),
-        supports_reasoning=True, supports_vision=True)
-
 for model in ('kimi-k2.5', 'kimi-k2.6'):
     register_model_info(model, vendor_name='moonshot', base=f'moonshot/{model}', base_vendor_name=None,
         supports_reasoning=True, supports_vision=True, supports_assistant_prefill=True)
 
 register_model_info('gemini-3.1-flash-lite', vendor_name='gemini', base='gemini-3.1-flash-lite-preview')
+register_model_info('models/gemini-3.1-flash-lite', vendor_name='gemini', base='gemini-3.1-flash-lite-preview')
+
+for model in ('accounts/fireworks/models/kimi-k2p6', 'kimi-k2p6'):
+    register_model_info(model, vendor_name='fireworks_ai', base=model.replace('k2p6', 'k2p5'),
+        supports_reasoning=True, supports_vision=True,
+        input_cost_per_token=0.95e-6, cache_read_input_token_cost=0.16e-6, output_cost_per_token=4.0e-6)
 
 # %% ../nbs/00_types.ipynb #948d55d0
 deepseek_v4_common = dict(
@@ -312,9 +314,11 @@ deepseek_v4_common = dict(
     max_input_tokens=1048576, max_output_tokens=393216, max_tokens=393216)
 
 register_model_info('deepseek-v4-flash', vendor_name='deepseek', base='deepseek/deepseek-v3.2', **deepseek_v4_common,
-    input_cost_per_token=1.4e-07, input_cost_per_token_cache_hit=2.8e-09, output_cost_per_token=2.8e-07)
+    input_cost_per_token=1.4e-07, input_cost_per_token_cache_hit=2.8e-09,
+    output_cost_per_token=2.8e-07, cache_read_input_token_cost=1.4e-07/10)
 register_model_info('deepseek-v4-pro', vendor_name='deepseek', base='deepseek/deepseek-v3.2', **deepseek_v4_common,
-    input_cost_per_token=4.35e-07, input_cost_per_token_cache_hit=3.625e-09, output_cost_per_token=8.7e-07)
+    input_cost_per_token=4.35e-07, input_cost_per_token_cache_hit=3.625e-09,
+    output_cost_per_token=8.7e-07, cache_read_input_token_cost=4.35e-07/10)
 
 # %% ../nbs/00_types.ipynb #2c23d11e
 codex_pricing = dict(
@@ -334,6 +338,15 @@ def get_model_pricing(mn, vendor_name, million=True):
     return {k:round(v * (1e6 if million else 1), 6)
         for k,v in get_model_info(mn, vendor_name).items()
         if 'cost' in k and isinstance(v,float) and 'priority' not in k}
+
+# %% ../nbs/00_types.ipynb #79304cd9
+def approx_pricing(nm, vendor_name, out=10, cache=80, inp=10, markup=0):
+    "Approx cost per million tokens with given output/cache/input proportions"
+    p = get_model_pricing(nm, vendor_name)
+    ic = p.get('cache_creation_input_token_cost', p['input_cost_per_token'])
+    res = (p['output_cost_per_token']*out + p['cache_read_input_token_cost']*cache + ic*inp) / (out+cache+inp)
+    if nm=='claude-opus-4-7': res *= 1.5
+    return res*(1+markup)
 
 # %% ../nbs/00_types.ipynb #8bfca02d
 @patch(as_prop=True)
