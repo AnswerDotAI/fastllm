@@ -2,6 +2,22 @@
 
 <!-- do not remove -->
 
+## 0.0.9
+
+### New Features
+
+- Add approx_pricing helper and fix Fireworks Kimi k2p6 model registration with pricing ([#21](https://github.com/AnswerDotAI/fastllm/issues/21))
+
+- Refactor model info into registry; add get_model_pricing; add new gemini models ([#20](https://github.com/AnswerDotAI/fastllm/issues/20))
+
+### Bugs Squashed
+
+- Fix `accounts/fireworks/models/kimi-k2p5` registration ([#23](https://github.com/AnswerDotAI/fastllm/issues/23))
+
+- force enable web_search for codex models ([#22](https://github.com/AnswerDotAI/fastllm/pull/22)), thanks to [@jackhogan](https://github.com/jackhogan)
+  - The litellm metadata file is missing `supports_web_search` for GPT-5.4 so the Codex version wasn't getting it. Explicitly set it to True like we do for non-codex gpt models.
+
+
 ## 0.0.8
 
 ### New Features
