@@ -50,10 +50,8 @@ def finalize_usage(usg, parts):
     rc = '\n'.join(p.text or '' for p in parts if p.type == PartType.thinking)
     ct = int(usg.raw.get('output_tokens', usg.completion_tokens) or 0)
     rt = min(int(len(rc.split())*1.5), ct) if rc else 0
-    res = Usage(prompt_tokens=usg.prompt_tokens, completion_tokens=ct-rt, total_tokens=usg.prompt_tokens+ct,
-                 cached_tokens=usg.cached_tokens, cache_creation_tokens=usg.cache_creation_tokens, reasoning_tokens=rt, raw=usg.raw)
-    print(res)
-    return res
+    return Usage(prompt_tokens=usg.prompt_tokens, completion_tokens=ct-rt, total_tokens=usg.prompt_tokens+ct,
+        cached_tokens=usg.cached_tokens, cache_creation_tokens=usg.cache_creation_tokens, reasoning_tokens=rt, raw=usg.raw)
 
 # %% ../nbs/04_anthropic.ipynb #7a8b1f8f
 def norm_finish(resp, tcs=None):

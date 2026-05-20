@@ -4,10 +4,11 @@
 
 # %% auto #0
 __all__ = ['PartType', 'FinishReason', 'api_registry', 'model_prices_url', 'haik45', 'sonn45', 'sonn', 'sonn46', 'opus46', 'opus',
-           'gpt54', 'gpt54m', 'codex54', 'codex55', 'codex53spark', 'codex_pricing', 'Part', 'Msg', 'ToolCall',
-           'display_list', 'Usage', 'Completion', 'APIRegistry', 'mk_completion', 'mk_tool_res_msg', 'fn_schema',
-           'sys_text', 'part_txt', 'data_url', 'url_mime', 'payload_kwargs', 'get_api_key', 'model_prices_meta',
-           'infer_api_name', 'get_model_meta', 'get_model_info']
+           'gpt54', 'gpt54m', 'gpt55', 'codex54', 'codex54m', 'codex55', 'codex53spark', 'model_info_registry',
+           'deepseek_v4_common', 'codex_pricing', 'Part', 'Msg', 'ToolCall', 'display_list', 'Usage', 'Completion',
+           'APIRegistry', 'mk_completion', 'mk_tool_res_msg', 'fn_schema', 'sys_text', 'part_txt', 'data_url',
+           'url_mime', 'payload_kwargs', 'get_api_key', 'model_prices_meta', 'infer_api_name', 'get_model_meta',
+           'register_model_info', 'get_model_info', 'get_model_pricing']
 
 # %% ../nbs/00_types.ipynb #b4d047fd
 from dataclasses import dataclass, field
@@ -229,6 +230,7 @@ def get_api_key(api_key, default):
 
 # %% ../nbs/00_types.ipynb #852adecd
 model_prices_url = 'https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json'
+
 @flexicache(time_policy(24*60*60))
 def model_prices_meta(): return urljson(model_prices_url)
 
@@ -258,62 +260,80 @@ opus46 = "claude-opus-4-6"
 opus = "claude-opus-4-7"
 gpt54 = "gpt-5.4"
 gpt54m = "gpt-5.4-mini"
+gpt55 = "gpt-5.5"
 codex54 = "gpt-5.4"
+codex54m = "gpt-5.4-mini"
 codex55 = "gpt-5.5"
 codex53spark = "gpt-5.3-codex-spark"
 
-# %% ../nbs/00_types.ipynb #d6d5b98c
-codex_pricing = {
-    "input_cost_per_token": 0.10 / 1_000_000,
-    "cache_creation_input_token_cost": 0.10 / 1_000_000,
-    "cache_read_input_token_cost": 0.10 / 1_000_000,
-    "output_cost_per_token": 0.50 / 1_000_000,
-}
+# %% ../nbs/00_types.ipynb #583e017b
+model_info_registry = {}
 
-_codex_overrides = {
-    codex53spark: dict(
-        supports_vision=False, supports_image_input=False, supports_web_search=True, supports_reasoning=True,
-        max_tokens=128000, max_input_tokens=128000, max_output_tokens=128000)
-}
+def register_model_info(model, vendor_name=None, base=None, base_vendor_name=None, **overrides):
+    "Register model metadata, optionally starting from `base`."
+    info = dict(get_model_info(base, base_vendor_name or vendor_name)) if base else {}
+    info.update(overrides)
+    model_info_registry[vendor_name, model] = info
 
-# %% ../nbs/00_types.ipynb #fbfdeb0a
-def get_model_info(mn, vendor_name=None, strict=False):
-    info = get_model_meta(mn, 'chatgpt' if vendor_name=='codex' else vendor_name)
-    # anthropic web search 
+def get_model_info(mn, vendor_name=None):
+    info = model_info_registry.get((vendor_name, mn)) or get_model_meta(mn, vendor_name)
     if 'search_context_cost_per_query' in info: info['supports_web_search'] = True
-    # kimi
-    if 'kimi' in mn: 
-        if 'k2p6' in mn: info = get_model_meta(mn.replace('k2p6', 'k2p5'), vendor_name)
-        info['supports_reasoning'] = True
-        info['supports_vision'] = True
-        if vendor_name == 'moonshot': info['supports_assistant_prefill'] = True
-    # gpt web search
-    if mn in ("gpt-5.4", "gpt-5.4-mini"):
-        info['supports_web_search'] = True
-        info.pop('mode', None)
-    # codex updates
-    if vendor_name == 'codex':
-        info = merge(info, codex_pricing)
-        info |= _codex_overrides.get(mn, {})
-    # deepseek v4
-    if vendor_name == 'deepseek' and mn in ("deepseek-v4-flash", "deepseek-v4-pro"):
-        info = dict(get_model_meta("deepseek/deepseek-v3.2"))
-        info |= dict(supports_assistant_prefill=True, supports_function_calling=True, supports_prompt_caching=True,
-            supports_reasoning=True, supports_tool_choice=True)
-        info.update(input_cost_per_token=1.4e-07, input_cost_per_token_cache_hit=2.8e-09, output_cost_per_token=2.8e-07,
-            max_input_tokens=1048576, max_output_tokens=393216, max_tokens=393216)
-        if 'pro' in mn: info = {**info, 'input_cost_per_token': 4.35e-07, 'input_cost_per_token_cache_hit': 3.625e-09, 'output_cost_per_token': 8.7e-07}
-    # qwen 3p6
-    if vendor_name == 'fireworks_ai' and mn == 'accounts/fireworks/models/qwen3p6-plus':
-        info = dict(supports_vision=True, supports_reasoning=True, supports_function_calling=True, supports_tool_choice=True,
-                    supports_system_messages=True, supports_response_schema=True, supports_parallel_function_calling=True,
-                    supports_prompt_caching=True, supports_native_streaming=True, supports_native_structured_output=True,
-                    max_tokens=1000000, max_input_tokens=1000000, max_output_tokens=65536,
-                    input_cost_per_token=0.5e-6, cache_read_input_token_cost=0.1e-6, output_cost_per_token=3.0e-6)
-    
-    # unresolved models
-    if not info and not strict: info = info | codex_pricing
     return dict2obj(info)
+
+# %% ../nbs/00_types.ipynb #8261dcd0
+register_model_info('accounts/fireworks/models/qwen3p6-plus', vendor_name='fireworks_ai',
+    supports_vision=True, supports_reasoning=True, supports_function_calling=True, supports_tool_choice=True,
+    supports_system_messages=True, supports_response_schema=True, supports_parallel_function_calling=True,
+    supports_prompt_caching=True, supports_native_streaming=True, supports_native_structured_output=True,
+    max_tokens=1000000, max_input_tokens=1000000, max_output_tokens=65536,
+    input_cost_per_token=0.5e-6, cache_read_input_token_cost=0.1e-6, output_cost_per_token=3.0e-6)
+
+register_model_info('gemini-3.5-flash', vendor_name='gemini', base='gemini-3-flash-preview',
+    input_cost_per_token=1.5e-6, output_cost_per_token=9e-6,
+    output_cost_per_reasoning_token=9e-6, cache_read_input_token_cost=1.5e-7)
+
+for model in ('gpt-5.4', 'gpt-5.4-mini'):
+    register_model_info(model, vendor_name='openai', base=model, supports_web_search=True, mode=None)
+
+for model in ('fireworks_ai/accounts/fireworks/models/kimi-k2p6', 'fireworks_ai/kimi-k2p6'):
+    register_model_info(model, vendor_name='fireworks_ai', base=model.replace('k2p6', 'k2p5'),
+        supports_reasoning=True, supports_vision=True)
+
+for model in ('kimi-k2.5', 'kimi-k2.6'):
+    register_model_info(model, vendor_name='moonshot', base=f'moonshot/{model}', base_vendor_name=None,
+        supports_reasoning=True, supports_vision=True, supports_assistant_prefill=True)
+
+register_model_info('gemini-3.1-flash-lite', vendor_name='gemini', base='gemini-3.1-flash-lite-preview')
+
+# %% ../nbs/00_types.ipynb #948d55d0
+deepseek_v4_common = dict(
+    supports_assistant_prefill=True, supports_function_calling=True, supports_prompt_caching=True,
+    supports_reasoning=True, supports_tool_choice=True,
+    max_input_tokens=1048576, max_output_tokens=393216, max_tokens=393216)
+
+register_model_info('deepseek-v4-flash', vendor_name='deepseek', base='deepseek/deepseek-v3.2', **deepseek_v4_common,
+    input_cost_per_token=1.4e-07, input_cost_per_token_cache_hit=2.8e-09, output_cost_per_token=2.8e-07)
+register_model_info('deepseek-v4-pro', vendor_name='deepseek', base='deepseek/deepseek-v3.2', **deepseek_v4_common,
+    input_cost_per_token=4.35e-07, input_cost_per_token_cache_hit=3.625e-09, output_cost_per_token=8.7e-07)
+
+# %% ../nbs/00_types.ipynb #2c23d11e
+codex_pricing = dict(
+    input_cost_per_token = 0.10/1_000_000, output_cost_per_token = 0.50/1_000_000,
+    cache_creation_input_token_cost = 0.10/1_000_000, cache_read_input_token_cost = 0.10/1_000_000)
+
+for model in (codex54, codex54m, codex55):
+    register_model_info(model, 'codex', base=model, base_vendor_name='chatgpt', **codex_pricing)
+
+register_model_info(codex53spark, 'codex', **codex_pricing,
+    supports_vision=False, supports_image_input=False, supports_web_search=True, supports_reasoning=True,
+    max_tokens=128000, max_input_tokens=128000, max_output_tokens=128000)
+
+
+# %% ../nbs/00_types.ipynb #24cc47ec
+def get_model_pricing(mn, vendor_name, million=True):
+    return {k:round(v * (1e6 if million else 1), 6)
+        for k,v in get_model_info(mn, vendor_name).items()
+        if 'cost' in k and isinstance(v,float) and 'priority' not in k}
 
 # %% ../nbs/00_types.ipynb #8bfca02d
 @patch(as_prop=True)
