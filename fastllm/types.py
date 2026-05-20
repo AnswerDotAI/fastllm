@@ -302,7 +302,7 @@ for model in ('kimi-k2.5', 'kimi-k2.6'):
 register_model_info('gemini-3.1-flash-lite', vendor_name='gemini', base='gemini-3.1-flash-lite-preview')
 register_model_info('models/gemini-3.1-flash-lite', vendor_name='gemini', base='gemini-3.1-flash-lite-preview')
 
-for model in ('accounts/fireworks/models/kimi-k2p6', 'kimi-k2p6'):
+for model in ('accounts/fireworks/models/kimi-k2p5', 'accounts/fireworks/models/kimi-k2p6'):
     register_model_info(model, vendor_name='fireworks_ai', base=model.replace('k2p6', 'k2p5'),
         supports_reasoning=True, supports_vision=True,
         input_cost_per_token=0.95e-6, cache_read_input_token_cost=0.16e-6, output_cost_per_token=4.0e-6)
