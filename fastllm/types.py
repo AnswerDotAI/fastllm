@@ -326,7 +326,7 @@ codex_pricing = dict(
     cache_creation_input_token_cost = 0.10/1_000_000, cache_read_input_token_cost = 0.10/1_000_000)
 
 for model in (codex54, codex54m, codex55):
-    register_model_info(model, 'codex', base=model, base_vendor_name='chatgpt', **codex_pricing)
+    register_model_info(model, 'codex', base=model, base_vendor_name='chatgpt', supports_web_search=True, **codex_pricing)
 
 register_model_info(codex53spark, 'codex', **codex_pricing,
     supports_vision=False, supports_image_input=False, supports_web_search=True, supports_reasoning=True,
