@@ -99,20 +99,24 @@ async def mk_acollect_stream(it, index_fn, model=None, api_name=None, vendor_nam
     "Collect a Delta stream, yielding incremental chunks and a final Completion."
     part_accum,deltas,stop_callables = PartAccum(), [], L(stop_callables)
     fin, usg, typ, last_typ, last_idx = [None]*5
+    srv_tcs,srv_yielded = {},set()
     def _fidx(d, name, pt=None):
         nonlocal typ, last_idx
         typ = getattr(PartType, pt or name)
         idx,last_idx = index_fn(d, typ, last_typ, last_idx)
         return idx
     def _proc(d, name, pt=None, kw='txt', ret=None):
-        if not ret and not (val := getattr(d, name)): return
+        if not ret and not (val := getattr(d, name)): return None, None
         idx = _fidx(d, name, pt)
         part_accum.append(typ, idx, **(ret or {kw: val}))
-        return ret or {name: val}
+        return ret or {name: val}, part_accum.parts[idx]
     def _yield_parts(d):
         for args in [('text',), ('thinking',), ('citations', 'text', 'citations')]:
-            if (r := _proc(d, args[0], pt=args[1] if len(args)>1 else None, kw=args[2] if len(args)>2 else 'txt')):
-                yield r
+            r,_ = _proc(d, args[0], pt=args[1] if len(args)>1 else None, kw=args[2] if len(args)>2 else 'txt')
+            if r: yield r
+    def _yield_srv(tid):
+        srv_yielded.add(tid)
+        return srv_tcs[tid]
     stop, stop_yielded = False, False
     async for d in it:
         # Check stop condition and yield stop delta
@@ -127,17 +131,30 @@ async def mk_acollect_stream(it, index_fn, model=None, api_name=None, vendor_nam
         # Rest incl. tools, finish reason, usage is processed independently
         for tc in d.tool_calls:
             args = tc.arguments.get('_delta', tc.arguments)
-            _proc(d, 'tool_use', ret=dict(id=tc.id, name=tc.name, arguments=args, server=tc.server, extra=tc.extra))
+            _,part = _proc(d, 'tool_use', ret=dict(id=tc.id, name=tc.name, arguments=args, server=tc.server, extra=tc.extra))
+            # Stream complete server tool calls immediately
+            if tc.server and tc.id and tc.name:
+                srv_tcs[tc.id] = part
+                if tc.arguments and isinstance(tc.arguments, dict) and '_delta' not in tc.arguments and tc.id not in srv_yielded:
+                    yield _yield_srv(tc.id)
         if d.server_tool_result:
             idx = _fidx(d, 'server_tool_result')
             part_accum.parts[idx] = Part(type=typ, data=d.server_tool_result)
-        if (r:=_proc(d, 'refusal')): yield r
+            tid = d.server_tool_result.get('tool_use_id')
+            # Avoid duplicating tool calls already yielded during streaming
+            if (acc:=srv_tcs.get(tid)) and tid not in srv_yielded:
+                if isinstance(acc.arguments, str):
+                    try: acc.arguments = json.loads(acc.arguments) if acc.arguments else {}
+                    except json.JSONDecodeError: pass
+                yield _yield_srv(tid)
+        r,_ = _proc(d, 'refusal')
+        if r: yield r
         if d.finish_reason: fin = d.finish_reason
         if d.usage: usg = d.usage
         last_typ = typ
         deltas.append(d)
     part_accum.finalize()
-    tcs = part_accum.tool_calls
+    tcs = [t for t in part_accum.tool_calls if not (t.server and t.id in srv_yielded)]
     if api_name: usg = api_registry.apis[api_name].finalize_usage(usg, part_accum.parts)
     if stop: fin = FinishReason.stop
     fin = FinishReason.tool_calls if fin==FinishReason.stop and any(~L(tcs).attrgot('server')) else fin # recheck tool calls post collation
@@ -146,4 +163,3 @@ async def mk_acollect_stream(it, index_fn, model=None, api_name=None, vendor_nam
             message=Msg(role="assistant", content=part_accum.parts),
             finish_reason=fin, usage=usg, tool_calls=tcs, api_name=api_name, vendor_name=vendor_name,
             raw={'deltas':deltas})
-
