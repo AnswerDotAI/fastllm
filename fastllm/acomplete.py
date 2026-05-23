@@ -7,7 +7,7 @@ __all__ = ['specs_path', 'ant_spec', 'oai_spec', 'gem_spec', 'vendor_mapping', '
            'ContextWindowExceededError', 'acomplete']
 
 # %% ../nbs/06_acomplete.ipynb #f2f57253
-import json
+import asyncio,json
 from importlib.resources import files
 from fastcore.utils import *
 from fastcore.meta import *
@@ -113,10 +113,36 @@ def _debug_print(model, api_name, vendor_name, payload, func):
     print(f"\033[1;33mpayload:\033[0m\n{pformat(p, width=120, sort_dicts=False)}")
     print('━'*60)
 
+# %% ../nbs/06_acomplete.ipynb #497c8565
+async def _retry_wait(n, delay): await asyncio.sleep(delay*2**n)
+
+async def _raise_if_done(e, n, retries, retry_delay, yielded=False):
+    e = _classify_error(e)
+    if yielded or not e.retryable or n == retries: raise e
+    await _retry_wait(n, retry_delay)
+
+async def _retry_call(f, retries=2, retry_delay=0.5):
+    for n in range(retries+1):
+        try: return await f()
+        except APIError as e: await _raise_if_done(e, n, retries, retry_delay)
+            
+
+async def _retry_stream(mk_gen, retries=2, retry_delay=0.5):
+    for n in range(retries+1):
+        yielded = False
+        try:
+            async for o in mk_gen():
+                yielded = True
+                yield o
+            return
+        except APIError as e: await _raise_if_done(e, n, retries, retry_delay, yielded=yielded)
+
 # %% ../nbs/06_acomplete.ipynb #2379ec94
 @delegates(payload_kwargs)
-async def acomplete(msgs, model, api_name=None, vendor_name=None, api_key=None, base_url=None, xtra_body=None, xtra_hdrs=None,
-    stream=False, stop_callables=None, stop_sequences=None, **kwargs):
+async def acomplete(msgs, model, api_name=None, vendor_name=None, api_key=None,
+                    base_url=None, xtra_body=None, xtra_hdrs=None,
+                    stream=False, stop_callables=None, stop_sequences=None,
+                    retries=2, retry_delay=0.5, **kwargs):
     "Unified completion across different APIs."
     cli, api_name, vendor_name = mk_client(model, vendor_name, api_name, api_key, base_url, xtra_hdrs)
     api = api_registry.apis[api_name]
@@ -130,7 +156,13 @@ async def acomplete(msgs, model, api_name=None, vendor_name=None, api_key=None, 
         if vendor_name == 'moonshot' and 'kimi' in model: payload['messages'][-1]['partial'] = True
     func = attrgetter(api.op_path[stream])(cli)
     if defaults.debug_mode: _debug_print(model, api_name, vendor_name, payload, func)
-    try: resp = await func(**payload)
-    except APIError as e: raise _classify_error(e) from e
-    if stream: return _classify_error_stream(api.acollect_stream(resp, model=model, vendor_name=vendor_name, stop_callables=stop_callables))
-    return mk_completion(resp, model=model, api_name=api_name, vendor_name=vendor_name)
+    async def _call(): return await func(**payload)
+    if not stream:
+        resp = await _retry_call(_call, retries, retry_delay)
+        return mk_completion(resp, model=model, api_name=api_name, vendor_name=vendor_name)
+
+    async def _mk_gen():
+        resp = await _call()
+        async for o in api.acollect_stream(resp, model=model, vendor_name=vendor_name, stop_callables=stop_callables): yield o
+
+    return _retry_stream(_mk_gen, retries, retry_delay)
