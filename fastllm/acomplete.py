@@ -114,18 +114,15 @@ def _debug_print(model, api_name, vendor_name, payload, func):
     print('━'*60)
 
 # %% ../nbs/06_acomplete.ipynb #497c8565
-async def _retry_wait(n, delay): await asyncio.sleep(delay*2**n)
-
 async def _raise_if_done(e, n, retries, retry_delay, yielded=False):
     e = _classify_error(e)
     if yielded or not e.retryable or n == retries: raise e
-    await _retry_wait(n, retry_delay)
+    await asyncio.sleep(retry_delay*2**n)
 
 async def _retry_call(f, retries=2, retry_delay=0.5):
     for n in range(retries+1):
         try: return await f()
         except APIError as e: await _raise_if_done(e, n, retries, retry_delay)
-            
 
 async def _retry_stream(mk_gen, retries=2, retry_delay=0.5):
     for n in range(retries+1):
@@ -140,13 +137,12 @@ async def _retry_stream(mk_gen, retries=2, retry_delay=0.5):
 # %% ../nbs/06_acomplete.ipynb #2379ec94
 @delegates(payload_kwargs)
 async def acomplete(msgs, model, api_name=None, vendor_name=None, api_key=None,
-                    base_url=None, xtra_body=None, xtra_hdrs=None,
-                    stream=False, stop_callables=None, stop_sequences=None,
-                    retries=2, retry_delay=0.5, **kwargs):
+                    base_url=None, xtra_body=None, xtra_hdrs=None, stream=False,
+                    stop_callables=None, retries=2, retry_delay=0.5, **kwargs):
     "Unified completion across different APIs."
     cli, api_name, vendor_name = mk_client(model, vendor_name, api_name, api_key, base_url, xtra_hdrs)
     api = api_registry.apis[api_name]
-    payload = api.mk_payload(msgs, model, stream=stream, stop_callables=stop_callables, **kwargs)
+    payload = api.mk_payload(msgs, model, stream=stream, **kwargs)
     payload = merge(payload, ifnone(xtra_body, {}))
     if vendor_name == 'codex':
         for k in 'temperature max_tokens max_output_tokens max_completion_tokens metadata'.split(): payload.pop(k, None)
