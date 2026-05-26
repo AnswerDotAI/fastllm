@@ -8,8 +8,8 @@ __all__ = ['tool_dtls_tag', 're_tools', 'token_dtls_tag', 're_token', 'effort', 
            'postproc', 'lite_mk_func', 'ToolResponse', 'structured', 'StopResponse', 'FullResponse', 'search_count',
            'UsageStats', 'AsyncChat', 'astream_with_complete', 'ChatCallback', 'DeepseekMsgsCallback',
            'DeepseekPrefillCallback', 'add_warning', 'StopReasonCallback', 'run_fence_tool', 'FenceToolCallback',
-           'ToolReminderCallback', 'stop_sequences', 'StopSequencesCallback', 'mk_tr_details', 'mk_srv_tc_details',
-           'StreamFormatter', 'AsyncStreamFormatter', 'adisplay_stream']
+           'ToolReminderCallback', 'stop_sequences', 'StopSequencesCallback', 'mk_tr_details', 'StreamFormatter',
+           'AsyncStreamFormatter', 'adisplay_stream']
 
 # %% ../nbs/07_chat.ipynb #d5a3bc1f
 import asyncio, base64, json, mimetypes, random, string, ast, warnings
@@ -427,7 +427,6 @@ class AsyncChat:
         return self
 
 # %% ../nbs/07_chat.ipynb #2e469ea1
-def _srvtools(tcs): return L(tcs).filter(lambda o: o.server) if tcs else None
 def _usrtools(tcs): return L(tcs).filter(lambda o: not o.server) if tcs else None
 
 # %% ../nbs/07_chat.ipynb #19b87f53
@@ -511,8 +510,6 @@ async def _call(self:AsyncChat, msg=None, prefill=None, temp=None, think=None, s
 
     self.toolloop, self.prompt, tmsg = False, None, None
     async for o in self._call_cbs('before_tool_calls'): yield o
-    if stcs:= _srvtools(res.tool_calls): 
-        for tc in stcs: yield tc
     if tcs := _usrtools(res.tool_calls):
         tres = await parallel_async(_alite_call_func, tcs, timeout=tc_timeout, n_workers=n_workers, pause=pause, **self.tcdict)
         tmsg = mk_tool_res_msg(tcs, tres)
@@ -703,14 +700,8 @@ def _trunc_param(v, mx=40):
 def _tc_summary(tr):
     "Format tool call as func(params) → result string"
     params = ', '.join(f"{k}={_trunc_param(v)}" for k,v in tr.data['arguments'].items())
-    res = f"→{_trunc_param(tr.text)}"
+    res = f"→{_trunc_param(tr.text)}" if tr.text else ''
     return '<code>'+escape(f"{tr.data['name']}({params}){res}")+'</code>'
-
-# %% ../nbs/07_chat.ipynb #91beb26c
-def _srv_tc_summary(tc):
-    "Format tool call as func(params) → result string"
-    params = ', '.join(f"{k}={_trunc_param(v)}" for k,v in tc.arguments.items())
-    return '<code>'+escape(f"{tc.name}({params})")+'</code>'
 
 # %% ../nbs/07_chat.ipynb #80f344cc
 def _trunc_content(content, mx):
@@ -728,17 +719,7 @@ def mk_tr_details(tr, mx=2000):
     summ = f"<summary>{_tc_summary(tr)}</summary>"
     return f"\n\n{tool_dtls_tag}\n{summ}\n\n```json\n{dumps(res, indent=2, ensure_ascii=False)}\n```\n\n</details>\n\n"
 
-# %% ../nbs/07_chat.ipynb #3049001c
-def mk_srv_tc_details(tc, mx=2000):
-    "Create <details> block for tool call as JSON"
-    args = {k:_trunc_str(v, mx=mx*5) for k,v in tc.arguments.items()}
-    res = {'id':tc.id, 'server':True, 'call':{'function': tc.name, 'arguments': args}, 'result':"Server tool call executed."}
-    summ = f"<summary>{_srv_tc_summary(tc)}</summary>"
-    return f"\n\n{tool_dtls_tag}\n{summ}\n\n```json\n{dumps(res, indent=2, ensure_ascii=False)}\n```\n\n</details>\n\n"
-
 # %% ../nbs/07_chat.ipynb #f0d984ec
-# status_re = re.compile(r'^- ⏳ <code>(.*)</code> ⏳$|^🧠+$', re.MULTILINE) # TODO: Need to yield tool calls as they are done collated in fastllm `_acollect_stream`
-
 class StreamFormatter:
     def __init__(self, mx=2000, debug=False, showthink=False):
         self.outp,self.tcs = '',{}
@@ -754,8 +735,8 @@ class StreamFormatter:
                 res+= '🧠' if not self.outp or self.outp[-1]=='🧠' else '\n\n🧠'
             elif self.outp and self.outp[-1] == '🧠': res+= '\n\n'
             if txt:=o.get('text'): res+=f"\n\n{txt}" if res and res[-1] == '🧠' else txt
-        if isinstance(o, ToolCall):
-            res += mk_srv_tc_details(o)
+        if isinstance(o, Part) and o.type==PartType.tool_use:
+            res += f"\n- ⏳ {_tc_summary(o)} ⏳"
         if isinstance(o, Part) and o.type == PartType.tool_result:
             res += mk_tr_details(o,mx=self.mx)
         self.outp+=res
