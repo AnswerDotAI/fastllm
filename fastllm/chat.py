@@ -713,7 +713,7 @@ def _trunc_content(content, mx):
 def mk_tr_details(tr, mx=2000):
     "Create <details> block for tool call as JSON"
     args = {k:_trunc_str(v, mx=mx*5) for k,v in tr.data['arguments'].items()}
-    res = {'id':tr.data['id'], 'server':False,
+    res = {'id':tr.data['id'], 'server':tr.data.get('server', False),
            'call':{'function': tr.data['name'], 'arguments': args},
            'result':_trunc_content(tr.text, mx=mx),}
     summ = f"<summary>{_tc_summary(tr)}</summary>"
@@ -736,7 +736,7 @@ class StreamFormatter:
             elif self.outp and self.outp[-1] == '🧠': res+= '\n\n'
             if txt:=o.get('text'): res+=f"\n\n{txt}" if res and res[-1] == '🧠' else txt
         if isinstance(o, Part) and o.type==PartType.tool_use:
-            res += f"\n- ⏳ {_tc_summary(o)} ⏳"
+            res += f"\n- ⏳ {_tc_summary(o)} ⏳\n"
         if isinstance(o, Part) and o.type == PartType.tool_result:
             res += mk_tr_details(o,mx=self.mx)
         self.outp+=res
