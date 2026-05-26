@@ -136,6 +136,7 @@ async def mk_acollect_stream(it, index_fn, model=None, api_name=None, vendor_nam
                 acc.arguments = args
                 data = {**acc.extra, 'id':acc.id, 'name':acc.name, 'arguments':args, 'server':acc.server}
                 yield Part(type=PartType.tool_use, data=data)
+                # Server tool results for anthropic are yielded in d.server_tool_result by checking injected dummy `_delta`
                 if acc.server and '_delta' not in tc.arguments: yield Part(type=PartType.tool_result, text="Server tool call executed.", data=data)
         if d.server_tool_result:
             idx = _fidx(d, 'server_tool_result')
