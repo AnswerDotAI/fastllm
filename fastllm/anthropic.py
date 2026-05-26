@@ -90,7 +90,9 @@ def norm_sse_event(ev, **kwargs):
     if typ == "content_block_start":
         cb = ev.get("content_block", {})
         if cb.get("type", "").endswith("_tool_result"): return Delta(server_tool_result=cb, raw=ev, **kwargs)
-        if tc := norm_tool_call(cb): tcs = [tc]
+        if tc := norm_tool_call(cb):
+            if not tc.arguments: tc.arguments = {'_delta': ''}
+            tcs = [tc]
     elif typ == "content_block_delta":
         d = ev.get("delta", {})
         dtyp = d.get("type")

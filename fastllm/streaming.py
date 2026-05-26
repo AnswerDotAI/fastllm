@@ -128,15 +128,22 @@ async def mk_acollect_stream(it, index_fn, model=None, api_name=None, vendor_nam
         for tc in d.tool_calls:
             args = tc.arguments.get('_delta', tc.arguments)
             _, idx = _proc(d, 'tool_use', ret=dict(id=tc.id, name=tc.name, arguments=args, server=tc.server, extra=tc.extra))
-            if isinstance(args, dict) or args.endswith('}'): # tool call ready
+            if (isinstance(args, str) and args.endswith('}')) or (isinstance(args, dict) and '_delta' not in tc.arguments): # tool call ready
                 if isinstance(args, str):
                     try: args = json.loads(part_accum.parts[idx].arguments) if args else {}
                     except json.JSONDecodeError: continue
-                data = {**tc.extra, 'id':tc.id, 'name':tc.name, 'arguments':args, 'server':tc.server}
+                acc = part_accum.parts[idx]
+                acc.arguments = args
+                data = {**acc.extra, 'id':acc.id, 'name':acc.name, 'arguments':args, 'server':acc.server}
                 yield Part(type=PartType.tool_use, data=data)
+                if acc.server and '_delta' not in tc.arguments: yield Part(type=PartType.tool_result, text="Server tool call executed.", data=data)
         if d.server_tool_result:
             idx = _fidx(d, 'server_tool_result')
             part_accum.parts[idx] = Part(type=typ, data=d.server_tool_result)
+            srv_tc = next((p for p in reversed(list(part_accum.parts.values())) if isinstance(p, ToolCall) and p.server), None)
+            if srv_tc:
+                data = {**srv_tc.extra, 'id':srv_tc.id, 'name':srv_tc.name, 'arguments':srv_tc.arguments, 'server':True}
+                yield Part(type=PartType.tool_result, text="Server tool call executed.", data=data)
         r = _proc(d, 'refusal')
         if r[0]: yield r[0]
         if d.finish_reason: fin = d.finish_reason
@@ -153,4 +160,3 @@ async def mk_acollect_stream(it, index_fn, model=None, api_name=None, vendor_nam
             message=Msg(role="assistant", content=part_accum.parts),
             finish_reason=fin, usage=usg, tool_calls=tcs, api_name=api_name, vendor_name=vendor_name,
             raw={'deltas':deltas})
-
