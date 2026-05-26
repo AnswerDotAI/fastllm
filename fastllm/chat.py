@@ -6,7 +6,7 @@
 __all__ = ['tool_dtls_tag', 're_tools', 'token_dtls_tag', 're_token', 'think_start', 'think_end', 're_think', 'effort',
            'MediaUrl', 'remove_cache_ckpts', 'contents', 'stop_reason', 'mk_msg', 'FenceToolStop', 'extract_fence_call',
            'split_tools', 'fmt2hist', 'mk_msgs', 'cite_footnote', 'postproc', 'lite_mk_func', 'ToolResponse',
-           'structured', 'StopResponse', 'FullResponse', 'search_count', 'UsageStats', 'AsyncChat',
+           'strip_tc_args', 'structured', 'StopResponse', 'FullResponse', 'search_count', 'UsageStats', 'AsyncChat',
            'astream_with_complete', 'ChatCallback', 'DeepseekMsgsCallback', 'DeepseekPrefillCallback', 'add_warning',
            'StopReasonCallback', 'run_fence_tool', 'FenceToolCallback', 'ToolReminderCallback', 'stop_sequences',
            'StopSequencesCallback', 'mk_tr_details', 'hist2fmt', 'StreamFormatter', 'AsyncStreamFormatter',
@@ -16,7 +16,7 @@ __all__ = ['tool_dtls_tag', 're_tools', 'token_dtls_tag', 're_token', 'think_sta
 import base64, json
 from typing import Optional,Callable
 from html import escape
-from toolslm.funccall import mk_ns, call_func, call_func_async, get_schema
+from toolslm.funccall import mk_ns, call_func, call_func_async, get_schema, strip_tool_arg_defaults
 from fastcore.utils import *
 from fastcore.meta import delegates
 from dataclasses import dataclass
@@ -286,6 +286,12 @@ def _lite_call_func(tc, tool_schemas, ns):
     res = _call_func(tc, tool_schemas, ns, call_func)
     return _mk_tool_result(res)
 
+# %% ../nbs/07_chat.ipynb #51c968d3
+def strip_tc_args(tcs, tool_schemas):
+    'Update list of ToolCall arguments by stripping the defaults'
+    tcs_args = strip_tool_arg_defaults([dict(name=tc.name,arguments=tc.arguments) for tc in tcs], tool_schemas)
+    for tc, args in zip(tcs, tcs_args): tc.arguments = args
+
 # %% ../nbs/07_chat.ipynb #6fb0e375
 @delegates(acomplete)
 async def structured(
@@ -522,6 +528,7 @@ async def _call(self:AsyncChat, msg=None, prefill=None, temp=None, think=None, s
         res = astream_with_complete(res, postproc=postproc)
         async for chunk in res: yield chunk
         res = res.value
+    strip_tc_args(res.tool_calls, self.tool_schemas)
     self.turn_res, self.turn_msg = res, contents(res)
     if self.prefill: self.turn_msg.content[0].text = self.prefill + self.turn_msg.content[0].text
     self.hist.append(self.turn_msg)
