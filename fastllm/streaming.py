@@ -105,14 +105,14 @@ async def mk_acollect_stream(it, index_fn, model=None, api_name=None, vendor_nam
         idx,last_idx = index_fn(d, typ, last_typ, last_idx)
         return idx
     def _proc(d, name, pt=None, kw='txt', ret=None):
-        if not ret and not (val := getattr(d, name)): return
+        if not ret and not (val := getattr(d, name)): return None, None
         idx = _fidx(d, name, pt)
         part_accum.append(typ, idx, **(ret or {kw: val}))
-        return ret or {name: val}
+        return ret or {name: val}, idx
     def _yield_parts(d):
         for args in [('text',), ('thinking',), ('citations', 'text', 'citations')]:
-            if (r := _proc(d, args[0], pt=args[1] if len(args)>1 else None, kw=args[2] if len(args)>2 else 'txt')):
-                yield r
+            r = _proc(d, args[0], pt=args[1] if len(args)>1 else None, kw=args[2] if len(args)>2 else 'txt')
+            if r[0]: yield r[0]
     stop, stop_yielded = False, False
     async for d in it:
         # Check stop condition and yield stop delta
@@ -127,11 +127,26 @@ async def mk_acollect_stream(it, index_fn, model=None, api_name=None, vendor_nam
         # Rest incl. tools, finish reason, usage is processed independently
         for tc in d.tool_calls:
             args = tc.arguments.get('_delta', tc.arguments)
-            _proc(d, 'tool_use', ret=dict(id=tc.id, name=tc.name, arguments=args, server=tc.server, extra=tc.extra))
+            _, idx = _proc(d, 'tool_use', ret=dict(id=tc.id, name=tc.name, arguments=args, server=tc.server, extra=tc.extra))
+            if (isinstance(args, str) and args.endswith('}')) or (isinstance(args, dict) and '_delta' not in tc.arguments): # tool call ready
+                if isinstance(args, str):
+                    try: args = json.loads(part_accum.parts[idx].arguments) if args else {}
+                    except json.JSONDecodeError: continue
+                acc = part_accum.parts[idx]
+                acc.arguments = args
+                data = {**acc.extra, 'id':acc.id, 'name':acc.name, 'arguments':args, 'server':acc.server}
+                yield Part(type=PartType.tool_use, data=data)
+                # Server tool results for anthropic are yielded in d.server_tool_result by checking injected dummy `_delta`
+                if acc.server and '_delta' not in tc.arguments: yield Part(type=PartType.tool_result, text="Server tool call executed.", data=data)
         if d.server_tool_result:
             idx = _fidx(d, 'server_tool_result')
             part_accum.parts[idx] = Part(type=typ, data=d.server_tool_result)
-        if (r:=_proc(d, 'refusal')): yield r
+            srv_tc = next((p for p in reversed(list(part_accum.parts.values())) if isinstance(p, ToolCall) and p.server), None)
+            if srv_tc:
+                data = {**srv_tc.extra, 'id':srv_tc.id, 'name':srv_tc.name, 'arguments':srv_tc.arguments, 'server':True}
+                yield Part(type=PartType.tool_result, text="Server tool call executed.", data=data)
+        r = _proc(d, 'refusal')
+        if r[0]: yield r[0]
         if d.finish_reason: fin = d.finish_reason
         if d.usage: usg = d.usage
         last_typ = typ
@@ -146,4 +161,3 @@ async def mk_acollect_stream(it, index_fn, model=None, api_name=None, vendor_nam
             message=Msg(role="assistant", content=part_accum.parts),
             finish_reason=fin, usage=usg, tool_calls=tcs, api_name=api_name, vendor_name=vendor_name,
             raw={'deltas':deltas})
-

@@ -223,9 +223,8 @@ def payload_kwargs(msgs, model, stream=False, system=None, max_tokens=None, temp
 
 # %% ../nbs/00_types.ipynb #c2a2cb49
 def get_api_key(api_key, default):
-    err = ValueError(f"Missing API key: make sure to have the expected env var name or pass `api_key`")
     key = api_key or os.getenv(default)
-    if not key: raise err
+    if not key: raise ValueError(f"Missing API key: set environment variable '{default}' or pass `api_key` parameter")
     return key
 
 # %% ../nbs/00_types.ipynb #852adecd
