@@ -11,6 +11,7 @@ __all__ = ['PartType', 'FinishReason', 'api_registry', 'model_prices_url', 'haik
            'register_model_info', 'get_model_info', 'get_model_pricing', 'approx_pricing']
 
 # %% ../nbs/00_types.ipynb #b4d047fd
+import httpx
 from dataclasses import dataclass, field
 from fastcore.net import urljson
 from fastcore.utils import *
@@ -28,14 +29,16 @@ PartType = str_enum('PartType', 'text', 'thinking', 'refusal', 'tool_use', 'serv
                     'input_image', 'input_audio', 'input_video', 'input_file')
 
 # %% ../nbs/00_types.ipynb #2eeff103
-def _trunc_strs(d, n=200):
-    "Return copy of dict `d` with str values >n chars truncated to first 10 chars + '...'"
-    if not d: return d
-    return {k: (v[:10]+'...' if isinstance(v,str) and len(v)>n else v) for k,v in d.items()}
+def _trunc_strs(o, n=200):
+    "Truncate str or dict"
+    if not o: return o
+    if isinstance(o,str) and len(o)>n: return o[:100]+'...'
+    if isinstance(o,dict): return {k: (v[:100]+'...' if isinstance(v,str) and len(v)>n else v) for k,v in o.items()}
+    return o
 
 @patch
 def _repr_markdown_(self: Part):
-    body = self.text if self.text else ''
+    body = _trunc_strs(self.text) if self.text else ''
     data = _trunc_strs(self.data)
     return f"""**Part** (`{self.type}`)
 
@@ -198,7 +201,17 @@ def sys_text(system):
 
 def part_txt(p): return p.text if isinstance(p,Part) else p
 
-# %% ../nbs/00_types.ipynb #dc2b75a0
+# %% ../nbs/00_types.ipynb #f3deb055
+@flexicache(time_policy(24*3600))
+def _fetch_url_partial(url, nbytes=512): 
+    "Fetch remote media bytes, optionally only first `nbytes`."
+    try:
+        with httpx.stream('GET', url, headers={'Range': f'bytes=0-{nbytes-1}'}, follow_redirects=True) as r:
+            if r.status_code not in (200, 206): return
+            return r.read()
+    except (httpx.HTTPError, httpx.InvalidURL): return
+
+# %% ../nbs/00_types.ipynb #70a9a0c3
 _ext_mime = {
     '.jpg':'image/jpeg', '.jpeg':'image/jpeg', '.png':'image/png', '.gif':'image/gif', '.webp':'image/webp',
     '.pdf':'application/pdf',
@@ -214,9 +227,11 @@ def data_url(url):
     return header[5:].split(';',1)[0].strip() or 'application/octet-stream', body
 
 def url_mime(url, default='application/octet-stream'):
-    "Guess mime from URL extension."
+    "Guess mime from URL extension, and optional bytes fallback."
+    if "youtube.com" in url or "youtu.be" in url: return "video/mp4"
     ext = '.' + url.rsplit('.', 1)[-1].split('?')[0].lower() if '.' in url.split('?')[0].split('/')[-1] else ''
-    return _ext_mime.get(ext, default)
+    if (mime:=_ext_mime.get(ext)) is None: return detect_mime(_fetch_url_partial(url))
+    return ifnone(mime, default)
 
 # %% ../nbs/00_types.ipynb #28c698fe
 def payload_kwargs(msgs, model, stream=False, system=None, max_tokens=None, temperature=None, tools=None, tool_choice=None, reasoning_effort=None, web_search_options=None, stop_callables=None): pass
