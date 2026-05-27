@@ -2,6 +2,25 @@
 
 <!-- do not remove -->
 
+## 0.0.10
+
+### New Features
+
+- `MediaUrl` for direct url handling without byte reading ([#31](https://github.com/AnswerDotAI/fastllm/issues/31))
+
+- Add timeout to `mk_client` ([#26](https://github.com/AnswerDotAI/fastllm/issues/26))
+
+- Add retry logic with exponential backoff to acomplete ([#25](https://github.com/AnswerDotAI/fastllm/pull/25)), thanks to [@ncoop57](https://github.com/ncoop57)
+  - ## Summary
+
+- Yield tool calls JIT ([#19](https://github.com/AnswerDotAI/fastllm/issues/19))
+
+### Bugs Squashed
+
+- force enable web_search for codex models ([#22](https://github.com/AnswerDotAI/fastllm/pull/22)), thanks to [@jackhogan](https://github.com/jackhogan)
+  - The litellm metadata file is missing `supports_web_search` for GPT-5.4 so the Codex version wasn't getting it. Explicitly set it to True like we do for non-codex gpt models.
+
+
 ## 0.0.9
 
 ### New Features
