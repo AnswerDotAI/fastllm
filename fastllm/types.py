@@ -342,9 +342,8 @@ for model in (codex54, codex54m, codex55):
     register_model_info(model, 'codex', base=model, base_vendor_name='chatgpt', supports_web_search=True, **codex_pricing)
 
 register_model_info(codex53spark, 'codex', **codex_pricing,
-    supports_vision=False, supports_image_input=False, supports_web_search=True, supports_reasoning=True,
+    supports_vision=False, supports_image_input=False, supports_web_search=True, supports_reasoning=True, supports_function_calling=True,
     max_tokens=128000, max_input_tokens=128000, max_output_tokens=128000)
-
 
 # %% ../nbs/00_types.ipynb #24cc47ec
 def get_model_pricing(mn, vendor_name, million=True):
