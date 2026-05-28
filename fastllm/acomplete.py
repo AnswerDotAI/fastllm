@@ -82,7 +82,7 @@ def _is_ctx_exceeded(code, msg):
     if str(code or "").lower() == "context_length_exceeded": return True
     return any(s in m for s in ("exceed context limit", "maximum context length", "maximum context limit",
     "longer than the model's context length", "input tokens exceed the configured limit",
-    "exceeds the maximum number of tokens allowed", "prompt is too long"))
+    "exceeds the maximum number of tokens allowed", "prompt is too long", "exceeds the context window"))
 
 def _classify_error(exc):
     "Upgrade generic `APIError` to a specific subclass if applicable."
