@@ -157,7 +157,7 @@ async def mk_acollect_stream(it, index_fn, model=None, api_name=None, vendor_nam
     if stop: fin = FinishReason.stop
     fin = FinishReason.tool_calls if fin==FinishReason.stop and any(~L(tcs).attrgot('server')) else fin # recheck tool calls post collation
     # tool calls and non-anthropic citations are yielded at the end
-    yield Completion(d.raw.get('model', model),
+    yield Completion(model,
             message=Msg(role="assistant", content=part_accum.parts),
             finish_reason=fin, usage=usg, tool_calls=tcs, api_name=api_name, vendor_name=vendor_name,
             raw={'deltas':deltas})

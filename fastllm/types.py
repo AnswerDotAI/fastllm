@@ -164,7 +164,7 @@ def mk_completion(resp, model, api_name, vendor_name):
     parts = api.norm_parts(resp)
     usg = api.finalize_usage(api.norm_usage(resp), parts)
     return Completion(
-        model=resp.get("model") or model,
+        model=model,
         message=Msg(role="assistant", content=parts),
         finish_reason=api.norm_finish(resp, tcs),
         usage=usg,
@@ -172,7 +172,6 @@ def mk_completion(resp, model, api_name, vendor_name):
         api_name=api_name,
         vendor_name=vendor_name,
         raw=resp)
-
 
 # %% ../nbs/00_types.ipynb #d5322db5
 def mk_tool_res_msg(tool_calls:list[ToolCall], results:list[str|list]):
