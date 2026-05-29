@@ -38,6 +38,7 @@ vendor_mapping = {
     "codex":        ('openai', 'https://chatgpt.com/backend-api/codex', 'CODEX_AUTH_TOKEN', _codex_json),
     "moonshot":     ('openai_chat', "https://api.moonshot.ai/v1", "MOONSHOT_API_KEY"),
     "deepseek":     ('openai_chat', "https://api.deepseek.com/v1", "DEEPSEEK_API_KEY"),
+    "mimo":         ('openai_chat', "https://api.xiaomimimo.com/v1", "MIMO_API_KEY"),
     "openrouter":   ('openai_chat', "https://openrouter.ai/api/v1", "OPENROUTER_API_KEY"),
     "together":     ('openai_chat', "https://api.together.xyz/v1", "TOGETHER_API_KEY"),
     "fireworks_ai": ('openai_chat', "https://api.fireworks.ai/inference/v1", "FIREWORKS_API_KEY"),

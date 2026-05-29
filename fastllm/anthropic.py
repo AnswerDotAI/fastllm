@@ -287,7 +287,7 @@ def cost(usage, m):
     in_tok = raw['input_tokens']
     cache_read = raw.get('cache_read_input_tokens', 0)
     cc = raw.get('cache_creation', {}) or {}
-    cache_5m  = cc.get('ephemeral_5m_input_tokens', 0)
+    cache_5m  = cc.get('ephemeral_5m_input_tokens', raw.get('cache_creation_input_tokens', 0))
     cache_1h  = cc.get('ephemeral_1h_input_tokens', 0)
     cost  = in_tok     * m.input_cost_per_token
     cost += raw['output_tokens'] * m.output_cost_per_token

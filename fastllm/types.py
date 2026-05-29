@@ -5,10 +5,11 @@
 # %% auto #0
 __all__ = ['PartType', 'FinishReason', 'api_registry', 'model_prices_url', 'haik45', 'sonn45', 'sonn', 'sonn46', 'opus46', 'opus',
            'gpt54', 'gpt54m', 'gpt55', 'codex54', 'codex54m', 'codex55', 'codex53spark', 'model_info_registry',
-           'deepseek_v4_common', 'codex_pricing', 'Part', 'Msg', 'ToolCall', 'display_list', 'Usage', 'Completion',
-           'APIRegistry', 'mk_completion', 'mk_tool_res_msg', 'fn_schema', 'sys_text', 'part_txt', 'data_url',
-           'url_mime', 'payload_kwargs', 'get_api_key', 'model_prices_meta', 'infer_api_name', 'get_model_meta',
-           'register_model_info', 'get_model_info', 'get_model_pricing', 'approx_pricing']
+           'modern_llm', 'deepseek_v4_common', 'mimo_v25_common', 'codex_pricing', 'Part', 'Msg', 'ToolCall',
+           'display_list', 'Usage', 'Completion', 'APIRegistry', 'mk_completion', 'mk_tool_res_msg', 'fn_schema',
+           'sys_text', 'part_txt', 'data_url', 'url_mime', 'payload_kwargs', 'get_api_key', 'model_prices_meta',
+           'infer_api_name', 'get_model_meta', 'register_model_info', 'get_model_info', 'get_model_pricing',
+           'approx_pricing']
 
 # %% ../nbs/00_types.ipynb #b4d047fd
 import httpx
@@ -270,7 +271,7 @@ haik45 = "claude-haiku-4-5"
 sonn45 = "claude-sonnet-4-5"
 sonn = sonn46 = "claude-sonnet-4-6"
 opus46 = "claude-opus-4-6"
-opus = "claude-opus-4-7"
+opus = "claude-opus-4-8"
 gpt54 = "gpt-5.4"
 gpt54m = "gpt-5.4-mini"
 gpt55 = "gpt-5.5"
@@ -286,6 +287,8 @@ def register_model_info(model, vendor_name=None, base=None, base_vendor_name=Non
     "Register model metadata, optionally starting from `base`."
     info = dict(get_model_info(base, base_vendor_name or vendor_name)) if base else {}
     info.update(overrides)
+    if isinstance(c := info.get('search_context_cost_per_query'), (int,float)):
+        info['search_context_cost_per_query'] = {f'search_context_size_{s}':c for s in ('low','medium','high')}
     model_info_registry[vendor_name, model] = info
 
 def get_model_info(mn, vendor_name=None):
@@ -293,11 +296,17 @@ def get_model_info(mn, vendor_name=None):
     if 'search_context_cost_per_query' in info: info['supports_web_search'] = True
     return dict2obj(info)
 
+# %% ../nbs/00_types.ipynb #331c5d0a
+register_model_info("claude-opus-4-8", vendor_name='anthropic', base="claude-opus-4-6")
+
+# %% ../nbs/00_types.ipynb #b36178d4
+modern_llm = dict(supports_function_calling=True, supports_tool_choice=True, supports_prompt_caching=True,
+    supports_parallel_function_calling=True, supports_native_streaming=True, supports_native_structured_output=True,
+    supports_reasoning=True, supports_response_schema=True, supports_system_messages=True)
+
 # %% ../nbs/00_types.ipynb #8261dcd0
-register_model_info('accounts/fireworks/models/qwen3p6-plus', vendor_name='fireworks_ai',
-    supports_vision=True, supports_reasoning=True, supports_function_calling=True, supports_tool_choice=True,
-    supports_system_messages=True, supports_response_schema=True, supports_parallel_function_calling=True,
-    supports_prompt_caching=True, supports_native_streaming=True, supports_native_structured_output=True,
+register_model_info('accounts/fireworks/models/qwen3p6-plus', vendor_name='fireworks_ai', **modern_llm,
+    supports_vision=True,
     max_tokens=1000000, max_input_tokens=1000000, max_output_tokens=65536,
     input_cost_per_token=0.5e-6, cache_read_input_token_cost=0.1e-6, output_cost_per_token=3.0e-6)
 
@@ -321,9 +330,7 @@ for model in ('accounts/fireworks/models/kimi-k2p5', 'accounts/fireworks/models/
         input_cost_per_token=0.95e-6, cache_read_input_token_cost=0.16e-6, output_cost_per_token=4.0e-6)
 
 # %% ../nbs/00_types.ipynb #948d55d0
-deepseek_v4_common = dict(
-    supports_assistant_prefill=True, supports_function_calling=True, supports_prompt_caching=True,
-    supports_reasoning=True, supports_tool_choice=True,
+deepseek_v4_common = dict(**modern_llm, supports_assistant_prefill=True,
     max_input_tokens=1048576, max_output_tokens=393216, max_tokens=393216)
 
 register_model_info('deepseek-v4-flash', vendor_name='deepseek', base='deepseek/deepseek-v3.2', **deepseek_v4_common,
@@ -332,6 +339,14 @@ register_model_info('deepseek-v4-flash', vendor_name='deepseek', base='deepseek/
 register_model_info('deepseek-v4-pro', vendor_name='deepseek', base='deepseek/deepseek-v3.2', **deepseek_v4_common,
     input_cost_per_token=4.35e-07, input_cost_per_token_cache_hit=3.625e-09,
     output_cost_per_token=8.7e-07, cache_read_input_token_cost=4.35e-07/10)
+
+mimo_v25_common = dict(**modern_llm, supports_web_search=True, max_input_tokens=1048576, max_output_tokens=131072, max_tokens=131072)
+
+register_model_info('mimo-v2.5-pro', vendor_name='mimo', **mimo_v25_common, base='deepseek/deepseek-v4-pro',
+    input_cost_per_token=0.435e-6, output_cost_per_token=0.87e-6, cache_read_input_token_cost=0.0036e-6, search_context_cost_per_query=0.005)
+register_model_info('mimo-v2.5', vendor_name='mimo', **mimo_v25_common, base='deepseek/deepseek-v4',
+    input_cost_per_token=0.14e-6,  output_cost_per_token=0.28e-6, cache_read_input_token_cost=0.0028e-6, search_context_cost_per_query=0.005,
+    supports_vision=True, supports_image_input=True)
 
 # %% ../nbs/00_types.ipynb #2c23d11e
 codex_pricing = dict(
@@ -357,7 +372,7 @@ def approx_pricing(nm, vendor_name, out=10, cache=80, inp=10, markup=0):
     p = get_model_pricing(nm, vendor_name)
     ic = p.get('cache_creation_input_token_cost', p['input_cost_per_token'])
     res = (p['output_cost_per_token']*out + p['cache_read_input_token_cost']*cache + ic*inp) / (out+cache+inp)
-    if nm=='claude-opus-4-7': res *= 1.5
+    if nm in ('claude-opus-4-7','claude-opus-4-8'): res *= 1.5
     return res*(1+markup)
 
 # %% ../nbs/00_types.ipynb #8bfca02d
