@@ -116,7 +116,7 @@ re_token = re.compile(fr"^{re.escape(token_dtls_tag)}\n*<summary>.*?</summary>\n
 _fence_back = '`````'
 _fence_re = re.compile(f'^{_fence_back}(py|bash)\n(.*?)\n{_fence_back}$', re.DOTALL | re.MULTILINE)
 _result_re = re.compile(f'\n{_fence_back}result\n(.*?)\n{_fence_back}\n', re.DOTALL)
-_lang2tool = dict(py='python', bash='bash')
+_lang2tool = dict(py='pyrun', bash='bash')
 
 class FenceToolStop:
     def __init__(self, langs): self.langs = langs
@@ -635,7 +635,7 @@ def _active_fence_langs(tool_schemas):
 async def run_fence_tool(lang, code, ns):
     "Run the mapped tool for `lang` with the code, return result fence"
     tname = _lang2tool[lang]
-    arg = dict(code=code) if lang == 'py' else dict(command=code)
+    arg = dict(code=code) if lang == 'py' else dict(cmd=code)
     res = _mk_tool_result(await call_func_async(tname, arg, ns=ns, raise_on_err=False))
     return _mk_result_fence(_trunc_str(str(res)))
 
