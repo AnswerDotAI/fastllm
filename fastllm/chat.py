@@ -204,6 +204,7 @@ def fmt2hist(outp:str)->list[Msg]:
     for msg in hist:
         if msg.role == 'assistant': result.extend(_split_msg_on_fences(msg))
         else: result.append(msg)
+    if result[-1].role == 'tool': result.append(Msg(role='assistant', content=[Part(type=PartType.text, text='.')])) 
     return result
 
 # %% ../nbs/07_chat.ipynb #8de5ce8d
