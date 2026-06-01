@@ -2,6 +2,25 @@
 
 <!-- do not remove -->
 
+## 0.0.11
+
+### New Features
+
+- rename tools to be as safepyrun/safecmd expects ([#36](https://github.com/AnswerDotAI/fastllm/pull/36)), thanks to [@RensDimmendaal](https://github.com/RensDimmendaal)
+
+- Add Mimo vendor, Opus 4-8, modern_llm preset, and fix Anthropic cache cost fallback ([#35](https://github.com/AnswerDotAI/fastllm/issues/35))
+
+### Bugs Squashed
+
+- Wrong roles in `mk_msgs` when `fmt2hist` ends with `tool` ([#37](https://github.com/AnswerDotAI/fastllm/issues/37))
+
+- Update 'gpt-5.3-codex-spark' meta to support tools ([#34](https://github.com/AnswerDotAI/fastllm/issues/34))
+  - <img width="626" height="164" alt="Image" src="https://github.com/user-attachments/assets/8565e590-e0b4-4fc1-82ea-27bc712a3fae" />
+
+- Model name changes from the server response invalidates model meta patches ([#33](https://github.com/AnswerDotAI/fastllm/issues/33))
+  - <img width="811" height="253" alt="Image" src="https://github.com/user-attachments/assets/7969baad-4772-475f-b58b-9ca951cf7410" />
+
+
 ## 0.0.10
 
 ### New Features
