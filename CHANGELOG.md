@@ -2,23 +2,25 @@
 
 <!-- do not remove -->
 
+## 0.0.12
+
+### New Features
+
+- Add `CODEX_AUTH_PATH` ([#38](https://github.com/AnswerDotAI/fastllm/issues/38))
+
+
 ## 0.0.11
 
 ### New Features
 
 - rename tools to be as safepyrun/safecmd expects ([#36](https://github.com/AnswerDotAI/fastllm/pull/36)), thanks to [@RensDimmendaal](https://github.com/RensDimmendaal)
-
-- Add Mimo vendor, Opus 4-8, modern_llm preset, and fix Anthropic cache cost fallback ([#35](https://github.com/AnswerDotAI/fastllm/issues/35))
+- Add Mimo vendor, Opus 4-8, `modern_llm` preset, and fix Anthropic cache cost fallback ([#35](https://github.com/AnswerDotAI/fastllm/issues/35))
 
 ### Bugs Squashed
 
 - Wrong roles in `mk_msgs` when `fmt2hist` ends with `tool` ([#37](https://github.com/AnswerDotAI/fastllm/issues/37))
-
 - Update 'gpt-5.3-codex-spark' meta to support tools ([#34](https://github.com/AnswerDotAI/fastllm/issues/34))
-  - <img width="626" height="164" alt="Image" src="https://github.com/user-attachments/assets/8565e590-e0b4-4fc1-82ea-27bc712a3fae" />
-
 - Model name changes from the server response invalidates model meta patches ([#33](https://github.com/AnswerDotAI/fastllm/issues/33))
-  - <img width="811" height="253" alt="Image" src="https://github.com/user-attachments/assets/7969baad-4772-475f-b58b-9ca951cf7410" />
 
 
 ## 0.0.10
@@ -26,34 +28,26 @@
 ### New Features
 
 - `MediaUrl` for direct url handling without byte reading ([#31](https://github.com/AnswerDotAI/fastllm/issues/31))
-
 - Add timeout to `mk_client` ([#26](https://github.com/AnswerDotAI/fastllm/issues/26))
-
 - Add retry logic with exponential backoff to acomplete ([#25](https://github.com/AnswerDotAI/fastllm/pull/25)), thanks to [@ncoop57](https://github.com/ncoop57)
-  - ## Summary
-
 - Yield tool calls JIT ([#19](https://github.com/AnswerDotAI/fastllm/issues/19))
 
 ### Bugs Squashed
 
-- force enable web_search for codex models ([#22](https://github.com/AnswerDotAI/fastllm/pull/22)), thanks to [@jackhogan](https://github.com/jackhogan)
-  - The litellm metadata file is missing `supports_web_search` for GPT-5.4 so the Codex version wasn't getting it. Explicitly set it to True like we do for non-codex gpt models.
+- force enable `web_search` for codex models ([#22](https://github.com/AnswerDotAI/fastllm/pull/22)), thanks to [@jackhogan](https://github.com/jackhogan)
 
 
 ## 0.0.9
 
 ### New Features
 
-- Add approx_pricing helper and fix Fireworks Kimi k2p6 model registration with pricing ([#21](https://github.com/AnswerDotAI/fastllm/issues/21))
-
-- Refactor model info into registry; add get_model_pricing; add new gemini models ([#20](https://github.com/AnswerDotAI/fastllm/issues/20))
+- Add `approx_pricing` helper and fix Fireworks Kimi k2p6 model registration with pricing ([#21](https://github.com/AnswerDotAI/fastllm/issues/21))
+- Refactor model info into registry; add `get_model_pricing`; add new gemini models ([#20](https://github.com/AnswerDotAI/fastllm/issues/20))
 
 ### Bugs Squashed
 
 - Fix `accounts/fireworks/models/kimi-k2p5` registration ([#23](https://github.com/AnswerDotAI/fastllm/issues/23))
-
-- force enable web_search for codex models ([#22](https://github.com/AnswerDotAI/fastllm/pull/22)), thanks to [@jackhogan](https://github.com/jackhogan)
-  - The litellm metadata file is missing `supports_web_search` for GPT-5.4 so the Codex version wasn't getting it. Explicitly set it to True like we do for non-codex gpt models.
+- force enable `web_search` for codex models ([#22](https://github.com/AnswerDotAI/fastllm/pull/22)), thanks to [@jackhogan](https://github.com/jackhogan)
 
 
 ## 0.0.8
