@@ -137,14 +137,10 @@ async def mk_acollect_stream(it, index_fn, model=None, api_name=None, vendor_nam
                 data = {**acc.extra, 'id':acc.id, 'name':acc.name, 'arguments':args, 'server':acc.server}
                 yield Part(type=PartType.tool_use, data=data)
                 # Server tool results for anthropic are yielded in d.server_tool_result by checking injected dummy `_delta`
-                if acc.server and '_delta' not in tc.arguments: yield Part(type=PartType.tool_result, text="Server tool call executed.", data=data)
+                if acc.server: yield Part(type=PartType.tool_result, text="Server tool call executed.", data=data)
         if d.server_tool_result:
             idx = _fidx(d, 'server_tool_result')
             part_accum.parts[idx] = Part(type=typ, data=d.server_tool_result)
-            srv_tc = next((p for p in reversed(list(part_accum.parts.values())) if isinstance(p, ToolCall) and p.server), None)
-            if srv_tc:
-                data = {**srv_tc.extra, 'id':srv_tc.id, 'name':srv_tc.name, 'arguments':srv_tc.arguments, 'server':True}
-                yield Part(type=PartType.tool_result, text="Server tool call executed.", data=data)
         r = _proc(d, 'refusal')
         if r[0]: yield r[0]
         if d.finish_reason: fin = d.finish_reason
