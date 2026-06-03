@@ -291,5 +291,6 @@ d = { 'settings': { 'branch': 'main',
                                'fastllm.types.part_txt': ('types.html#part_txt', 'fastllm/types.py'),
                                'fastllm.types.payload_kwargs': ('types.html#payload_kwargs', 'fastllm/types.py'),
                                'fastllm.types.register_model_info': ('types.html#register_model_info', 'fastllm/types.py'),
+                               'fastllm.types.resize_b64': ('types.html#resize_b64', 'fastllm/types.py'),
                                'fastllm.types.sys_text': ('types.html#sys_text', 'fastllm/types.py'),
                                'fastllm.types.url_mime': ('types.html#url_mime', 'fastllm/types.py')}}}

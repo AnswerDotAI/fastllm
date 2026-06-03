@@ -238,8 +238,10 @@ def denorm_user(m:Msg):
     return dict(role='user', content=parts)
 
 # %% ../nbs/04_anthropic.ipynb #edd87272
-def denorm_image(p):
-    if (b64:=data_url(p.text)): return {"type": "image", "source": {"type": "base64", "media_type": b64[0], "data": b64[1]}}
+def denorm_image(p, max_sz=None):
+    if (b64:=data_url(p.text)):
+        data = resize_b64(b64[1], max_sz) if max_sz else b64[1]
+        return {"type": "image", "source": {"type": "base64", "media_type": b64[0], "data": data}}
     return {"type": "image", "source": {"type": "url", "url": p.text}}
 
 # %% ../nbs/04_anthropic.ipynb #fc6bbdfc
@@ -256,7 +258,7 @@ def denorm_tool_result(p:Part):
         blocks = []
         for pp in p.text:
             if   pp.type == PartType.text:        blocks.append({"type": "text", "text": pp.text or ""})
-            elif pp.type == PartType.input_image: blocks.append(denorm_image(pp))
+            elif pp.type == PartType.input_image: blocks.append(denorm_image(pp, max_sz=2000))
             elif pp.type == PartType.input_file:  blocks.append(denorm_file(pp))
             else: raise ValueError(f"Anthropic tool_result does not support {pp.type}")
         return _ant_cc(dict(type='tool_result', tool_use_id=tid, content=blocks), p)

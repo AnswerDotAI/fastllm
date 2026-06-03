@@ -7,15 +7,16 @@ __all__ = ['PartType', 'FinishReason', 'api_registry', 'model_prices_url', 'haik
            'gpt54', 'gpt54m', 'gpt55', 'codex54', 'codex54m', 'codex55', 'codex53spark', 'model_info_registry',
            'modern_llm', 'deepseek_v4_common', 'mimo_v25_common', 'codex_pricing', 'Part', 'Msg', 'ToolCall',
            'display_list', 'Usage', 'Completion', 'APIRegistry', 'mk_completion', 'mk_tool_res_msg', 'fn_schema',
-           'sys_text', 'part_txt', 'data_url', 'url_mime', 'payload_kwargs', 'get_api_key', 'model_prices_meta',
-           'infer_api_name', 'get_model_meta', 'register_model_info', 'get_model_info', 'get_model_pricing',
-           'approx_pricing']
+           'sys_text', 'part_txt', 'data_url', 'url_mime', 'payload_kwargs', 'get_api_key', 'resize_b64',
+           'model_prices_meta', 'infer_api_name', 'get_model_meta', 'register_model_info', 'get_model_info',
+           'get_model_pricing', 'approx_pricing']
 
 # %% ../nbs/00_types.ipynb #b4d047fd
-import httpx
+import httpx, base64, io
 from dataclasses import dataclass, field
 from fastcore.net import urljson
 from fastcore.utils import *
+from PIL import Image as PImg
 
 # %% ../nbs/00_types.ipynb #e568bade
 @dataclass
@@ -241,6 +242,18 @@ def get_api_key(api_key, default):
     key = api_key or os.getenv(default)
     if not key: raise ValueError(f"Missing API key: set environment variable '{default}' or pass `api_key` parameter")
     return key
+
+# %% ../nbs/00_types.ipynb #25e9cd60
+def resize_b64(b64, max_sz):
+    "Resize a base64 image data to a max long edge, preserving aspect ratio."
+    img = PImg.open(io.BytesIO(base64.b64decode(b64)))
+    if max(img.size) < max_sz: return b64
+    img.thumbnail((max_sz,max_sz), PImg.Resampling.LANCZOS)
+    fmt = (img.format or 'PNG').upper()
+    if fmt=='JPG': fmt = 'JPEG'
+    buf = io.BytesIO()
+    img.save(buf, format=fmt)
+    return base64.b64encode(buf.getvalue()).decode()
 
 # %% ../nbs/00_types.ipynb #852adecd
 model_prices_url = 'https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json'
