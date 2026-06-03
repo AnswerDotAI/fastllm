@@ -364,6 +364,9 @@ register_model_info('mimo-v2.5', vendor_name='mimo', **mimo_v25_common, base='de
     input_cost_per_token=0.14e-6,  output_cost_per_token=0.28e-6, cache_read_input_token_cost=0.0028e-6, search_context_cost_per_query=0.005,
     supports_vision=True, supports_image_input=True)
 
+# %% ../nbs/00_types.ipynb #defb1c5c
+register_model_info('MiniMax-M3', vendor_name='minimax', **modern_llm, max_input_tokens=512_000, max_output_tokens=512_000, max_tokens=512_000, input_cost_per_token=0.3e-6,  output_cost_per_token=1.2e-6, cache_read_input_token_cost=0.06e-6, supports_vision=True, supports_video_input=True)
+
 # %% ../nbs/00_types.ipynb #2c23d11e
 codex_pricing = dict(
     input_cost_per_token = 0.10/1_000_000, output_cost_per_token = 0.50/1_000_000,
