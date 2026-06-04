@@ -183,7 +183,7 @@ def fmt2hist(outp:str)->list[Msg]:
     "Transform a formatted output string into fastllm canonical Msgs"
     if token_dtls_tag in outp: outp = re_token.sub('', outp)
     if tool_dtls_tag not in outp:
-        msg = Msg(role='assistant', content=[Part(type=PartType.text, text=outp.strip())])
+        msg = Msg(role='assistant', content=[Part(type=PartType.text, text=outp.strip() or '.')])
         return _split_msg_on_fences(msg)
     hist, asst_parts, tool_parts = [], [], []
     def flush():
@@ -194,7 +194,7 @@ def fmt2hist(outp:str)->list[Msg]:
     for txt,_,tj in split_tools(outp):
         if txt and txt.strip():
             if tool_parts: flush()
-            asst_parts.append(Part(type=PartType.text, text=txt.strip()))
+            asst_parts.append(Part(type=PartType.text, text=txt.strip() or '.'))
         if tj and (tp := _extract_tool_parts(tj)):
             asst_parts.append(tp[0])
             tool_parts.append(tp[1])
