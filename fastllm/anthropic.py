@@ -125,11 +125,14 @@ def _ant_cc(block, p):
     if (cc := (p.data or {}).get('cache_control')): block['cache_control'] = cc
     return block
 
+# %% ../nbs/04_anthropic.ipynb #62e9a042
+def _sanid(id_str): return re.sub(r'[^a-zA-Z0-9_-]', '_', id_str or '')
+
 # %% ../nbs/04_anthropic.ipynb #6ec772cb
 def denorm_tool_use(p:Part):
     "Convert canonical tool_use Part to Anthropic tool_use content block."
     d = p.data or {}
-    block = dict(type='tool_use', id=d.get('id',''), name=d.get('name',''), input=d.get('arguments') or {})
+    block = dict(type='tool_use', id=_sanid(d.get('id','')), name=d.get('name',''), input=d.get('arguments') or {})
     if 'caller' in d: block['caller'] = d['caller']
     return _ant_cc(block, p)
 
@@ -253,7 +256,7 @@ def denorm_file(p):
 def denorm_tool_result(p:Part):
     "Convert canonical tool_result Part to Anthropic tool_result content block."
     d = p.data or {}
-    tid = d.get('id') or d.get('call_id','')
+    tid = _sanid(d.get('id') or d.get('call_id',''))
     if isinstance(p.text, list):
         blocks = []
         for pp in p.text:
