@@ -86,6 +86,7 @@ def norm_parts(resp):
 # %% ../nbs/05_gemini.ipynb #9a5024ee
 def norm_sse_event(ev, **kwargs):
     "Normalize Gemini stream event into Delta."
+    ev = obj2dict(ev)
     cand = nested_idx(ev, 'candidates', 0) or {}
     finish_reason = norm_finish(ev)
     parts = nested_idx(cand, 'content', 'parts') or []

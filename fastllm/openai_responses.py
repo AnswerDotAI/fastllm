@@ -82,6 +82,7 @@ def norm_parts(resp):
 # %% ../nbs/02_oai_responses.ipynb #7cd48aa5
 def norm_sse_event(ev, **kwargs):
     "Normalize OpenAI Responses API stream event into Delta."
+    ev = obj2dict(ev)
     typ = ev.get("type")
     if typ == "response.output_text.delta":            return Delta(text=ev.get("delta"), raw=ev, **kwargs)
     if typ == "response.reasoning_text.delta":         return Delta(thinking=ev.get("delta",""), raw=ev, **kwargs)

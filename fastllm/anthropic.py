@@ -85,6 +85,7 @@ def norm_parts(resp):
 
 # %% ../nbs/04_anthropic.ipynb #a3869e31
 def norm_sse_event(ev, **kwargs):
+    ev = obj2dict(ev)
     typ = ev.get("type")
     text, thinking, tcs, citations = None, None, [], None
     if typ == "content_block_start":
