@@ -109,10 +109,13 @@ async def acollect_stream(resp, **kwargs):
     res = mk_acollect_stream(norm_and_yield(resp, norm_sse_event), index_fn=delta_index_fn, api_name='openai', **kwargs)
     async for o in res: yield o
 
+# %% ../nbs/02_oai_responses.ipynb #9608e813
+def _sanid(id_str): return id_str[:64] # codex max 64 char limit
+
 # %% ../nbs/02_oai_responses.ipynb #b746c82b
 def denorm_tool_use(p:Part):
     "Convert canonical tool_use Part back to OpenAI Responses function_call item."
-    return dict(type='function_call', call_id=p.data.get('id'), name=p.data.get('name'), arguments=json.dumps(p.data.get('arguments', '{}')))
+    return dict(type='function_call', call_id=_sanid(p.data.get('id')), name=p.data.get('name'), arguments=json.dumps(p.data.get('arguments', '{}')))
 
 # %% ../nbs/02_oai_responses.ipynb #8f42adf7
 def denorm_tool(m:Msg):
@@ -208,7 +211,7 @@ def denorm_file(p):
 # %% ../nbs/02_oai_responses.ipynb #145b1c79
 def denorm_tool_result(m:Part):
     "Convert canonical tool result back to OpenAI Responses function_call_output item."
-    cid = m.data.get('id', '') or m.data.get('call_id')
+    cid = _sanid(m.data.get('id', '') or m.data.get('call_id'))
     if isinstance(m.text, list):
         out = []
         for p in m.text:
