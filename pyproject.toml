@@ -15,7 +15,7 @@ classifiers = [
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3 :: Only",
 ]
-dependencies = ['fastspec', 'toolslm', 'pillow']
+dependencies = ['fastspec>=0.0.9', 'toolslm', 'pillow']
 
 [project.urls]
 Repository = "https://github.com/AnswerDotAI/fastllm"
