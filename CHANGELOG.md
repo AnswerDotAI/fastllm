@@ -2,6 +2,13 @@
 
 <!-- do not remove -->
 
+## 0.0.16
+
+### New Features
+
+- fastspec `dict2obj -> obj2dict` handling ([#43](https://github.com/AnswerDotAI/fastllm/pull/43)), thanks to [@KeremTurgutlu](https://github.com/KeremTurgutlu)
+
+
 ## 0.0.15
 
 ### New Features
