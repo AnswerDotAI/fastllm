@@ -161,6 +161,7 @@ api_registry = APIRegistry()
 # %% ../nbs/00_types.ipynb #d58a5f96
 def mk_completion(resp, model, api_name, vendor_name):
     "Normalize an api response into Completion."
+    resp = obj2dict(resp)
     api = api_registry.apis[api_name]
     tcs = api.norm_tool_calls(resp)
     parts = api.norm_parts(resp)
@@ -277,7 +278,7 @@ def get_model_meta(model, vendor_name=None, tfm=noop):
     if model in mp: key = model
     elif vendor_name=='gemini' and model.startswith('models/'): key = f"gemini/{model.removeprefix('models/')}"
     elif vendor_name:                                           key = f"{vendor_name}/{model}"
-    return dict2obj(tfm(mp.get(key), model, vendor_name))
+    return dict2obj(tfm(mp.get(key, {}), model, vendor_name))
 
 # %% ../nbs/00_types.ipynb #60607e23
 haik45 = "claude-haiku-4-5"

@@ -55,6 +55,7 @@ def norm_parts(resp):
 def norm_sse_event(ev, **kwargs):
     "Normalize a chat completion stream event."
     # usage always arrives as a single final event with choices: []
+    ev = obj2dict(ev)
     fin = nested_idx(ev, 'choices', 0, 'finish_reason')
     tcs = norm_tool_calls(ev, delta=True)
     if (dlt:=nested_idx(ev, 'choices', 0, 'delta')) is not None:
