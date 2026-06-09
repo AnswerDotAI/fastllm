@@ -259,8 +259,11 @@ def resize_b64(b64, max_sz):
 # %% ../nbs/00_types.ipynb #852adecd
 model_prices_url = 'https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json'
 
-@flexicache(time_policy(24*60*60))
-def model_prices_meta(): return urljson(model_prices_url)
+def model_prices_meta():
+    "Download model prices to the module dir once, then load from disk."
+    p = Path(__file__).parent/'model_prices.json'
+    if not p.exists(): p.write_text(httpx.get(model_prices_url, follow_redirects=True).text)
+    return loads(p.read_text())
 
 # %% ../nbs/00_types.ipynb #68e488d8
 def infer_api_name(model):
@@ -270,7 +273,6 @@ def infer_api_name(model):
     if any(o in model for o in ('gpt','o3-','o4-')): return 'openai'
 
 # %% ../nbs/00_types.ipynb #2f0720c2
-@flexicache(time_policy(24*60*60))
 def get_model_meta(model, vendor_name=None, tfm=noop):
     "Look up cost metadata for `model` from litellm price map, using `vendor_name` prefix if needed."
     vendor_name = ifnone(vendor_name, infer_api_name(model))
@@ -356,9 +358,9 @@ register_model_info('deepseek-v4-pro', vendor_name='deepseek', base='deepseek/de
 
 mimo_v25_common = dict(**modern_llm, supports_web_search=True, max_input_tokens=1048576, max_output_tokens=131072, max_tokens=131072)
 
-register_model_info('mimo-v2.5-pro', vendor_name='mimo', **mimo_v25_common, base='deepseek/deepseek-v4-pro',
+register_model_info('mimo-v2.5-pro', vendor_name='mimo', **mimo_v25_common, base='deepseek-v4-pro', base_vendor_name='deepseek',
     input_cost_per_token=0.435e-6, output_cost_per_token=0.87e-6, cache_read_input_token_cost=0.0036e-6, search_context_cost_per_query=0.005)
-register_model_info('mimo-v2.5', vendor_name='mimo', **mimo_v25_common, base='deepseek/deepseek-v4',
+register_model_info('mimo-v2.5', vendor_name='mimo', **mimo_v25_common, base='deepseek-v4-pro', base_vendor_name='deepseek',
     input_cost_per_token=0.14e-6,  output_cost_per_token=0.28e-6, cache_read_input_token_cost=0.0028e-6, search_context_cost_per_query=0.005,
     supports_vision=True, supports_image_input=True)
 
