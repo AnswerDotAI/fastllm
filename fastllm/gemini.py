@@ -159,6 +159,7 @@ def denorm_tool_schs(tools):
         fn = fn_schema(t)
         if fn is None: other.append(t); continue
         name, desc, params = fn
+        params = {k:v for k,v in params.items() if k in _valid_gemini_sch}
         params['properties'] = {k:_gem_filter_sch(v) for k,v in params['properties'].items()}
         fn_decls.append(dict(name=name, description=desc, parameters=params))
     out = other[:]
