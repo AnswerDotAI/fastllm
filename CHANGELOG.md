@@ -2,6 +2,18 @@
 
 <!-- do not remove -->
 
+## 0.0.17
+
+### New Features
+
+- Add claude-fable-5 model and stream stop-reason warnings ([#49](https://github.com/AnswerDotAI/fastllm/issues/49))
+- fastspec `dict2obj -> obj2dict` handling ([#43](https://github.com/AnswerDotAI/fastllm/pull/43)), thanks to [@KeremTurgutlu](https://github.com/KeremTurgutlu)
+
+### Bugs Squashed
+
+- FullResponse/Safe tool results are truncated ([#47](https://github.com/AnswerDotAI/fastllm/issues/47))
+
+
 ## 0.0.16
 
 ### New Features
