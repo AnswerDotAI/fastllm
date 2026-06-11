@@ -2,6 +2,13 @@
 
 <!-- do not remove -->
 
+## 0.0.18
+
+### New Features
+
+- Add `mimo-v2.5-pro-ultraspeed` ([#50](https://github.com/AnswerDotAI/fastllm/issues/50))
+
+
 ## 0.0.17
 
 ### New Features
