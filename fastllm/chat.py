@@ -620,10 +620,11 @@ def _handle_stop_reason(res):
 # %% ../nbs/07_chat.ipynb #daf876f4
 class StopReasonCallback(ChatCallback):
     order = 40
-    async def after_acomplete(self):        
-        action, msg = _handle_stop_reason(self.turn_res)
-        if action == 'warning': add_warning(self.chat.turn_res, msg)
-        if False: yield
+    async def after_acomplete(self):
+        action,msg = _handle_stop_reason(self.turn_res)
+        if action != 'warning': return
+        add_warning(self.chat.turn_res, msg)
+        if self.stream: yield dict(text=f"warning: {msg}\n\n")
 
 # %% ../nbs/07_chat.ipynb #aa7630b2
 def _active_fence_langs(tool_schemas):

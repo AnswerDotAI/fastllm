@@ -369,6 +369,10 @@ register_model_info('mimo-v2.5', vendor_name='mimo', **mimo_v25_common, base='de
 # %% ../nbs/00_types.ipynb #defb1c5c
 register_model_info('MiniMax-M3', vendor_name='minimax', **modern_llm, max_input_tokens=512_000, max_output_tokens=512_000, max_tokens=512_000, input_cost_per_token=0.3e-6,  output_cost_per_token=1.2e-6, cache_read_input_token_cost=0.06e-6, supports_vision=True, supports_video_input=True)
 
+register_model_info('claude-fable-5', vendor_name='anthropic', base="claude-opus-4-8",
+        input_cost_per_token=10e-6, cache_creation_input_token_cost=12.5e-6, output_cost_per_token=50e-6,
+        cache_read_input_token_cost=1e-6, search_context_cost_per_query=0.005)
+
 # %% ../nbs/00_types.ipynb #2c23d11e
 codex_pricing = dict(
     input_cost_per_token = 0.10/1_000_000, output_cost_per_token = 0.50/1_000_000,
@@ -393,7 +397,7 @@ def approx_pricing(nm, vendor_name, out=10, cache=80, inp=10, markup=0):
     p = get_model_pricing(nm, vendor_name)
     ic = p.get('cache_creation_input_token_cost', p['input_cost_per_token'])
     res = (p['output_cost_per_token']*out + p['cache_read_input_token_cost']*cache + ic*inp) / (out+cache+inp)
-    if nm in ('claude-opus-4-7','claude-opus-4-8'): res *= 1.5
+    if nm in ('claude-opus-4-7','claude-opus-4-8','claude-fable-5'): res *= 1.5
     return res*(1+markup)
 
 # %% ../nbs/00_types.ipynb #8bfca02d
