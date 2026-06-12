@@ -2,6 +2,17 @@
 
 <!-- do not remove -->
 
+## 0.0.19
+
+### New Features
+
+- Set default non-thinking `temp=None`, add `kimi-k2.7-code` ([#52](https://github.com/AnswerDotAI/fastllm/issues/52))
+
+### Bugs Squashed
+
+- Filter top level gemini tool schema fields such as `$refs`, `$defs`... ([#51](https://github.com/AnswerDotAI/fastllm/issues/51))
+
+
 ## 0.0.18
 
 ### New Features
