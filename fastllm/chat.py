@@ -382,7 +382,7 @@ class AsyncChat:
         self,
         model:str,                # LiteLLM compatible model name 
         sp='',                    # System prompt
-        temp=0,                   # Temperature
+        temp=None,                # Temperature
         search=False,             # Search (l,m,h), if model supports it
         tools:list=None,          # Add tools
         hist:list=None,           # Chat history

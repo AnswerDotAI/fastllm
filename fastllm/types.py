@@ -347,6 +347,9 @@ register_model_info('accounts/fireworks/models/kimi-k2p6', vendor_name='firework
     supports_reasoning=True, supports_vision=True,
     input_cost_per_token=0.95e-6, cache_read_input_token_cost=0.16e-6, output_cost_per_token=4.0e-6)
 
+register_model_info('kimi-k2.7-code', vendor_name='moonshot', base='kimi-k2.6',
+    input_cost_per_token=0.95e-6, cache_read_input_token_cost=0.19e-6, output_cost_per_token=4.0e-6)
+
 # %% ../nbs/00_types.ipynb #948d55d0
 deepseek_v4_common = dict(**modern_llm, supports_assistant_prefill=True,
     max_input_tokens=1048576, max_output_tokens=393216, max_tokens=393216)
