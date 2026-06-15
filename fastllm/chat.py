@@ -116,7 +116,7 @@ re_token = re.compile(fr"^{re.escape(token_dtls_tag)}\n*<summary>.*?</summary>\n
 _fence_back = '`````'
 _fence_re = re.compile(f'^{_fence_back}(py|bash)\n(.*?)\n{_fence_back}$', re.DOTALL | re.MULTILINE)
 _result_re = re.compile(f'\n{_fence_back}result\n(.*?)\n{_fence_back}\n', re.DOTALL)
-_lang2tool = dict(py='pyrun', bash='bash')
+_lang2tool = dict(py='python', bash='bash')
 
 class FenceToolStop:
     def __init__(self, langs): self.langs = langs
