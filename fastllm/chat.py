@@ -320,7 +320,7 @@ def _trunc_str(s, mx=2000, skip=10, replace="TRUNCATED"):
     if len(s)>2 and s[0]=='𝍁' and s[-1]=='𝍁':
         s = s[1:-1]
         if replace: return s
-    if isinstance_str(s, ('FullResponse','Safe')): return s
+    if isinstance_str(s, ('FullResponse','Safe','PrettyString')): return s
     if len(s)<=mx: return s
     s = s[skip:mx-skip]
     ss = s.split(' ')
