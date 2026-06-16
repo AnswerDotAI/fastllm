@@ -2,6 +2,13 @@
 
 <!-- do not remove -->
 
+## 0.0.20
+
+### New Features
+
+- Add `PrettyString` as another `FullResponse` marker ([#53](https://github.com/AnswerDotAI/fastllm/issues/53))
+
+
 ## 0.0.19
 
 ### New Features
