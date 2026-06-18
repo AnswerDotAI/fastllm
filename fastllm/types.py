@@ -321,10 +321,17 @@ modern_llm = dict(supports_function_calling=True, supports_tool_choice=True, sup
     supports_reasoning=True, supports_response_schema=True, supports_system_messages=True)
 
 # %% ../nbs/00_types.ipynb #8261dcd0
-register_model_info('accounts/fireworks/models/qwen3p6-plus', vendor_name='fireworks_ai', **modern_llm,
-    supports_vision=True,
+register_model_info('accounts/fireworks/models/qwen3p7-plus', vendor_name='fireworks_ai', **modern_llm, supports_vision=True,
+    max_tokens=1000000, max_input_tokens=1000000, max_output_tokens=65536,
+    input_cost_per_token=0.4e-6, cache_read_input_token_cost=0.08e-6, output_cost_per_token=1.6e-6)
+
+register_model_info('accounts/fireworks/models/qwen3p6-plus', vendor_name='fireworks_ai', **modern_llm, supports_vision=True,
     max_tokens=1000000, max_input_tokens=1000000, max_output_tokens=65536,
     input_cost_per_token=0.5e-6, cache_read_input_token_cost=0.1e-6, output_cost_per_token=3.0e-6)
+
+register_model_info('accounts/fireworks/models/glm-5p2', vendor_name='fireworks_ai', **modern_llm, supports_vision=False,
+    max_tokens=1000000, max_input_tokens=1000000, max_output_tokens=65536,
+    input_cost_per_token=1.4e-6, cache_read_input_token_cost=0.26e-6, output_cost_per_token=4.4e-6)
 
 register_model_info('gemini-3.5-flash', vendor_name='gemini', base='gemini-3-flash-preview',
     input_cost_per_token=1.5e-6, output_cost_per_token=9e-6,
