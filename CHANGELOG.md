@@ -2,6 +2,13 @@
 
 <!-- do not remove -->
 
+## 0.0.21
+
+### New Features
+
+- Add qwen3p7-plus and glm-5p2 Fireworks model registrations ([#54](https://github.com/AnswerDotAI/fastllm/issues/54))
+
+
 ## 0.0.20
 
 ### New Features
