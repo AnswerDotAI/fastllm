@@ -6,10 +6,11 @@
 __all__ = ['PartType', 'FinishReason', 'api_registry', 'model_prices_url', 'haik45', 'sonn45', 'sonn', 'sonn46', 'sonn5',
            'opus46', 'opus', 'gpt54', 'gpt54m', 'gpt55', 'codex54', 'codex54m', 'codex55', 'codex53spark',
            'model_info_registry', 'modern_llm', 'deepseek_v4_common', 'mimo_v25_common', 'codex_pricing', 'sol',
-           'terra', 'luna', 'gpt56s', 'Part', 'Msg', 'ToolCall', 'display_list', 'Usage', 'Completion', 'APIRegistry',
-           'mk_completion', 'mk_tool_res_msg', 'fn_schema', 'sys_text', 'part_txt', 'data_url', 'url_mime',
-           'payload_kwargs', 'get_api_key', 'resize_b64', 'model_prices_meta', 'infer_api_name', 'get_model_meta',
-           'register_model_info', 'get_model_info', 'get_model_pricing', 'approx_pricing', 'is_deepseek_peak_hour']
+           'terra', 'luna', 'gpt56s', 'Part', 'Msg', 'ToolCall', 'display_list', 'Usage', 'Completion',
+           'approx_str_tokens', 'APIRegistry', 'mk_completion', 'mk_tool_res_msg', 'fn_schema', 'sys_text', 'part_txt',
+           'data_url', 'url_mime', 'payload_kwargs', 'get_api_key', 'resize_b64', 'model_prices_meta', 'infer_api_name',
+           'get_model_meta', 'register_model_info', 'get_model_info', 'get_model_pricing', 'approx_pricing',
+           'is_deepseek_peak_hour']
 
 # %% ../nbs/00_types.ipynb #b4d047fd
 import httpx, base64, io
@@ -149,15 +150,18 @@ def _repr_markdown_(self: Completion):
 </details>"""
 
 # %% ../nbs/00_types.ipynb #ce59e431
-FinishReason = str_enum('finish_reason', 'stop', 'tool_calls', 'length', 'content_filter')
+FinishReason = str_enum('finish_reason', 'stop', 'tool_calls', 'length', 'content_filter', 'interrupted')
+
+# %% ../nbs/00_types.ipynb #c5a88e6f
+def approx_str_tokens(o): return int(len(str(o))/3.4) + 1
 
 # %% ../nbs/00_types.ipynb #fc681c52
 class APIRegistry:
     def __init__(self): self.apis = {}
-    def register(self, name, finalize_usage=noop, **kwargs): self.apis[name] = SimpleNamespace(finalize_usage=finalize_usage, **kwargs)
+    def register(self, name, finalize_usage=noop, approx_raw_usage=noop, **kwargs):
+        self.apis[name] = SimpleNamespace(finalize_usage=finalize_usage, approx_raw_usage=approx_raw_usage, **kwargs)
 
 api_registry = APIRegistry()
-
 
 # %% ../nbs/00_types.ipynb #d58a5f96
 def mk_completion(resp, model, api_name, vendor_name):

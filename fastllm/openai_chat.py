@@ -4,7 +4,8 @@
 __all__ = ['api_ns', 'norm_tool_calls', 'norm_finish', 'norm_parts', 'norm_sse_event', 'delta_index_fn', 'acollect_stream',
            'denorm_tool_use', 'denorm_assistant', 'denorm_tool', 'denorm_msgs', 'denorm_tool_schs',
            'denorm_tool_choice', 'denorm_reasoning', 'denorm_web_search', 'denorm_system', 'denorm_user',
-           'denorm_image', 'denorm_audio', 'denorm_file', 'denorm_tool_result', 'mk_payload', 'get_hdrs', 'cost']
+           'denorm_image', 'denorm_audio', 'denorm_file', 'denorm_tool_result', 'mk_payload', 'get_hdrs',
+           'approx_raw_usage', 'cost']
 
 # %% ../nbs/03_oai_chat.ipynb #493e3606
 import json
@@ -194,6 +195,11 @@ def get_hdrs(api_key=None):
     return {"Authorization": f"Bearer {get_api_key(api_key, 'OPENAI_API_KEY')}"}
 
 # %% ../nbs/03_oai_chat.ipynb #f89e2bf6
+def approx_raw_usage(pt, ct, cached_frac=0.8):
+    cached = int(pt*cached_frac)
+    return dict(usage=dict(prompt_tokens=pt, completion_tokens=ct, total_tokens=pt+ct,
+        prompt_tokens_details=dict(cached_tokens=cached), completion_tokens_details=dict(reasoning_tokens=0)))
+
 def cost(usage, m):
     raw = usage.raw
     pd,cd = raw.get('prompt_tokens_details') or {},raw.get('completion_tokens_details') or {}
@@ -215,6 +221,7 @@ api_ns = dict(norm_tool_calls=norm_tool_calls,
                 acollect_stream=acollect_stream,
                 mk_payload=mk_payload,
                 cost=cost,
+                approx_raw_usage=approx_raw_usage,
                 get_hdrs=get_hdrs, 
                 op_path=('chat.create_chat_completion','chat.create_chat_completion'))
 api_registry.register('openai_chat', **api_ns)

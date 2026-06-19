@@ -383,7 +383,7 @@ class UsageStats:
         return f"\n\n{token_dtls_tag}<summary>{summ}</summary>\n\n`{self!r}`\n\n</details>\n"
 
 # %% ../nbs/07_chat.ipynb #cb3d7e77
-class AsyncChat:
+class AsyncChat(BasicRepr):
     def __init__(
         self,
         model:str,                # LiteLLM compatible model name
@@ -497,11 +497,34 @@ async def _alite_call_func(tc, tool_schemas, ns):
     return _mk_tool_result(await maybe_await(res))
 
 # %% ../nbs/07_chat.ipynb #ee4fb755
+def _chunk_text(o):
+    if isinstance(o, dict): return ''.join(str(o.get(k) or '') for k in ('text','thinking','refusal'))
+    if isinstance(o, Part): return o.text or ''
+    return ''
+
 @asave_iter
-async def astream_with_complete(self, agen, postproc=noop):
-    async for chunk in agen:
-        if not isinstance(chunk, Completion): yield postproc(chunk)
-    self.value = chunk
+async def astream_with_complete(self, chat, agen, postproc=noop):
+    out = []
+    try:
+        async for chunk in agen:
+            if not isinstance(chunk, Completion):
+                out.append(_chunk_text(chunk))
+                yield postproc(chunk)
+        self.value = chunk
+    except (GeneratorExit, asyncio.CancelledError):
+        api_name,vendor_name,*_ = resolve_api_vendor(chat.model, chat.vendor_name, chat.api_name, chat.api_key, chat.base_url)
+        api = api_registry.apis[api_name]
+        pt = approx_str_tokens([chat.turn_sysp, chat.turn_msgs, chat.tool_schemas])
+        ct = approx_str_tokens(''.join(out))
+        usage = api.norm_usage(api.approx_raw_usage(pt, ct))
+        self.value = Completion(model=chat.model,
+                                message=Msg(role="assistant", content=[Part('text', ''.join(out))]),
+                                finish_reason=FinishReason.interrupted,
+                                api_name=api_name,
+                                vendor_name=vendor_name,
+                                usage=usage)
+        chat._track(self.value)
+        raise
 
 # %% ../nbs/07_chat.ipynb #a049cf52
 @patch
@@ -519,7 +542,7 @@ async def _call(self:AsyncChat, msg=None, prefill=None, temp=None, think=None, s
         tool_choice=tool_choice, max_tokens=int(max_tokens), temperature=None if think else ifnone(temp,self.temp), **self.turn_kwargs)
     if stream:
         if self.prefill: yield _mk_prefill(self.prefill)
-        res = astream_with_complete(res, postproc=postproc)
+        res = astream_with_complete(self, res, postproc=postproc)
         async for chunk in res: yield chunk
         res = res.value
     self.turn_res, self.turn_msg = res, contents(res)

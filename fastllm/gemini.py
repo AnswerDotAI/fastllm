@@ -5,7 +5,7 @@ __all__ = ['api_ns', 'norm_tool_calls', 'norm_usage', 'norm_finish', 'norm_parts
            'acollect_stream', 'denorm_tool_use', 'denorm_assistant', 'denorm_tool', 'denorm_msgs', 'denorm_tool_schs',
            'denorm_tool_choice', 'denorm_reasoning', 'denorm_web_search', 'denorm_system', 'denorm_user',
            'denorm_image', 'denorm_audio', 'denorm_video', 'denorm_file', 'denorm_tool_result', 'mk_payload',
-           'get_hdrs', 'cost']
+           'get_hdrs', 'approx_raw_usage', 'cost']
 
 # %% ../nbs/05_gemini.ipynb #02afd3d7
 import json
@@ -269,6 +269,10 @@ def get_hdrs(api_key=None):
     return {"x-goog-api-key": get_api_key(api_key, 'GEMINI_API_KEY')}
 
 # %% ../nbs/05_gemini.ipynb #4ee3891f
+def approx_raw_usage(pt, ct, cached_frac=0.8):
+    cached = int(pt*cached_frac)
+    return dict(usageMetadata=dict(promptTokenCount=pt, candidatesTokenCount=ct, totalTokenCount=pt+ct, cachedContentTokenCount=cached))
+
 def cost(usage, m):
     raw = usage.raw
     prompt_tot = raw.get('promptTokenCount', 0)
@@ -301,6 +305,7 @@ api_ns = dict(norm_tool_calls=norm_tool_calls,
                 acollect_stream=acollect_stream,
                 mk_payload=mk_payload,
                 cost=cost,
+                approx_raw_usage=approx_raw_usage,
                 get_hdrs=get_hdrs,
                 op_path=('models.generate_content','models.stream_generate_content'))
 api_registry.register('gemini', **api_ns)

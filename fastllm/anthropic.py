@@ -5,7 +5,7 @@ __all__ = ['ant_tc_types', 'norm_tool_call', 'norm_tool_calls', 'norm_usage', 'f
            'norm_sse_event', 'delta_index_fn', 'acollect_stream', 'denorm_tool_use', 'denorm_assistant', 'denorm_tool',
            'denorm_msgs', 'denorm_tool_schs', 'denorm_tool_choice', 'denorm_reasoning', 'denorm_web_search',
            'denorm_system', 'denorm_user', 'denorm_image', 'denorm_file', 'denorm_tool_result', 'mk_payload',
-           'get_hdrs', 'cost']
+           'get_hdrs', 'approx_raw_usage', 'cost']
 
 # %% ../nbs/04_anthropic.ipynb #02afd3d7
 import json
@@ -288,6 +288,10 @@ def get_hdrs(api_key=None):
     return {"x-api-key": get_api_key(api_key, 'ANTHROPIC_API_KEY'), "anthropic-version": "2023-06-01"}
 
 # %% ../nbs/04_anthropic.ipynb #0d03643a
+def approx_raw_usage(pt, ct, cached_frac=0.8):
+    cached = int(pt*cached_frac)
+    return dict(usage=dict(input_tokens=pt-cached, output_tokens=ct, cache_read_input_tokens=cached))
+
 def cost(usage, m):
     raw = usage.raw
     in_tok = raw['input_tokens']
@@ -304,5 +308,5 @@ def cost(usage, m):
 
 # %% ../nbs/04_anthropic.ipynb #f7c0b989
 api_registry.register('anthropic', norm_tool_calls=norm_tool_calls, norm_parts=norm_parts, norm_finish=norm_finish, norm_usage=norm_usage,
-    finalize_usage=finalize_usage, acollect_stream=acollect_stream, mk_payload=mk_payload, cost=cost, get_hdrs=get_hdrs,
+    finalize_usage=finalize_usage, acollect_stream=acollect_stream, mk_payload=mk_payload, approx_raw_usage=approx_raw_usage, cost=cost, get_hdrs=get_hdrs,
     op_path=('messages.messages_post','messages.messages_post'))
