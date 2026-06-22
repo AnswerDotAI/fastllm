@@ -32,6 +32,9 @@ include = ["fastllm*"]
 [tool.setuptools.package-data]
 fastllm = ["specs/*.yml", "specs/*.json"]
 
+[project.entry-points.fastaudit_import_allow]
+fastllm = "fastllm"
+
 [tool.nbdev]
 allowed_metadata_keys = ['solveit']
 allowed_cell_metadata_keys = ['solveit_ai']
