@@ -345,13 +345,13 @@ def search_count(r):
 
 # %% ../nbs/07_chat.ipynb #61395e0d
 class UsageStats:
-    def __init__(self, prompt_tokens=0, completion_tokens=0, total_tokens=0, cached_tokens=0, cache_creation_tokens=0, reasoning_tokens=0, web_search_requests=0, cost=0.0): store_attr()
+    def __init__(self, model='', prompt_tokens=0, completion_tokens=0, total_tokens=0, cached_tokens=0, cache_creation_tokens=0, reasoning_tokens=0, web_search_requests=0, cost=0.0): store_attr()
 
     @classmethod
     def from_response(cls, r):
         u = r.usage
         return cls(
-            prompt_tokens=u.prompt_tokens or 0, completion_tokens=u.completion_tokens or 0, total_tokens=u.total_tokens or 0,
+            model=r.model or '', prompt_tokens=u.prompt_tokens or 0, completion_tokens=u.completion_tokens or 0, total_tokens=u.total_tokens or 0,
             cached_tokens=u.cached_tokens or 0, cache_creation_tokens=u.cache_creation_tokens or 0, reasoning_tokens=u.reasoning_tokens or 0,
             web_search_requests=search_count(r), cost=r.cost)
 
@@ -359,7 +359,7 @@ class UsageStats:
         if other is None: return self
         return UsageStats(**{k: getattr(self, k, 0) + getattr(other, k, 0)
             for k in ('prompt_tokens', 'completion_tokens', 'total_tokens', 'cached_tokens', 'cache_creation_tokens', 'reasoning_tokens', 'web_search_requests', 'cost')
-        })
+        }, model=other.model or self.model)
     def __radd__(self, other): return self if other is None or other == 0 else self.__add__(other)
 
     def __repr__(self):
@@ -369,6 +369,7 @@ class UsageStats:
         if self.reasoning_tokens: parts.append(f"reasoning={self.reasoning_tokens:,}")
         if getattr(self, 'web_search_requests', None): parts.append(f"searches={self.web_search_requests}")
         if self.cost: parts.append(f"${self.cost:.4f}")
+        if self.model: parts.append(self.model.split('/')[-1])
         return ' | '.join(parts)
 
     def fmt(self):
