@@ -144,6 +144,13 @@ async def acomplete(msgs, model, api_name=None, vendor_name=None, api_key=None,
                     base_url=None, xtra_body=None, xtra_hdrs=None, stream=False,
                     stop_callables=None, retries=2, retry_delay=0.5, **kwargs):
     "Unified completion across different APIs."
+    if api_name == 'claude_code':
+        if not stream: raise NotImplementedError("claude_code backend supports stream=True only for now")
+        api = api_registry.apis[api_name]
+        payload = api.mk_payload(msgs, model, stream=stream, **kwargs)
+        async def _mk_gen():
+            async for o in api.acollect_stream(payload, model=model, vendor_name=vendor_name, stop_callables=stop_callables): yield o
+        return _retry_stream(_mk_gen, retries, retry_delay)
     cli, api_name, vendor_name = mk_client(model, vendor_name, api_name, api_key, base_url, xtra_hdrs)
     api = api_registry.apis[api_name]
     payload = api.mk_payload(msgs, model, stream=stream, **kwargs)
@@ -164,5 +171,4 @@ async def acomplete(msgs, model, api_name=None, vendor_name=None, api_key=None,
     async def _mk_gen():
         resp = await _call()
         async for o in api.acollect_stream(resp, model=model, vendor_name=vendor_name, stop_callables=stop_callables): yield o
-
     return _retry_stream(_mk_gen, retries, retry_delay)
