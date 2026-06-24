@@ -2,6 +2,11 @@
 
 <!-- do not remove -->
 
+## 0.0.23
+
+- Add claude code backend, see https://github.com/AnswerDotAI/fastllm-claude-code
+
+
 ## 0.0.22
 
 ### New Features
