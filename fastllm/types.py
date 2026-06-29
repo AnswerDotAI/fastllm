@@ -397,6 +397,10 @@ register_model_info(codex53spark, 'codex', **codex_pricing,
     supports_vision=False, supports_image_input=False, supports_web_search=True, supports_reasoning=True, supports_function_calling=True,
     max_tokens=128000, max_input_tokens=128000, max_output_tokens=128000)
 
+# %% ../nbs/00_types.ipynb #5d3e4720
+for model in (haik45, sonn45, sonn46, opus46, opus):
+    register_model_info(model, 'claude_code', base=model, base_vendor_name='anthropic', **codex_pricing)
+
 # %% ../nbs/00_types.ipynb #24cc47ec
 def get_model_pricing(mn, vendor_name, million=True):
     return {k:round(v * (1e6 if million else 1), 6)
