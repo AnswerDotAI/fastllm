@@ -2,6 +2,17 @@
 
 <!-- do not remove -->
 
+## 0.0.24
+
+### New Features
+
+- Add collapsible thinking tags and stripping in StreamFormatter and fmt2hist ([#57](https://github.com/AnswerDotAI/fastllm/issues/57))
+
+- Add model name to usage details html ([#56](https://github.com/AnswerDotAI/fastllm/pull/56)), thanks to [@jackhogan](https://github.com/jackhogan)
+
+- Register claude code models with codex pricing
+
+
 ## 0.0.23
 
 - Add claude code backend, see https://github.com/AnswerDotAI/fastllm-claude-code
