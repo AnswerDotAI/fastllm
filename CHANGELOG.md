@@ -2,6 +2,10 @@
 
 <!-- do not remove -->
 
+## 0.0.26
+
+Register sonn5 with (30% less context) and refresh model prices json
+
 ## 0.0.25
 
 ### New Features
