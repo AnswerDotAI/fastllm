@@ -9,11 +9,12 @@ __all__ = ['PartType', 'FinishReason', 'api_registry', 'model_prices_url', 'haik
            'display_list', 'Usage', 'Completion', 'APIRegistry', 'mk_completion', 'mk_tool_res_msg', 'fn_schema',
            'sys_text', 'part_txt', 'data_url', 'url_mime', 'payload_kwargs', 'get_api_key', 'resize_b64',
            'model_prices_meta', 'infer_api_name', 'get_model_meta', 'register_model_info', 'get_model_info',
-           'get_model_pricing', 'approx_pricing']
+           'get_model_pricing', 'approx_pricing', 'is_deepseek_peak_hour']
 
 # %% ../nbs/00_types.ipynb #b4d047fd
 import httpx, base64, io
 from dataclasses import dataclass, field
+from datetime import datetime, timezone
 from fastcore.net import urljson
 from fastcore.utils import *
 from PIL import Image as PImg
@@ -416,10 +417,18 @@ def approx_pricing(nm, vendor_name, out=10, cache=80, inp=10, markup=0):
     if nm in ('claude-opus-4-7','claude-opus-4-8','claude-fable-5'): res *= 1.5
     return res*(1+markup)
 
+# %% ../nbs/00_types.ipynb #d2a310fb
+def is_deepseek_peak_hour(dt=None):
+    "Check whether current UTC time is in DeepSeek peak pricing hours."
+    dt = dt or datetime.now(timezone.utc)
+    h = dt.hour + dt.minute/60
+    return 1 <= h < 4 or 6 <= h < 10
+
 # %% ../nbs/00_types.ipynb #8bfca02d
 @patch(as_prop=True)
 def cost(self:Completion):
     meta = dict2obj(get_model_info(self.model, self.vendor_name))
     api = api_registry.apis[self.api_name]
     if not hasattr(api, 'cost'): raise NotImplementedError(f"API: {self.api_name} doesn't have a registered `cost` function in ns")
-    return api.cost(self.usage, meta)
+    res = api.cost(self.usage, meta)
+    return res*2 if self.vendor_name=='deepseek' and self.model.startswith('deepseek-v4') and is_deepseek_peak_hour() else res
