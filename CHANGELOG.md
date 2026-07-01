@@ -2,6 +2,14 @@
 
 <!-- do not remove -->
 
+## 0.0.25
+
+### New Features
+
+- GLM 5.2 fast ([#59](https://github.com/AnswerDotAI/fastllm/issues/59))
+
+- Deepseek peak hour pricing ([#58](https://github.com/AnswerDotAI/fastllm/issues/58))
+
 ## 0.0.24
 
 ### New Features
