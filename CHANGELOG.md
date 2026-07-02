@@ -2,6 +2,11 @@
 
 <!-- do not remove -->
 
+## 0.0.27
+
+- limit gpt context to 250k
+- register cc sonn5 pricing
+
 ## 0.0.26
 
 Register sonn5 with (30% less context) and refresh model prices json
