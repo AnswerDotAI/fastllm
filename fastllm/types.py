@@ -344,7 +344,7 @@ register_model_info('gemini-3.5-flash', vendor_name='gemini', base='gemini-3-fla
     output_cost_per_reasoning_token=9e-6, cache_read_input_token_cost=1.5e-7)
 
 for model in ('gpt-5.4', 'gpt-5.4-mini'):
-    register_model_info(model, vendor_name='openai', base=model, supports_web_search=True, mode=None)
+    register_model_info(model, vendor_name='openai', base=model, supports_web_search=True, mode=None, max_input_tokens=250000)
 
 for model in ('kimi-k2.5', 'kimi-k2.6'):
     register_model_info(model, vendor_name='moonshot', base=f'moonshot/{model}', base_vendor_name=None,
