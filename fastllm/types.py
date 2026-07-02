@@ -404,7 +404,7 @@ register_model_info(codex53spark, 'codex', **codex_pricing,
     max_tokens=128000, max_input_tokens=128000, max_output_tokens=128000)
 
 # %% ../nbs/00_types.ipynb #5d3e4720
-for model in (haik45, sonn45, sonn46, opus46, opus):
+for model in (haik45, sonn45, sonn46, sonn5, opus46, opus):
     register_model_info(model, 'claude_code', base=model, base_vendor_name='anthropic', **codex_pricing)
 
 # %% ../nbs/00_types.ipynb #60630540
