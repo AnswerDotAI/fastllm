@@ -391,6 +391,13 @@ register_model_info('claude-fable-5', vendor_name='anthropic', base="claude-opus
         input_cost_per_token=10e-6, cache_creation_input_token_cost=12.5e-6, output_cost_per_token=50e-6,
         cache_read_input_token_cost=1e-6, search_context_cost_per_query=0.005)
 
+# %% ../nbs/00_types.ipynb #4e1b40b3
+register_model_info('muse-spark-1.1', vendor_name='meta_ai', **modern_llm,
+    max_input_tokens=1_048_576, max_output_tokens=128000, max_tokens=128000,
+    supports_vision=True, supports_image_input=True, supports_video_input=True, supports_pdf_input=True,
+    supports_web_search=True, search_context_cost_per_query=0.0025,
+    input_cost_per_token=1.25e-6, output_cost_per_token=4.25e-6, cache_read_input_token_cost=0.15e-6)
+
 # %% ../nbs/00_types.ipynb #2c23d11e
 codex_pricing = dict(
     input_cost_per_token = 0.10/1_000_000, output_cost_per_token = 0.50/1_000_000,

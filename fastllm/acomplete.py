@@ -44,7 +44,8 @@ vendor_mapping = {
     "together":     ('openai_chat', "https://api.together.xyz/v1", "TOGETHER_API_KEY"),
     "fireworks_ai": ('openai_chat', "https://api.fireworks.ai/inference/v1", "FIREWORKS_API_KEY"),
     "qwen":         ('openai_chat', "https://dashscope.aliyuncs.com/compatible-mode/v1", "QWEN_API_KEY"),
-    "minimax":      ('anthropic', "https://api.minimax.io/anthropic", "MINIMAX_API_KEY")
+    "minimax":      ('anthropic', "https://api.minimax.io/anthropic", "MINIMAX_API_KEY"),
+    "meta_ai":      ('openai', "https://api.meta.ai/v1", "META_API_KEY")
 }
 
 # %% ../nbs/06_acomplete.ipynb #77d27ea7
