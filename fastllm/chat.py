@@ -51,8 +51,10 @@ def _url2content(o):
     return Part(type=_mime2part_type(mime), text=o.url, data=dict(mime=mime))
 
 # %% ../nbs/07_chat.ipynb #48c78e48
-def _add_cache_control(msg,          # LiteLLM formatted msg
-                       ttl=None):    # Cache TTL: '5m' (default) or '1h'
+def _add_cache_control(
+    msg,          # LiteLLM formatted msg
+    ttl=None # Cache TTL: '5m' (default) or '1h'
+):
     "cache `msg` with default time-to-live (ttl) of 5minutes ('5m'), but can be set to '1h'."
     cc = {"type": "ephemeral"} | ({"ttl": ttl} if ttl else {})
     cache_idx = None
@@ -290,10 +292,11 @@ def _lite_call_func(tc, tool_schemas, ns):
 @delegates(acomplete)
 async def structured(
     m:str,          # LiteLLM model string
-    msgs:list,      # List of messages 
+    msgs:list,      # List of messages
     tool:Callable,  # Tool to be used for creating the structured output (class, dataclass or Pydantic, function, etc)
     sp:str|Part='', # System message
-    **kwargs):
+    **kwargs
+):
     "Return the value of the tool call (generally used for structured outputs)"
     t = lite_mk_func(tool)
     r = await acomplete(msgs, m, system=sp, tools=[t], tool_choice=nested_idx(t, 'function', 'name'), **kwargs)
@@ -384,13 +387,13 @@ class UsageStats:
 class AsyncChat:
     def __init__(
         self,
-        model:str,                # LiteLLM compatible model name 
+        model:str,                # LiteLLM compatible model name
         sp='',                    # System prompt
         temp=None,                # Temperature
         search=False,             # Search (l,m,h), if model supports it
         tools:list=None,          # Add tools
         hist:list=None,           # Chat history
-        ns:Optional[dict]=None,   # Custom namespace for tool calling 
+        ns:Optional[dict]=None,   # Custom namespace for tool calling
         cache=False,              # Anthropic prompt caching
         cache_idxs:list=[-1],     # Anthropic cache breakpoint idxs, use `0` for sys prompt if provided
         ttl=None,                 # Anthropic prompt caching ttl
@@ -565,7 +568,7 @@ async def __call__(
     search=None,       # Override search set on chat initialization (l,m,h)
     stream=False,      # Stream results
     max_steps=2, # Maximum number of tool calls
-    final_prompt=_final_prompt, # Final prompt when tool calls have ran out 
+    final_prompt=_final_prompt, # Final prompt when tool calls have ran out
     return_all=False,  # Returns all intermediate ModelResponses if not streaming and has tool calls
     **kwargs
 ):
