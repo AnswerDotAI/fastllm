@@ -4,7 +4,8 @@
 __all__ = ['api_ns', 'norm_tool_call', 'norm_tool_calls', 'norm_usage', 'norm_finish', 'norm_parts', 'norm_sse_event',
            'delta_index_fn', 'acollect_stream', 'denorm_tool_use', 'denorm_tool', 'denorm_assistant', 'denorm_msgs',
            'denorm_tool_schs', 'denorm_tool_choice', 'denorm_reasoning', 'denorm_web_search', 'denorm_system',
-           'denorm_user', 'denorm_image', 'denorm_file', 'denorm_tool_result', 'mk_payload', 'get_hdrs', 'cost']
+           'denorm_user', 'denorm_image', 'denorm_video', 'denorm_file', 'denorm_tool_result', 'mk_payload', 'get_hdrs',
+           'cost']
 
 # %% ../nbs/02_oai_responses.ipynb #591f55b5
 import json
@@ -197,12 +198,15 @@ def denorm_user(m:Msg):
         if   p.type == PartType.text:        parts.append({"type": "input_text", "text": p.text or ""})
         elif p.type == PartType.input_image: parts.append(denorm_image(p))
         elif p.type == PartType.input_audio: raise ValueError("OpenAI Responses API does not support audio input; Coming Soon.") 
-        elif p.type == PartType.input_video: raise ValueError("OpenAI Responses API does not support video input")
+        elif p.type == PartType.input_video: parts.append(denorm_video(p))
         elif p.type == PartType.input_file:  parts.append(denorm_file(p))
     return dict(type='message', role='user', content=parts)
 
 # %% ../nbs/02_oai_responses.ipynb #4ced282f
 def denorm_image(p): return {"type": "input_image", "image_url": p.text}
+
+# %% ../nbs/02_oai_responses.ipynb #e0ca62d6
+def denorm_video(p): return {"type": "input_video", "video_url": p.text}
 
 # %% ../nbs/02_oai_responses.ipynb #6e79a133
 def denorm_file(p):
