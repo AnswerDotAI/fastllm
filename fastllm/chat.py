@@ -9,17 +9,16 @@ __all__ = ['tool_dtls_tag', 're_tools', 'token_dtls_tag', 're_token', 'think_sta
            'structured', 'StopResponse', 'FullResponse', 'search_count', 'UsageStats', 'AsyncChat',
            'astream_with_complete', 'ChatCallback', 'DeepseekMsgsCallback', 'DeepseekPrefillCallback', 'add_warning',
            'StopReasonCallback', 'run_fence_tool', 'FenceToolCallback', 'ToolReminderCallback', 'stop_sequences',
-           'StopSequencesCallback', 'mk_tr_details', 'StreamFormatter', 'AsyncStreamFormatter', 'adisplay_stream']
+           'StopSequencesCallback', 'mk_tr_details', 'hist2fmt', 'StreamFormatter', 'AsyncStreamFormatter',
+           'adisplay_stream']
 
 # %% ../nbs/07_chat.ipynb #d5a3bc1f
-import asyncio, base64, json, mimetypes, random, string, ast, warnings
+import base64, json
 from typing import Optional,Callable
 from html import escape
 from toolslm.funccall import mk_ns, call_func, call_func_async, get_schema
 from fastcore.utils import *
 from fastcore.meta import delegates
-from fastcore import imghdr
-from fastcore.xml import Safe
 from dataclasses import dataclass
 
 from .types import *
@@ -109,10 +108,10 @@ def mk_msg(
 # %% ../nbs/07_chat.ipynb #db466e1c
 tool_dtls_tag = "<details class='tool-usage-details' markdown='1'>"
 re_tools = re.compile(fr"^({tool_dtls_tag}\n*(?:<summary>(?P<summary>.*?)</summary>\n*)?\n*```json\n+(.*?)\n+```\n+</details>)",
-                      flags=re.DOTALL|re.MULTILINE)
+    flags=re.DOTALL|re.MULTILINE)
 token_dtls_tag = "<details class='token-usage-details' markdown='1'>"
 re_token = re.compile(fr"^{re.escape(token_dtls_tag)}\n*<summary>.*?</summary>\n*\n*`.*?`\n*\n*</details>\n?",
-                      flags=re.DOTALL|re.MULTILINE)
+    flags=re.DOTALL|re.MULTILINE)
 think_start,think_end = '<!--think_start-->','<!--think_end-->'
 re_think = re.compile(rf'{re.escape(think_start)}.*?{re.escape(think_end)}\n?', re.DOTALL)
 
@@ -174,7 +173,7 @@ def _extract_tool_parts(text:str):
     call = d['call']
     # Skip server tool calls in deserialization (round trip issues with Gemini/Anthropic)
     if d.get('server'): return None
-    tu = Part(type=PartType.tool_use, text=None, data={'id': d['id'], 'name': call['function'], 'arguments': call['arguments']})
+    tu = Part(type=PartType.tool_use, text=None, data=dict(id=d['id'], name=call['function'], arguments=call['arguments']))
     tr = Part(type=PartType.tool_result, text=str(d['result']), data={'id': d['id'], 'name': call['function']})
     return tu, tr
 
@@ -195,7 +194,8 @@ def fmt2hist(outp:str)->list[Msg]:
         if tool_parts:
             hist.append(Msg(role='assistant', content=asst_parts.copy()))
             hist.append(Msg(role='tool',      content=tool_parts.copy()))
-            asst_parts.clear(); tool_parts.clear()
+            asst_parts.clear()
+            tool_parts.clear()
     for txt,_,tj in split_tools(outp):
         if txt and txt.strip():
             if tool_parts: flush()
@@ -231,9 +231,7 @@ def mk_msgs(
     "Create a list of fastllm canonical Msgs."
     if not msgs: return []
     if not isinstance(msgs, list): msgs = [msgs]
-    msgs = L(msgs).map(lambda m:
-        fmt2hist(m) if isinstance(m,str) and (tool_dtls_tag in m or token_dtls_tag in m) else [m]
-    ).concat()
+    msgs = L(msgs).map(lambda m: fmt2hist(m) if isinstance(m,str) and (tool_dtls_tag in m or token_dtls_tag in m) else [m]).concat()
     res, role = [], 'user'
     for m in msgs:
         res.append(msg := remove_cache_ckpts(mk_msg(m, role=role)))
@@ -320,14 +318,14 @@ def _has_stop(tres_parts): return any(isinstance(p.text, StopResponse) for p in 
 
 # %% ../nbs/07_chat.ipynb #f58ce348
 def _trunc_str(s, mx=2000, skip=10, replace="TRUNCATED"):
-    "Truncate `s` to `mx` chars max, adding `replace` if truncated"
+    "Truncate `s` to `mx` chars max, adding `replace` if truncated; `mx=None` disables truncation"
     if not isinstance(s, str): s = str(s)
     s = type(s)(s.rstrip())
     if len(s)>2 and s[0]=='𝍁' and s[-1]=='𝍁':
         s = s[1:-1]
         if replace: return s
     if isinstance_str(s, ('FullResponse','Safe','PrettyString')): return s
-    if len(s)<=mx: return s
+    if mx is None or len(s)<=mx: return s
     s = s[skip:mx-skip]
     ss = s.split(' ')
     if len(ss[-1])>150: ss[-1] = ss[-1][:5]
@@ -351,7 +349,8 @@ def search_count(r):
 
 # %% ../nbs/07_chat.ipynb #61395e0d
 class UsageStats:
-    def __init__(self, model='', prompt_tokens=0, completion_tokens=0, total_tokens=0, cached_tokens=0, cache_creation_tokens=0, reasoning_tokens=0, web_search_requests=0, cost=0.0): store_attr()
+    def __init__(self, model='', prompt_tokens=0, completion_tokens=0, total_tokens=0, cached_tokens=0,
+        cache_creation_tokens=0, reasoning_tokens=0, web_search_requests=0, cost=0.0): store_attr()
 
     @classmethod
     def from_response(cls, r):
@@ -424,8 +423,7 @@ class AsyncChat:
         if sp:
             if 0 in self.cache_idxs: sp = _add_cache_control(Msg('',[Part(PartType.text, sp)]))
             cache_idxs = L(self.cache_idxs).filter().map(lambda o: o-1 if o>0 else o)
-        else:
-            cache_idxs = self.cache_idxs
+        else: cache_idxs = self.cache_idxs
         if msg: self.hist = self.hist+[msg]
         self.hist = mk_msgs(self.hist, self.cache and 'claude' in self.model, cache_idxs, self.ttl)
         msgs = self.hist
@@ -509,7 +507,7 @@ async def astream_with_complete(self, agen, postproc=noop):
 @patch
 @delegates(acomplete)
 async def _call(self:AsyncChat, msg=None, prefill=None, temp=None, think=None, search=None, stream=False, max_steps=2, step=1,
-        final_prompt=None, tool_choice=None, max_tokens=None, n_workers=8, pause=0.001, tc_timeout=7200, **kwargs):
+    final_prompt=None, tool_choice=None, max_tokens=None, n_workers=8, pause=0.001, tc_timeout=7200, **kwargs):
     if step>max_steps+1: return
     self.prefill, max_tokens = self._prep_call(prefill, search, max_tokens, kwargs, stream=stream, think=think)
     self.turn_sysp, self.turn_msgs = self._prep_msg(msg, prefill)
@@ -517,9 +515,8 @@ async def _call(self:AsyncChat, msg=None, prefill=None, temp=None, think=None, s
 
     self.turn_kwargs, self.stream = kwargs, stream
     async for o in self._call_cbs('before_acomplete'): yield o
-    res = await acomplete(self.turn_msgs, self.model, system=self.turn_sysp, stream=stream, 
-        tools=self.tool_schemas, tool_choice=tool_choice, max_tokens=int(max_tokens),
-        temperature=None if think else ifnone(temp,self.temp), **self.turn_kwargs)
+    res = await acomplete(self.turn_msgs, self.model, system=self.turn_sysp, stream=stream, tools=self.tool_schemas,
+        tool_choice=tool_choice, max_tokens=int(max_tokens), temperature=None if think else ifnone(temp,self.temp), **self.turn_kwargs)
     if stream:
         if self.prefill: yield _mk_prefill(self.prefill)
         res = astream_with_complete(res, postproc=postproc)
@@ -596,8 +593,7 @@ class DeepseekMsgsCallback(ChatCallback):
     async def after_msgs(self):
         if 'deepseek' not in self.model: return
         for m in self.turn_msgs:
-            if m.role=='assistant' and not any(p.type==PartType.thinking for p in m.content):
-                m.content.append(Part(PartType.thinking, ''))
+            if m.role=='assistant' and not any(p.type==PartType.thinking for p in m.content): m.content.append(Part(PartType.thinking, ''))
         if False: yield
 
 # %% ../nbs/07_chat.ipynb #14baac3e
@@ -669,7 +665,9 @@ class FenceToolCallback(ChatCallback):
                 lang, code = fence
                 out = await run_fence_tool(lang, code, self.ns)
                 for p in reversed(m.content):
-                    if p.type == PartType.text: p.text += out; break
+                    if p.type == PartType.text:
+                        p.text += out
+                        break
                 self.chat.toolloop = True
                 if self.stream: yield {'text': out}
 
@@ -736,13 +734,31 @@ def _trunc_content(content, mx):
 
 # %% ../nbs/07_chat.ipynb #3602a033
 def mk_tr_details(tr, mx=2000):
-    "Create <details> block for tool call as JSON"
-    args = {k:_trunc_str(v, mx=mx*5) for k,v in tr.data['arguments'].items()}
+    "Create <details> block for tool call as JSON; `mx=None` disables truncation"
+    args = {k:_trunc_str(v, mx=None if mx is None else mx*5) if isinstance(v, str) else v for k,v in tr.data['arguments'].items()}
     res = {'id':tr.data['id'], 'server':tr.data.get('server', False),
            'call':{'function': tr.data['name'], 'arguments': args},
            'result':_trunc_content(tr.text, mx=mx),}
     summ = f"<summary>{_tc_summary(tr)}</summary>"
     return f"\n\n{tool_dtls_tag}\n{summ}\n\n```json\n{dumps(res, indent=2, ensure_ascii=False)}\n```\n\n</details>\n\n"
+
+# %% ../nbs/07_chat.ipynb #ae9dfdb5
+def hist2fmt(msgs:list[Msg], mx=2000)->str:
+    "Render assistant/tool `msgs` as one formatted output string, the inverse of `fmt2hist`"
+    tus, out = {}, []
+    for m in msgs:
+        if m.role == 'assistant':
+            for p in m.content:
+                if p.type == PartType.text and p.text: out.append(p.text.strip())
+                elif p.type == PartType.tool_use: tus[p.data['id']] = p
+        elif m.role == 'tool':
+            for p in m.content:
+                if p.type != PartType.tool_result: continue
+                tu = tus.get(p.data['id'])
+                d = dict(p.data, arguments=tu.data.get('arguments', {}) if tu else {})
+                out.append(mk_tr_details(Part(type=PartType.tool_result, text=p.text, data=d), mx=mx).strip())
+        else: raise ValueError(f"hist2fmt renders assistant and tool messages only, got {m.role!r}")
+    return '\n\n'.join(o for o in out if o)
 
 # %% ../nbs/07_chat.ipynb #f0d984ec
 class StreamFormatter:
@@ -755,7 +771,9 @@ class StreamFormatter:
         res = ''
         if self.debug: print(o)
         is_think = isinstance(o, dict) and o.get('thinking')
-        if not is_think and self._in_think: res += f'\n\n</details>\n{think_end}\n\n'; self._in_think = False
+        if not is_think and self._in_think:
+            res += f'\n\n</details>\n{think_end}\n\n'
+            self._in_think = False
         if isinstance(o, dict):
             if thk:=o.get('thinking'):
                 if self.showthink:
