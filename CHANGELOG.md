@@ -2,6 +2,14 @@
 
 <!-- do not remove -->
 
+## 0.0.28
+
+### New Features
+
+- Add hist2fmt inverse of fmt2hist, support mx=None for no truncation ([#64](https://github.com/AnswerDotAI/fastllm/issues/64))
+- Add Meta AI vendor and muse-spark-1.1 model ([#62](https://github.com/AnswerDotAI/fastllm/pull/62)), thanks to [@ncoop57](https://github.com/ncoop57)
+- Switch to anthropic api for mimo ([#60](https://github.com/AnswerDotAI/fastllm/issues/60))
+
 ## 0.0.27
 
 - limit gpt context to 250k
