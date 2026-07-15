@@ -2,6 +2,13 @@
 
 <!-- do not remove -->
 
+## 0.0.29
+
+### New Features
+
+- Add gpt-5.6 (sol/terra/luna) model registrations ([#65](https://github.com/AnswerDotAI/fastllm/issues/65))
+
+
 ## 0.0.28
 
 ### New Features
