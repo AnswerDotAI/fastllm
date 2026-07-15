@@ -5,11 +5,11 @@
 # %% auto #0
 __all__ = ['PartType', 'FinishReason', 'api_registry', 'model_prices_url', 'haik45', 'sonn45', 'sonn', 'sonn46', 'sonn5',
            'opus46', 'opus', 'gpt54', 'gpt54m', 'gpt55', 'codex54', 'codex54m', 'codex55', 'codex53spark',
-           'model_info_registry', 'modern_llm', 'deepseek_v4_common', 'mimo_v25_common', 'codex_pricing', 'Part', 'Msg',
-           'ToolCall', 'display_list', 'Usage', 'Completion', 'APIRegistry', 'mk_completion', 'mk_tool_res_msg',
-           'fn_schema', 'sys_text', 'part_txt', 'data_url', 'url_mime', 'payload_kwargs', 'get_api_key', 'resize_b64',
-           'model_prices_meta', 'infer_api_name', 'get_model_meta', 'register_model_info', 'get_model_info',
-           'get_model_pricing', 'approx_pricing', 'is_deepseek_peak_hour']
+           'model_info_registry', 'modern_llm', 'deepseek_v4_common', 'mimo_v25_common', 'codex_pricing', 'sol',
+           'terra', 'luna', 'gpt56s', 'Part', 'Msg', 'ToolCall', 'display_list', 'Usage', 'Completion', 'APIRegistry',
+           'mk_completion', 'mk_tool_res_msg', 'fn_schema', 'sys_text', 'part_txt', 'data_url', 'url_mime',
+           'payload_kwargs', 'get_api_key', 'resize_b64', 'model_prices_meta', 'infer_api_name', 'get_model_meta',
+           'register_model_info', 'get_model_info', 'get_model_pricing', 'approx_pricing', 'is_deepseek_peak_hour']
 
 # %% ../nbs/00_types.ipynb #b4d047fd
 import httpx, base64, io
@@ -417,6 +417,12 @@ for model in (haik45, sonn45, sonn46, sonn5, opus46, opus):
 # %% ../nbs/00_types.ipynb #60630540
 register_model_info(sonn5, base=sonn5, max_input_tokens=760_000)
 
+# %% ../nbs/00_types.ipynb #bb0c4c2a
+sol,terra,luna = gpt56s = 'gpt-5.6-sol gpt-5.6-terra gpt-5.6-luna'.split()
+for model in ['gpt-5.6']+gpt56s:
+    register_model_info(model, 'openai', base=model, base_vendor_name='openai', max_input_tokens=272_000)
+    register_model_info(model, 'codex', base=model, base_vendor_name='openai', max_input_tokens=272_000, **codex_pricing)
+
 # %% ../nbs/00_types.ipynb #24cc47ec
 def get_model_pricing(mn, vendor_name, million=True):
     return {k:round(v * (1e6 if million else 1), 6)
@@ -429,7 +435,7 @@ def approx_pricing(nm, vendor_name, out=10, cache=80, inp=10, markup=0):
     p = get_model_pricing(nm, vendor_name)
     ic = p.get('cache_creation_input_token_cost', p['input_cost_per_token'])
     res = (p['output_cost_per_token']*out + p['cache_read_input_token_cost']*cache + ic*inp) / (out+cache+inp)
-    if nm in ('claude-opus-4-7','claude-opus-4-8','claude-fable-5'): res *= 1.5
+    if vendor_name=='anthropic': res *= 1.5
     return res*(1+markup)
 
 # %% ../nbs/00_types.ipynb #d2a310fb
