@@ -2,6 +2,13 @@
 
 <!-- do not remove -->
 
+## 0.0.30
+
+### Bugs Squashed
+
+- Move early-return guard in `_trunc_str` ([#66](https://github.com/AnswerDotAI/fastllm/issues/66))
+
+
 ## 0.0.29
 
 ### New Features
