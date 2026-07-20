@@ -319,12 +319,12 @@ def _has_stop(tres_parts): return any(isinstance(p.text, StopResponse) for p in 
 # %% ../nbs/07_chat.ipynb #f58ce348
 def _trunc_str(s, mx=2000, skip=10, replace="TRUNCATED"):
     "Truncate `s` to `mx` chars max, adding `replace` if truncated; `mx=None` disables truncation"
+    if mx is None or isinstance_str(s, ('FullResponse','Safe','PrettyString')): return s
     if not isinstance(s, str): s = str(s)
     s = type(s)(s.rstrip())
     if len(s)>2 and s[0]=='𝍁' and s[-1]=='𝍁':
         s = s[1:-1]
         if replace: return s
-    if isinstance_str(s, ('FullResponse','Safe','PrettyString')): return s
     if mx is None or len(s)<=mx: return s
     s = s[skip:mx-skip]
     ss = s.split(' ')
