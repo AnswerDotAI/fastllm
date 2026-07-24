@@ -2,6 +2,13 @@
 
 <!-- do not remove -->
 
+## 0.0.31
+
+### New Features
+
+- Add vendor-prefixed model strings (e.g. codex/gpt-5.5) with `split_vendor` resolution in `mk_client`, acomplete, and AsyncChat; track `last_req_use` for per-request usage stats ([#68](https://github.com/AnswerDotAI/fastllm/issues/68))
+
+
 ## 0.0.30
 
 ### Bugs Squashed
