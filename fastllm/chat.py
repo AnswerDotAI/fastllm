@@ -406,12 +406,17 @@ class AsyncChat:
         default_cbs=True          # Whether to include default callbacks
     ):
         "LiteLLM chat client."
+        if not vendor_name and not api_name and not (base_url and api_key):
+            v, model = split_vendor(model)
+            if v in vendor_mapping: vendor_name = v
+            elif v: api_name = v  # a registered transport api (e.g. claude_code)
         self.model = model
         hist,tools = mk_msgs(hist,cache,cache_idxs,ttl),listify(tools)
         if ns is None and tools: ns = mk_ns(tools)
         elif ns is None: ns = globals()
         self.tool_schemas = [lite_mk_func(t) for t in tools] if tools else None
         self.use = UsageStats()
+        self.last_req_use = None  # usage of the latest request only; `use` accumulates across a turn's tool-call steps
         store_attr(but='cbs')
         self.cbs = L()
         if default_cbs: self.add_cbs(defaults.chat_callbacks)
@@ -435,6 +440,7 @@ class AsyncChat:
     def _track(self, res):
         u = UsageStats.from_response(res)
         u.cost *= (1 + self.markup)
+        self.last_req_use = u
         self.use += u
 
     def add_cb(self, cb):
