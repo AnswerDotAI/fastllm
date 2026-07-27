@@ -15,6 +15,7 @@ from fastcore.meta import *
 from fastspec.errors import api_error_from_event
 
 from .types import *
+from aidialog.msg_parts import Part, PartType, Msg, ToolCall, sys_text, part_txt, data_url, url_mime
 from .streaming import *
 from .streaming import mk_acollect_stream
 
