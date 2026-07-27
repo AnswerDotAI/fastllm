@@ -12,6 +12,7 @@ from fastcore.utils import *
 from fastcore.meta import delegates
 from fastspec.errors import *
 from .types import *
+from aidialog.msg_parts import Part, PartType, Msg, ToolCall, _fence_back
 
 # %% ../nbs/01_streaming.ipynb #400d628a
 @dataclass
