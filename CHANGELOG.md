@@ -2,6 +2,14 @@
 
 <!-- do not remove -->
 
+## 0.0.32
+
+### New Features
+
+- Move the message model to aidialog and depend on it ([#70](https://github.com/AnswerDotAI/fastllm/pull/70)), thanks to [@jph00](https://github.com/jph00)
+- Replace HTML `<details>` tool/usage envelopes with fenced JSON wire format; refactor split_tools into parse_tools/strip_tools/conv_tools and add fastcore dependency ([#69](https://github.com/AnswerDotAI/fastllm/issues/69))
+
+
 ## 0.0.31
 
 ### New Features
