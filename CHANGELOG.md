@@ -2,6 +2,14 @@
 
 <!-- do not remove -->
 
+## 0.0.33
+
+### New Features
+
+- Update models ([#71](https://github.com/AnswerDotAI/fastllm/issues/71))
+- Approx usage for interrupted streaming requests ([#55](https://github.com/AnswerDotAI/fastllm/pull/55)), thanks to [@KeremTurgutlu](https://github.com/KeremTurgutlu)
+
+
 ## 0.0.32
 
 ### New Features
