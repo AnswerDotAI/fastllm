@@ -15,34 +15,12 @@ from toolslm.funccall import mk_ns, call_func, call_func_async, get_schema
 from fastcore.utils import *
 from fastcore.meta import delegates
 from dataclasses import dataclass
-import base64
 
 from .types import *
-from fastcore.xtras import detect_mime
 from aidialog.msg_parts import (Msg, Part, PartType, ToolCall, mk_tool_res_msg, mk_tr_details,
-    tool_info, usage_info, think_start, think_end, StopResponse, display_list, MediaUrl, url_mime, fmt2hist,
-    _mk_result_fence, _split_fence_msgs, _fence_back, _trunc_str)
+    tool_info, usage_info, think_start, think_end, StopResponse, display_list, fmt2hist,
+    _mk_content, _mk_result_fence, _split_fence_msgs, _fence_back, _trunc_str)
 from .acomplete import *
-
-# %% ../nbs/07_chat.ipynb #4a37bae5
-def _mime2part_type(mime):
-    "Map MIME string to canonical PartType"
-    if mime.startswith('image/'): return PartType.input_image
-    if mime.startswith('audio/'): return PartType.input_audio
-    if mime.startswith('video/'): return PartType.input_video
-    return PartType.input_file
-
-def _bytes2content(data):
-    "Convert bytes to fastllm canonical content"
-    mtype = detect_mime(data)
-    if not mtype: raise ValueError(f'Data must be a supported file type, got {data[:10]}')
-    encoded = base64.b64encode(data).decode("utf-8")
-    return Part(type=_mime2part_type(mtype), text=f'data:{mtype};base64,{encoded}')
-
-def _url2content(o):
-    "Convert MediaUrl to fastllm canonical content"
-    mime = o.mime or url_mime(o.url)
-    return Part(type=_mime2part_type(mime), text=o.url, data=dict(mime=mime))
 
 # %% ../nbs/07_chat.ipynb #43a55cda
 def _add_cache_control(
@@ -66,12 +44,6 @@ def remove_cache_ckpts(msg):
     for part in msg.content:
         if part.data: part.data.pop('cache_control', None)
     return msg
-
-def _mk_content(o):
-    if isinstance(o, str):        return Part(type=PartType.text, text=o)
-    elif isinstance(o, bytes):    return _bytes2content(o)
-    elif isinstance(o, MediaUrl): return _url2content(o)
-    return o
 
 
 # %% ../nbs/07_chat.ipynb #48c78e48
