@@ -4,10 +4,10 @@
 
 # %% auto #0
 __all__ = ['effort', 'remove_cache_ckpts', 'contents', 'stop_reason', 'mk_msg', 'FenceToolStop', 'extract_fence_call', 'mk_msgs',
-           'cite_footnote', 'postproc', 'lite_mk_func', 'ToolResponse', 'structured', 'search_count', 'UsageStats',
-           'AsyncChat', 'astream_with_complete', 'ChatCallback', 'DeepseekMsgsCallback', 'DeepseekPrefillCallback',
-           'add_warning', 'StopReasonCallback', 'run_fence_tool', 'FenceToolCallback', 'ToolReminderCallback',
-           'stop_sequences', 'StopSequencesCallback', 'StreamFormatter', 'AsyncStreamFormatter', 'adisplay_stream']
+           'cite_footnote', 'postproc', 'lite_mk_func', 'structured', 'search_count', 'UsageStats', 'AsyncChat',
+           'astream_with_complete', 'ChatCallback', 'DeepseekMsgsCallback', 'DeepseekPrefillCallback', 'add_warning',
+           'StopReasonCallback', 'run_fence_tool', 'FenceToolCallback', 'ToolReminderCallback', 'stop_sequences',
+           'StopSequencesCallback', 'StreamFormatter', 'AsyncStreamFormatter', 'adisplay_stream']
 
 # %% ../nbs/07_chat.ipynb #d5a3bc1f
 from typing import Optional,Callable
@@ -18,7 +18,7 @@ from dataclasses import dataclass
 
 from .types import *
 from aidialog.msg_parts import (Msg, Part, PartType, ToolCall, mk_tool_res_msg, mk_tr_details,
-    tool_info, usage_info, think_start, think_end, StopResponse, display_list, fmt2hist,
+    tool_info, usage_info, think_start, think_end, StopResponse, ToolResponse, display_list, fmt2hist,
     _mk_content, _mk_result_fence, _split_fence_msgs, _fence_back, _trunc_str)
 from .acomplete import *
 
@@ -140,11 +140,6 @@ def postproc(chunk):
 def lite_mk_func(f):
     if isinstance(f, dict): return f
     return {'type':'function', 'function':get_schema(f, pname='parameters')}
-
-# %% ../nbs/07_chat.ipynb #3e0afa31
-@dataclass
-class ToolResponse:
-    content: list[str,str]
 
 # %% ../nbs/07_chat.ipynb #bba6fd58
 def _mk_tool_result(res):
