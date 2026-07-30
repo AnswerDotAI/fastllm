@@ -60,8 +60,23 @@ def split_vendor(model):
         if v in vendor_mapping or v in api_registry.apis: return v, m
     return None, model
 
+# %% ../nbs/06_acomplete.ipynb #977a115b
+def _codex_mtime_policy():
+    "`flexicache` policy: expire codex clients when the codex auth file changes"
+    def policy(state, args, kwargs):
+        v = kwargs.get('vendor_name') or (args[1] if len(args)>1 else None)
+        if not v:
+            m = kwargs.get('model') or (args[0] if args else None)
+            v = split_vendor(m)[0] if m else None
+        if v != 'codex': return None
+        try: mt = Path(_codex_path).expanduser().stat().st_mtime
+        except OSError: mt = None
+        return mt if state != mt else None
+    policy.needs_args = True
+    return policy
+
 # %% ../nbs/06_acomplete.ipynb #79075d95
-@flexicache()
+@flexicache(_codex_mtime_policy())
 def mk_client(model=None, vendor_name=None, api_name=None, api_key=None, base_url=None, xtra_hdrs=None,
     timeout=httpx.Timeout(connect=30, read=300, write=30, pool=10)):
     err_msg = f"please pass a valid one vendor: {', '.join(list(vendor_mapping))} or pass `api_name`,`base_url` and `api_key`"
@@ -168,7 +183,7 @@ async def acomplete(msgs, model, api_name=None, vendor_name=None, api_key=None,
         async def _mk_gen():
             async for o in api.acollect_stream(payload, model=model, vendor_name='claude_code', stop_callables=stop_callables): yield o
         return _retry_stream(_mk_gen, retries, retry_delay)
-    cli, api_name, vendor_name = mk_client(model, vendor_name, api_name, api_key, base_url, xtra_hdrs)
+    cli, api_name, vendor_name = mk_client(model=model, vendor_name=vendor_name, api_name=api_name, api_key=api_key, base_url=base_url, xtra_hdrs=xtra_hdrs)
     api = api_registry.apis[api_name]
     payload = api.mk_payload(msgs, model, stream=stream, **kwargs)
     payload = merge(payload, ifnone(xtra_body, {}))
