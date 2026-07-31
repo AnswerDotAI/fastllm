@@ -13,6 +13,7 @@ __all__ = ['FinishReason', 'api_registry', 'model_prices_url', 'haik45', 'sonn45
 
 # %% ../nbs/00_types.ipynb #b4d047fd
 import httpx, base64, io
+from importlib.metadata import entry_points
 from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from fastcore.net import urljson
@@ -75,8 +76,17 @@ FinishReason = str_enum('finish_reason', 'stop', 'tool_calls', 'length', 'conten
 
 # %% ../nbs/00_types.ipynb #fc681c52
 class APIRegistry:
-    def __init__(self): self.apis = {}
+    def __init__(self): self.apis,self._eps = {},None
     def register(self, name, finalize_usage=noop, **kwargs): self.apis[name] = SimpleNamespace(finalize_usage=finalize_usage, **kwargs)
+    def _load(self, name):
+        "Import the plugin providing api `name` from the `fastllm.apis` entry-point group; its import registers the api."
+        if self._eps is None: self._eps = {o.name:o for o in entry_points(group='fastllm.apis')}
+        if name in self._eps: self._eps[name].load()
+        return name in self.apis
+    def __contains__(self, name): return name in self.apis or self._load(name)
+    def __getitem__(self, name):
+        if name in self: return self.apis[name]
+        raise KeyError(name)
 
 api_registry = APIRegistry()
 
@@ -85,7 +95,7 @@ api_registry = APIRegistry()
 def mk_completion(resp, model, api_name, vendor_name):
     "Normalize an api response into Completion."
     resp = obj2dict(resp)
-    api = api_registry.apis[api_name]
+    api = api_registry[api_name]
     tcs = api.norm_tool_calls(resp)
     parts = api.norm_parts(resp)
     usg = api.finalize_usage(api.norm_usage(resp), parts)
@@ -314,7 +324,7 @@ def is_deepseek_peak_hour(dt=None):
 @patch(as_prop=True)
 def cost(self:Completion):
     meta = dict2obj(get_model_info(self.model, self.vendor_name))
-    api = api_registry.apis[self.api_name]
+    api = api_registry[self.api_name]
     if not hasattr(api, 'cost'): raise NotImplementedError(f"API: {self.api_name} doesn't have a registered `cost` function in ns")
     res = api.cost(self.usage, meta)
     return res*2 if self.vendor_name=='deepseek' and self.model.startswith('deepseek-v4') and is_deepseek_peak_hour() else res

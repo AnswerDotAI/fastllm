@@ -54,10 +54,10 @@ api2spec = {'openai':oai_spec, 'openai_chat':oai_spec, 'anthropic':ant_spec, 'ge
 
 # %% ../nbs/06_acomplete.ipynb #e3ed40fb
 def split_vendor(model):
-    "Split a `'vendor/model'` path into `(vendor_name, model)`: the prefix must name a known vendor or a registered api, else `(None, model)`."
+    "Split a `'vendor/model'` path into `(vendor_name, model)`: the prefix must name a known vendor or a registered api (installed `fastllm.apis` plugins load on demand), else `(None, model)`."
     if model and '/' in model:
         v, m = model.split('/', 1)
-        if v in vendor_mapping or v in api_registry.apis: return v, m
+        if v in vendor_mapping or v in api_registry: return v, m
     return None, model
 
 # %% ../nbs/06_acomplete.ipynb #977a115b
@@ -97,7 +97,7 @@ def mk_client(model=None, vendor_name=None, api_name=None, api_key=None, base_ur
     elif base_url and api_key: vendor_name, api_name = ifnone(vendor_name, 'custom'), ifnone(api_name, 'openai_chat')
     elif (api_name:=infer_api_name(model)):  base_url, vendor_name = None, api_name
     else: raise ValueError(f"Model {model} can't be auto resolved, {err_msg}")
-    api = api_registry.apis[api_name]
+    api = api_registry[api_name]
     spec, hdrs = api2spec[api_name], api.get_hdrs(api_key)
     cli = OpenAPIClient(spec, headers=merge(hdrs, ifnone(xtra_hdrs, {})), timeout=timeout)
     if base_url is not None:
@@ -178,13 +178,13 @@ async def acomplete(msgs, model, api_name=None, vendor_name=None, api_key=None,
         elif v: api_name, model = v, m  # a registered transport api (e.g. claude_code): not an HTTP vendor
     if api_name == 'claude_code':
         if not stream: raise NotImplementedError("claude_code backend supports stream=True only for now")
-        api = api_registry.apis[api_name]
+        api = api_registry[api_name]
         payload = api.mk_payload(msgs, model, stream=stream, **kwargs)
         async def _mk_gen():
             async for o in api.acollect_stream(payload, model=model, vendor_name='claude_code', stop_callables=stop_callables): yield o
         return _retry_stream(_mk_gen, retries, retry_delay)
     cli, api_name, vendor_name = mk_client(model=model, vendor_name=vendor_name, api_name=api_name, api_key=api_key, base_url=base_url, xtra_hdrs=xtra_hdrs)
-    api = api_registry.apis[api_name]
+    api = api_registry[api_name]
     payload = api.mk_payload(msgs, model, stream=stream, **kwargs)
     payload = merge(payload, ifnone(xtra_body, {}))
     if vendor_name == 'codex':

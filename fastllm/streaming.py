@@ -150,7 +150,7 @@ async def mk_acollect_stream(it, index_fn, model=None, api_name=None, vendor_nam
         deltas.append(d)
     part_accum.finalize()
     tcs = part_accum.tool_calls
-    if api_name: usg = api_registry.apis[api_name].finalize_usage(usg, part_accum.parts)
+    if api_name: usg = api_registry[api_name].finalize_usage(usg, part_accum.parts)
     if stop: fin = FinishReason.stop
     fin = FinishReason.tool_calls if fin==FinishReason.stop and any(~L(tcs).attrgot('server')) else fin # recheck tool calls post collation
     # tool calls and non-anthropic citations are yielded at the end
