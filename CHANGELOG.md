@@ -2,6 +2,19 @@
 
 <!-- do not remove -->
 
+## 0.0.34
+
+### New Features
+
+- Make APIRegistry a dict subclass, removing the .apis attribute ([#76](https://github.com/AnswerDotAI/fastllm/issues/76))
+- Load api plugins on demand via `fastllm.apis` entry points; index ``api_registry`` directly ([#75](https://github.com/AnswerDotAI/fastllm/issues/75))
+- Move media/content conversion helpers from fastllm.chat to aidialog.`msg_parts` ([#72](https://github.com/AnswerDotAI/fastllm/issues/72))
+
+### Bugs Squashed
+
+- codex client caches a stale access token ([#74](https://github.com/AnswerDotAI/fastllm/issues/74))
+
+
 ## 0.0.33
 
 ### New Features
