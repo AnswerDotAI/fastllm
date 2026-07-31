@@ -2,6 +2,17 @@
 
 <!-- do not remove -->
 
+## 0.0.35
+
+### New Features
+
+- Add tiered pricing to the OpenAI Responses and Gemini cost functions, with registry fixes for codex context limits and flat-rate pricing ([#77](https://github.com/AnswerDotAI/fastllm/issues/77))
+
+### Bugs Squashed
+
+- Move ToolResponse to aidialog ([#73](https://github.com/AnswerDotAI/fastllm/pull/73)), thanks to [@curtis-allan](https://github.com/curtis-allan)
+
+
 ## 0.0.34
 
 ### New Features
