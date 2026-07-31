@@ -75,17 +75,17 @@ def _repr_markdown_(self: Completion):
 FinishReason = str_enum('finish_reason', 'stop', 'tool_calls', 'length', 'content_filter')
 
 # %% ../nbs/00_types.ipynb #fc681c52
-class APIRegistry:
-    def __init__(self): self.apis,self._eps = {},None
-    def register(self, name, finalize_usage=noop, **kwargs): self.apis[name] = SimpleNamespace(finalize_usage=finalize_usage, **kwargs)
+class APIRegistry(dict):
+    _eps = None
+    def register(self, name, finalize_usage=noop, **kwargs): self[name] = SimpleNamespace(finalize_usage=finalize_usage, **kwargs)
     def _load(self, name):
         "Import the plugin providing api `name` from the `fastllm.apis` entry-point group; its import registers the api."
         if self._eps is None: self._eps = {o.name:o for o in entry_points(group='fastllm.apis')}
         if name in self._eps: self._eps[name].load()
-        return name in self.apis
-    def __contains__(self, name): return name in self.apis or self._load(name)
-    def __getitem__(self, name):
-        if name in self: return self.apis[name]
+        return dict.__contains__(self, name)
+    def __contains__(self, name): return dict.__contains__(self, name) or self._load(name)
+    def __missing__(self, name):
+        if self._load(name): return self[name]
         raise KeyError(name)
 
 api_registry = APIRegistry()
