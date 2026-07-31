@@ -9,7 +9,7 @@ __all__ = ['FinishReason', 'api_registry', 'model_prices_url', 'haik45', 'sonn45
            'codex_pricing', 'sol', 'terra', 'luna', 'gpt56s', 'Usage', 'Completion', 'APIRegistry', 'mk_completion',
            'fn_schema', 'payload_kwargs', 'get_api_key', 'resize_b64', 'model_prices_meta', 'infer_api_name',
            'get_model_meta', 'register_model_info', 'get_model_info', 'get_model_pricing', 'approx_pricing',
-           'is_deepseek_peak_hour']
+           'is_deepseek_peak_hour', 'price_tier', 'tier_rate']
 
 # %% ../nbs/00_types.ipynb #b4d047fd
 import httpx, base64, io
@@ -225,8 +225,9 @@ register_model_info('gemini-3.5-flash', vendor_name='gemini', base='gemini-3-fla
     input_cost_per_token=1.5e-6, output_cost_per_token=9e-6,
     output_cost_per_reasoning_token=9e-6, cache_read_input_token_cost=1.5e-7)
 
-for model in ('gpt-5.4', 'gpt-5.4-mini'):
-    register_model_info(model, vendor_name='openai', base=model, supports_web_search=True, mode=None, max_input_tokens=250000)
+register_model_info('gpt-5.4', vendor_name='openai', base='gpt-5.4', supports_web_search=True, mode=None)
+# Upstream metadata says 1,050,000 input tokens for gpt-5.4-mini, but OpenAI documents a 272k limit
+register_model_info('gpt-5.4-mini', vendor_name='openai', base='gpt-5.4-mini', supports_web_search=True, mode=None, max_input_tokens=272_000)
 
 for model in ('kimi-k2.5', 'kimi-k2.6'):
     register_model_info(model, vendor_name='moonshot', base=f'moonshot/{model}', base_vendor_name=None,
@@ -281,8 +282,14 @@ codex_pricing = dict(
     input_cost_per_token = 0.10/1_000_000, output_cost_per_token = 0.50/1_000_000,
     cache_creation_input_token_cost = 0.10/1_000_000, cache_read_input_token_cost = 0.10/1_000_000)
 
+def _rm_ctx_tiers(vendor_name, model):
+    "Drop upstream context-tier rates, which would otherwise override flat subscription pricing"
+    info = model_info_registry[vendor_name, model]
+    for k in [k for k in info if re.search(r'_above_\d+k_tokens', k)]: del info[k]
+
 for model in (codex54, codex54m, codex55):
     register_model_info(model, 'codex', base=model, base_vendor_name='chatgpt', supports_web_search=True, max_input_tokens=256000, **codex_pricing)
+    _rm_ctx_tiers('codex', model)
 
 register_model_info(codex53spark, 'codex', **codex_pricing,
     supports_vision=False, supports_image_input=False, supports_web_search=True, supports_reasoning=True, supports_function_calling=True,
@@ -295,8 +302,12 @@ for model in (haik45, sonn45, sonn46, sonn5, opus46, opus48, opus5, fable5):
 # %% ../nbs/00_types.ipynb #bb0c4c2a
 sol,terra,luna = gpt56s = 'gpt-5.6-sol gpt-5.6-terra gpt-5.6-luna'.split()
 for model in ['gpt-5.6']+gpt56s:
-    register_model_info(model, 'openai', base=model, base_vendor_name='openai', max_input_tokens=272_000)
-    register_model_info(model, 'codex', base=model, base_vendor_name='openai', max_input_tokens=272_000, **codex_pricing)
+    register_model_info(model, 'openai', base=model, base_vendor_name='openai')
+# Codex serves only the suffixed names; bare `gpt-5.6` is rejected with a ChatGPT account.
+# Its window is smaller than the API's: 371,331 input tokens is accepted and 371,981 is not, on all three.
+for model in gpt56s:
+    register_model_info(model, 'codex', base=model, base_vendor_name='openai', max_input_tokens=371_000, **codex_pricing)
+    _rm_ctx_tiers('codex', model)
 
 # %% ../nbs/00_types.ipynb #24cc47ec
 def get_model_pricing(mn, vendor_name, million=True):
@@ -319,6 +330,17 @@ def is_deepseek_peak_hour(dt=None):
     dt = dt or datetime.now(timezone.utc)
     h = dt.hour + dt.minute/60
     return 1 <= h < 4 or 6 <= h < 10
+
+# %% ../nbs/00_types.ipynb #4c701619
+def price_tier(meta, n):
+    "Suffix of the pricing tier applying to `n` prompt tokens, or '' for base rates."
+    o = first(o for k in meta if (o:=re.match(r'input_cost_per_token(_above_(\d+)k_tokens)$', k)))
+    return o[1] if o and n>int(o[2])*1000 else ''
+
+# %% ../nbs/00_types.ipynb #956d2495
+def tier_rate(meta, key, tier):
+    "Rate for `key` at `tier`, falling back to the base key."
+    return meta.get(f'{key}{tier}') or meta[key]
 
 # %% ../nbs/00_types.ipynb #8bfca02d
 @patch(as_prop=True)

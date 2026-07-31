@@ -251,9 +251,10 @@ def get_hdrs(api_key=None):
 def cost(usage, m):
     raw = usage.raw
     cached = raw.get('input_tokens_details', {}).get('cached_tokens', 0)
-    in_txt = raw['input_tokens'] - cached
-    cost  = in_txt * m.input_cost_per_token + raw['output_tokens'] * m.output_cost_per_token
-    cost += cached * m.get('cache_read_input_token_cost', 0)
+    tier = price_tier(m, raw['input_tokens'])
+    cost  = (raw['input_tokens'] - cached) * tier_rate(m, 'input_cost_per_token', tier)
+    cost += raw['output_tokens'] * tier_rate(m, 'output_cost_per_token', tier)
+    cost += cached * tier_rate(m, 'cache_read_input_token_cost', tier)
     return cost
 
 # %% ../nbs/02_oai_responses.ipynb #07114b55

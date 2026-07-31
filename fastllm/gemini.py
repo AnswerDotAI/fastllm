@@ -273,21 +273,18 @@ def get_hdrs(api_key=None):
 def cost(usage, m):
     raw = usage.raw
     prompt_tot = raw.get('promptTokenCount', 0)
-    tier = '_above_200k_tokens' if prompt_tot > 200_000 else ''
-    in_rate    = m.get(f'input_cost_per_token{tier}')       or m.input_cost_per_token
-    out_rate   = m.get(f'output_cost_per_token{tier}')      or m.output_cost_per_token
-    cache_rate = m.get(f'cache_read_input_token_cost{tier}')or m.get('cache_read_input_token_cost', 0)
-    audio_rate = m.get('input_cost_per_audio_token')  # None if not priced separately
-
+    tier = price_tier(m, prompt_tot)
+    in_rate    = tier_rate(m, 'input_cost_per_token', tier)
+    out_rate   = tier_rate(m, 'output_cost_per_token', tier)
+    cache_rate = tier_rate(m, 'cache_read_input_token_cost', tier)
+    # Models with no `input_cost_per_audio_token` (e.g. Gemini 3 Pro) bill audio at the standard input rate, so it stays in `in_txt`
+    audio_rate = m.get('input_cost_per_audio_token')
     cached = raw.get('cachedContentTokenCount', 0)
-    # Gemini 3 Pro supports bills audio at the standard input rate (no separate input_cost_per_audio_token key in the metadata)
     audio  = sum(d['tokenCount'] for d in raw.get('promptTokensDetails', []) if d.get('modality')=='AUDIO') if audio_rate else 0
     in_txt = prompt_tot - cached - audio
-
     thoughts = raw.get('thoughtsTokenCount', 0) or 0
     cands    = raw.get('candidatesTokenCount', 0) or 0
     reason_rate = m.get('output_cost_per_reasoning_token') or out_rate
-
     cost  = in_txt * in_rate + cands * out_rate
     cost += cached * cache_rate
     cost += audio  * (audio_rate or 0)
