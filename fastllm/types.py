@@ -229,7 +229,7 @@ register_model_info('gpt-5.4', vendor_name='openai', base='gpt-5.4', supports_we
 # Upstream metadata says 1,050,000 input tokens for gpt-5.4-mini, but OpenAI documents a 272k limit
 register_model_info('gpt-5.4-mini', vendor_name='openai', base='gpt-5.4-mini', supports_web_search=True, mode=None, max_input_tokens=272_000)
 
-for model in ('kimi-k2.5', 'kimi-k2.6'):
+for model in ('kimi-k2.5', 'kimi-k2.6' , 'kimi-k3'):
     register_model_info(model, vendor_name='moonshot', base=f'moonshot/{model}', base_vendor_name=None,
         supports_reasoning=True, supports_vision=True, supports_assistant_prefill=True)
 
@@ -242,9 +242,11 @@ register_model_info('accounts/fireworks/models/kimi-k2p5', vendor_name='firework
 register_model_info('accounts/fireworks/models/kimi-k2p6', vendor_name='fireworks_ai', base='accounts/fireworks/models/kimi-k2p5',
     supports_reasoning=True, supports_vision=True,
     input_cost_per_token=0.95e-6, cache_read_input_token_cost=0.16e-6, output_cost_per_token=4.0e-6)
-
 register_model_info('kimi-k2.7-code', vendor_name='moonshot', base='kimi-k2.6',
     input_cost_per_token=0.95e-6, cache_read_input_token_cost=0.19e-6, output_cost_per_token=4.0e-6)
+register_model_info('kimi-k3', vendor_name='moonshot', base='kimi-k2.6',
+    supports_reasoning=True, supports_vision=True, max_input_tokens=1_000_000,
+    input_cost_per_token=3e-6, cache_read_input_token_cost=0.30e-6, output_cost_per_token=15.0e-6)
 
 # %% ../nbs/00_types.ipynb #948d55d0
 deepseek_v4_common = dict(**modern_llm, supports_assistant_prefill=True,
