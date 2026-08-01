@@ -2,6 +2,13 @@
 
 <!-- do not remove -->
 
+## 0.0.36
+
+### New Features
+
+- Add kimi-k3 model info and pricing for moonshot ([#78](https://github.com/AnswerDotAI/fastllm/issues/78))
+
+
 ## 0.0.35
 
 ### New Features
