@@ -11,7 +11,7 @@ __all__ = ['effort', 'remove_cache_ckpts', 'contents', 'stop_reason', 'mk_msg', 
 
 # %% ../nbs/07_chat.ipynb #d5a3bc1f
 from typing import Optional,Callable
-from toolslm.funccall import mk_ns, call_func, call_func_async, get_schema
+from fastcore.funccall import mk_ns, call_func, call_func_async, get_schema
 from fastcore.utils import *
 from fastcore.meta import delegates
 from dataclasses import dataclass
