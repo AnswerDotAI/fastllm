@@ -2,6 +2,13 @@
 
 <!-- do not remove -->
 
+## 0.0.37
+
+### New Features
+
+- Migrate from toolslm.funccall to fastcore.funccall and drop toolslm dependency ([#79](https://github.com/AnswerDotAI/fastllm/issues/79))
+
+
 ## 0.0.36
 
 ### New Features
