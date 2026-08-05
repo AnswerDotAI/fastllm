@@ -13,7 +13,7 @@ from fastcore.utils import *
 from fastcore.meta import delegates
 from fastspec.errors import *
 from .types import *
-from aidialog.msg_parts import Part, PartType, Msg, ToolCall, fence_call_re
+from aidialog.msg_parts import Part, PartType, Msg, Text, Thinking, ToolUse, ToolResult, ServerToolResult, mk_part, fence_call_re
 
 # %% ../nbs/01_streaming.ipynb #400d628a
 @dataclass
@@ -22,7 +22,7 @@ class Delta:
     text: str = ""
     thinking: str = ""
     refusal: str = ""
-    tool_calls: list[ToolCall] = field(default_factory=list)
+    tool_calls: list[ToolUse] = field(default_factory=list)
     citations: list = field(default_factory=list)
     server_tool_result: dict = None
     finish_reason: str = None
@@ -49,46 +49,37 @@ class PrintStream:
 # %% ../nbs/01_streaming.ipynb #a7f1738a
 @dataclass
 class PartAccum:
-    parts: dict[Part|ToolCall] = field(default_factory=dict)
-    tool_calls: list[ToolCall] = field(default_factory=list)
-    
+    "Accumulate streamed part deltas by index"
+    parts: dict = field(default_factory=dict)
+
     def append(self, typ, index, txt='', citations=None, **tc_kwargs):
         'Create and accumulate same type sequential parts'
-        if index not in self.parts: 
-            if typ==PartType.tool_use: self.parts[index] = ToolCall(**tc_kwargs)
-            else:                      self.parts[index] = Part(type=typ, text=txt, data=dict(citations=citations or []))
+        p = self.parts.get(index)
+        if p is None:
+            if typ==PartType.tool_use: p = ToolUse(**tc_kwargs)
+            elif typ==PartType.text:   p = Text(txt, citations=list(citations or []))
+            else:                      p = mk_part(typ, text=txt)
+            self.parts[index] = p
+        elif isinstance(p, ToolUse):
+            new_args = tc_kwargs.get('arguments', '')
+            if isinstance(new_args, str) and isinstance(p.arguments, str): p.arguments += new_args
+            else: p.arguments = new_args
         else:
-            if typ==PartType.tool_use:
-                new_args = tc_kwargs.get('arguments', '')
-                cur_args = self.parts[index].arguments
-                if isinstance(new_args, str) and isinstance(cur_args, str): self.parts[index].arguments += new_args
-                elif isinstance(new_args, str) and isinstance(cur_args, dict): self.parts[index].arguments = new_args
-                else: self.parts[index].arguments = new_args
-            else: 
-                self.parts[index].text += txt
-                # anthropic citations have matching idx
-                self.parts[index].data['citations'].extend(citations or [])
-    
+            p.text += txt
+            if isinstance(p, Text): p.citations.extend(citations or [])  # anthropic citations have matching idx
+
     def get_merged(self, with_tools=True):
-        tmp_parts = copy.deepcopy(self.parts)
-        tool_calls = []
-        if with_tools:
-            for idx,tc in tmp_parts.items():
-                if isinstance(tc, ToolCall):
-                    if isinstance(tc.arguments, str): tc.arguments = json.loads(tc.arguments) if tc.arguments else {}
-                    tool_calls.append(tc)
-                    data = {**tc.extra, 'id':tc.id, 'name':tc.name, 'arguments':tc.arguments, 'server':tc.server}
-                    tmp_parts[idx] = Part(type=PartType.tool_use, data=data)
-        
+        "A copy of the accumulated parts, runs of text/thinking merged and tool arguments parsed"
         merged = []
-        for p in tmp_parts.values():
-            if isinstance(p, ToolCall) and not with_tools: continue
-            if merged and merged[-1].type == p.type and p.type in (PartType.text, PartType.thinking): merged[-1].text += p.text
-            else: merged.append(p)
-        return merged, tool_calls
-    
-    def finalize(self):
-        self.parts, self.tool_calls = self.get_merged()
+        for p in copy.deepcopy(list(self.parts.values())):
+            if isinstance(p, ToolUse):
+                if not with_tools: continue
+                if isinstance(p.arguments, str): p.arguments = json.loads(p.arguments) if p.arguments else {}
+            elif merged and type(merged[-1]) is type(p) and isinstance(p, (Text, Thinking)):
+                merged[-1].text += p.text
+                continue
+            merged.append(p)
+        return merged
 
 # %% ../nbs/01_streaming.ipynb #c64e2379
 class FenceToolStop:
@@ -107,8 +98,8 @@ def _trim_delta(d, txt, s):
 # %% ../nbs/01_streaming.ipynb #efbf96d7
 def stop_and_trim(part_accum, d, stop_callables):
     'Stop based on the accumulated text so far, and trim current delta'
-    parts,_ = part_accum.get_merged(with_tools=False)
-    prev = parts[-1].text if parts and parts[-1].type == PartType.text else ''
+    parts = part_accum.get_merged(with_tools=False)
+    prev = parts[-1].text if parts and isinstance(parts[-1], Text) else ''
     txt = prev + (d.text or '')
     for f in stop_callables:
         if res:=f(txt):
@@ -136,8 +127,8 @@ class Status:
 
 def _mk_delta_part(name, val):
     "Wrap one collected delta field as a `Part`"
-    if name=='citations': return Part(PartType.text, text='', data=dict(citations=val))
-    return Part(getattr(PartType, name), text=val)
+    if name=='citations': return Text('', citations=val)
+    return mk_part(getattr(PartType, name), text=val)
 
 # %% ../nbs/01_streaming.ipynb #fc71790b
 async def mk_acollect_stream(it, index_fn, model=None, api_name=None, vendor_name=None, stop_callables=None):
@@ -172,33 +163,32 @@ async def mk_acollect_stream(it, index_fn, model=None, api_name=None, vendor_nam
         # Rest incl. tools, finish reason, usage is processed independently
         for tc in d.tool_calls:
             args = tc.arguments.get('_delta', tc.arguments)
-            _, idx = _proc(d, 'tool_use', ret=dict(id=tc.id, name=tc.name, arguments=args, server=tc.server, extra=tc.extra))
+            _, idx = _proc(d, 'tool_use', ret=dict(id=tc.id, name=tc.name, arguments=args, server=tc.server, raw=tc.raw))
             if (isinstance(args, str) and args.endswith('}')) or (isinstance(args, dict) and '_delta' not in tc.arguments): # tool call ready
-                if isinstance(args, str):
-                    try: args = json.loads(part_accum.parts[idx].arguments) if args else {}
-                    except json.JSONDecodeError: continue
                 acc = part_accum.parts[idx]
+                if isinstance(args, str):
+                    try: args = json.loads(acc.arguments) if args else {}
+                    except json.JSONDecodeError: continue
                 acc.arguments = args
-                data = {**acc.extra, 'id':acc.id, 'name':acc.name, 'arguments':args, 'server':acc.server}
-                yield Part(type=PartType.tool_use, data=data)
+                yield acc
                 # Server tool results for anthropic are yielded in d.server_tool_result by checking injected dummy `_delta`
-                if acc.server: yield Part(type=PartType.tool_result, text="Server tool call executed.", data=data)
+                if acc.server: yield ToolResult(id=acc.id, name=acc.name, arguments=args, server=True, text="Server tool call executed.")
         if d.server_tool_result:
             idx = _fidx(d, 'server_tool_result')
-            part_accum.parts[idx] = Part(type=typ, data=d.server_tool_result)
+            part_accum.parts[idx] = ServerToolResult(raw=d.server_tool_result)
         r = _proc(d, 'refusal')
         if r[0]: yield _mk_delta_part('refusal', r[0]['refusal'])
         if d.finish_reason: fin = d.finish_reason
         if d.usage: usg = d.usage
         last_typ = typ
         deltas.append(d)
-    part_accum.finalize()
-    tcs = part_accum.tool_calls
-    if api_name: usg = api_registry[api_name].finalize_usage(usg, part_accum.parts)
+    parts = part_accum.get_merged()
+    tcs = [p for p in parts if isinstance(p, ToolUse)]
+    if api_name: usg = api_registry[api_name].finalize_usage(usg, parts)
     if stop: fin = FinishReason.stop
     fin = FinishReason.tool_calls if fin==FinishReason.stop and any(~L(tcs).attrgot('server')) else fin # recheck tool calls post collation
     # tool calls and non-anthropic citations are yielded at the end
     yield Completion(model,
-            message=Msg(role="assistant", content=part_accum.parts),
-            finish_reason=fin, usage=usg, tool_calls=tcs, api_name=api_name, vendor_name=vendor_name,
+            message=Msg(role="assistant", content=parts),
+            finish_reason=fin, usage=usg, api_name=api_name, vendor_name=vendor_name,
             raw={'deltas':deltas})

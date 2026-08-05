@@ -16,7 +16,7 @@ from fastspec.oapi import *
 from fastspec.errors import APIError
 
 from .types import *
-from aidialog.msg_parts import Part, PartType, Msg, mk_tool_res_msg
+from aidialog.msg_parts import Part, PartType, Msg, Text, Thinking, ToolUse, ToolResult, InputImage, InputAudio, InputVideo, InputFile, mk_tool_res_msg
 from .streaming import *
 from .openai_responses import *
 from .openai_chat import *

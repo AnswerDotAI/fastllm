@@ -19,7 +19,7 @@ from datetime import datetime, timezone
 from fastcore.net import urljson
 from fastcore.utils import *
 from PIL import Image as PImg
-from aidialog.msg_parts import Part, PartType, Msg, ToolCall, data_url
+from aidialog.msg_parts import Part, PartType, Msg, Text, Thinking, ToolUse, ToolResult, InputImage, InputAudio, InputVideo, InputFile, data_url
 
 
 # %% ../nbs/00_types.ipynb #802ad832
@@ -43,10 +43,14 @@ class Completion:
     message: Msg
     finish_reason: str = None
     usage: Usage = None
-    tool_calls: List[ToolCall] = field(default_factory=list)
     api_name: str = None
     vendor_name: str = None
     raw: dict = field(default_factory=dict)
+
+    @property
+    def tool_calls(self):
+        "The `ToolUse` parts of `message`: a call lives in the content, not beside it"
+        return [p for p in self.message.content if isinstance(p, ToolUse)]
 
 # %% ../nbs/00_types.ipynb #4901e693
 @patch(as_prop=True)
@@ -55,16 +59,12 @@ def formatted(self:Completion): return ''
 # %% ../nbs/00_types.ipynb #1b0dbab0
 @patch
 def _repr_markdown_(self: Completion):
-    message = self.message
     content = ''
-    for p in message.content:
-        if p.type == PartType.thinking:
+    for p in self.message.content:
+        if isinstance(p, Thinking):
             if p.text: content += f"<details><summary>Thinking</summary>\n\n{p.text}\n\n</details>\n\n"
+        elif isinstance(p, ToolUse): content += f"\n\n🔧 {p.name}({p.arguments})\n"
         elif txt := p.text: content += txt
-    if self.tool_calls:
-        tool_calls = [f"\n\n🔧 {tc.name}({tc.arguments})\n" for tc in self.tool_calls]
-        content += "\n".join(tool_calls)
-    # for img in getattr(message, 'images', []): content += f"\n\n![generated image]({nested_idx(img, 'image_url', 'url')})" # TODO
     details = [f"model: `{self.model}`", f"finish_reason: `{self.finish_reason}`", f"usage: `{self.usage}`"]
     det_str = '\n- '.join(details)    
     return f"""{content}
@@ -108,7 +108,6 @@ def mk_completion(resp, model, api_name, vendor_name):
         message=Msg(role="assistant", content=parts),
         finish_reason=api.norm_finish(resp, tcs),
         usage=usg,
-        tool_calls=tcs,
         api_name=api_name,
         vendor_name=vendor_name,
         raw=resp)

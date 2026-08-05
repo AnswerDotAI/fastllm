@@ -15,7 +15,8 @@ from fastcore.meta import *
 from fastspec.errors import api_error_from_event
 
 from .types import *
-from aidialog.msg_parts import Part, PartType, Msg, ToolCall, sys_text, part_txt, data_url, url_mime
+from aidialog.msg_parts import (Part, PartType, Msg, Text, Thinking, ToolUse, ToolResult, tool_text,
+                                InputImage, InputAudio, InputVideo, InputFile, sys_text, part_txt, data_url, url_mime)
 from .streaming import *
 from .streaming import mk_acollect_stream
 
@@ -25,8 +26,8 @@ def norm_tool_calls(resp):
     out = []
     for i,p in enumerate(nested_idx(resp, 'candidates', 0, 'content', 'parts') or []):
         if not (fc:=p.get("functionCall")): continue
-        extra = {k:v for k,v in p.items() if k != "functionCall"}
-        out.append(ToolCall(id=fc.get("id", f"call_{i}"), name=fc.get("name", ""), arguments=fc.get("args") or {}, extra=extra))
+        raw = {k:v for k,v in p.items() if k != "functionCall"}
+        out.append(ToolUse(id=fc.get("id", f"call_{i}"), name=fc.get("name", ""), arguments=fc.get("args") or {}, raw=raw))
     return out
 
 # %% ../nbs/05_gemini.ipynb #90504163
@@ -67,21 +68,19 @@ def _gem_part_type(p):
 def norm_parts(resp):
     "Normalize Gemini generateContent response."
     c0 = nested_idx(resp, 'candidates', 0) or {}
-    tcs = norm_tool_calls(resp)
-    tc_map = {tc.id: tc for tc in tcs}
+    tc_map = {tc.id: tc for tc in norm_tool_calls(resp)}
     parts = []
     for p in nested_idx(c0, 'content', 'parts') or []:
         typ = _gem_part_type(p)
-        if typ == 'tool_use':
+        if typ == PartType.tool_use:
             fc = p.get('functionCall') or p.get('toolCall') or {}
-            tc = tc_map.get(fc.get('id'))
-            if tc: 
-                tdata = {**tc.extra, 'id':tc.id, 'name':tc.name, 'arguments':tc.arguments, 'server':tc.server}
-                parts.append(Part(type=PartType.tool_use, data=tdata))
-        else: parts.append(Part(type=typ, text=p.get("text",""), data=p))
+            if tc := tc_map.get(fc.get('id')): parts.append(tc)
+        elif typ == PartType.thinking:    parts.append(Thinking(p.get("text",""), raw=p))
+        elif typ == PartType.tool_result: parts.append(ToolResult(text=p.get("text",""), raw=p))
+        else:                             parts.append(Text(p.get("text",""), raw=p))
     if citations := c0.get('groundingMetadata'):
-        for p in parts: 
-            if p.type == PartType.text: p.data['citations'] = citations
+        for p in parts:
+            if isinstance(p, Text): p.citations = citations
     return parts
 
 # %% ../nbs/05_gemini.ipynb #9a5024ee
@@ -110,27 +109,26 @@ async def acollect_stream(resp, **kwargs):
     async for o in res: yield o
 
 # %% ../nbs/05_gemini.ipynb #58d0cb74
-def denorm_tool_use(p:Part):
+def denorm_tool_use(p:ToolUse):
     "Convert canonical tool_use Part to Gemini functionCall part."
-    d = p.data or {}
-    fc = dict(name=d.get('name',''), args=d.get('arguments') or {})
-    if d.get('id'): fc['id'] = d['id']
+    fc = dict(name=p.name or '', args=p.arguments or {})
+    if p.id: fc['id'] = p.id
     part = dict(functionCall=fc)
-    part['thoughtSignature'] = d.get('thoughtSignature', 'skip_thought_signature_validator')
+    part['thoughtSignature'] = (p.raw or {}).get('thoughtSignature', 'skip_thought_signature_validator')
     return part
 
 def denorm_assistant(m:Msg):
     "Convert canonical assistant Msg to Gemini model content."
     parts = []
     for p in m.content:
-        if   p.type == PartType.thinking: parts.append(dict(text=p.text or '', thought=True))
-        elif p.type == PartType.text:     parts.append(dict(text=p.text or ''))
-        elif p.type == PartType.tool_use: parts.append(denorm_tool_use(p))
+        if   isinstance(p, Thinking): parts.append(dict(text=p.text or '', thought=True))
+        elif isinstance(p, ToolUse):  parts.append(denorm_tool_use(p))
+        elif isinstance(p, Text):     parts.append(dict(text=p.text or ''))
     return dict(role='model', parts=parts)
 
 def denorm_tool(m:Msg):
     "Convert canonical tool Msg to Gemini user content with functionResponse parts."
-    parts = [denorm_tool_result(p) for p in m.content if p.type == PartType.tool_result]
+    parts = [denorm_tool_result(p) for p in m.content if isinstance(p, ToolResult)]
     return dict(role='user', parts=parts)
 
 def denorm_msgs(msgs:list[Msg]):
@@ -201,11 +199,11 @@ def denorm_user(m:Msg):
     "Convert canonical user Msg to Gemini user content."
     parts = []
     for p in m.content:
-        if   p.type == PartType.text:        parts.append({"text": p.text or ""})
-        elif p.type == PartType.input_image: parts.append(denorm_image(p))
-        elif p.type == PartType.input_audio: parts.append(denorm_audio(p))
-        elif p.type == PartType.input_video: parts.append(denorm_video(p))
-        elif p.type == PartType.input_file:  parts.append(denorm_file(p))
+        if   isinstance(p, Text):       parts.append({"text": p.text or ""})
+        elif isinstance(p, InputImage): parts.append(denorm_image(p))
+        elif isinstance(p, InputAudio): parts.append(denorm_audio(p))
+        elif isinstance(p, InputVideo): parts.append(denorm_video(p))
+        elif isinstance(p, InputFile):  parts.append(denorm_file(p))
     return dict(role='user', parts=parts)
 
 # %% ../nbs/05_gemini.ipynb #edd87272
@@ -229,17 +227,16 @@ def denorm_file(p):
     return {"fileData": {"mimeType": url_mime(p.text, "application/pdf"), "fileUri": p.text}}
 
 # %% ../nbs/05_gemini.ipynb #16df1073
-def denorm_tool_result(p:Part):
+def denorm_tool_result(p:ToolResult):
     "Convert canonical tool_result Part to Gemini functionResponse part."
-    d = p.data or {}
-    fr = dict(name=d.get('name',''), response={"content": "" if isinstance(p.text, list) else str(p.text)})
-    if d.get('id'): fr['id'] = d['id']
+    fr = dict(name=p.name or '', response={"content": "" if isinstance(p.text, list) else tool_text(p.text)})
+    if p.id: fr['id'] = p.id
     if isinstance(p.text, list):
         parts = []
         for pp in p.text:
-            if   pp.type == PartType.text:        parts.append({"text": pp.text or ""})
-            elif pp.type == PartType.input_image: parts.append(denorm_image(pp))
-            elif pp.type == PartType.input_file:  parts.append(denorm_file(pp))
+            if   isinstance(pp, Text):       parts.append({"text": pp.text or ""})
+            elif isinstance(pp, InputImage): parts.append(denorm_image(pp))
+            elif isinstance(pp, InputFile):  parts.append(denorm_file(pp))
             else: raise ValueError(f"Gemini tool_result does not support {pp.type}")
         fr['parts'] = parts
     return dict(functionResponse=fr)

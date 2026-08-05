@@ -15,7 +15,8 @@ from fastcore.meta import *
 from fastspec.errors import api_error_from_event
 
 from .types import *
-from aidialog.msg_parts import Part, PartType, Msg, ToolCall, data_url
+from aidialog.msg_parts import (Part, PartType, Msg, Text, Thinking, ToolUse, ToolResult, tool_text, ServerToolResult,
+                                InputImage, InputAudio, InputVideo, InputFile, data_url)
 from .streaming import *
 from .streaming import mk_acollect_stream
 
@@ -24,8 +25,8 @@ ant_tc_types = ("tool_use", "server_tool_use", "mcp_tool_use")
 
 def norm_tool_call(b):
     if b.get("type") in ant_tc_types:
-        extra = {k:v for k,v in b.items() if k not in ("type","id","name","input")}
-        return ToolCall(id=b["id"], name=b["name"], arguments=b.get("input") or {}, server=b.get("type")!="tool_use", extra=extra)
+        raw = {k:v for k,v in b.items() if k not in ("type","id","name","input")}
+        return ToolUse(id=b["id"], name=b["name"], arguments=b.get("input") or {}, server=b.get("type")!="tool_use", raw=raw)
 
 def norm_tool_calls(resp, delta=False):
     "Extract Anthropic tool_use blocks as normalized tool calls."
@@ -48,7 +49,7 @@ def norm_usage(resp):
 def finalize_usage(usg, parts):
     "Adjust usage using finalized Anthropic content parts."
     if not usg: return usg
-    rc = '\n'.join(p.text or '' for p in parts if p.type == PartType.thinking)
+    rc = '\n'.join(p.text or '' for p in parts if isinstance(p, Thinking))
     ct = int(usg.raw.get('output_tokens', usg.completion_tokens) or 0)
     rt = min(int(len(rc.split())*1.5), ct) if rc else 0
     return Usage(prompt_tokens=usg.prompt_tokens, completion_tokens=ct-rt, total_tokens=usg.prompt_tokens+ct,
@@ -71,17 +72,14 @@ def _ant_part_type(typ):
     return typ
 
 def norm_parts(resp):
-    tcs = norm_tool_calls(resp)
-    tc_map = {tc.id: tc for tc in tcs}
     parts = []
     for b in resp.get("content", []):
         typ = _ant_part_type(b.get("type", "text"))
-        if typ == PartType.thinking: parts.append(Part(type=PartType.thinking, text=b.get("thinking", ""), data=b))
-        elif typ == "tool_use":
-            if tc:=tc_map.get(b.get("id")):
-                tdata = {**tc.extra, 'id':tc.id, 'name':tc.name, 'arguments':tc.arguments, 'server':tc.server}
-                parts.append(Part(type=PartType.tool_use, data=tdata))
-        else: parts.append(Part(type=typ, text=b.get("text", ""), data=b))
+        if   typ == PartType.thinking: parts.append(Thinking(b.get("thinking", ""), raw=b))
+        elif typ == PartType.tool_use:
+            if tc := norm_tool_call(b): parts.append(tc)
+        elif typ == PartType.server_tool_result: parts.append(ServerToolResult(b.get("text", ""), raw=b))
+        else: parts.append(Text(b.get("text", ""), raw=b))
     return parts
 
 # %% ../nbs/04_anthropic.ipynb #a3869e31
@@ -101,7 +99,7 @@ def norm_sse_event(ev, **kwargs):
         if   dtyp == "text_delta": text = d.get("text")
         elif dtyp == "thinking_delta": thinking = d.get("thinking")
         elif dtyp == "input_json_delta":
-            tcs = [ToolCall(id=str(ev.get("index", "")), name="", arguments={"_delta": d.get("partial_json", '')})]
+            tcs = [ToolUse(id=str(ev.get("index", "")), name="", arguments={"_delta": d.get("partial_json", '')})]
         elif dtyp == "citations_delta": 
             citations = listify(d.get('citation',[]))
     elif typ == "message_delta":
@@ -123,51 +121,45 @@ async def acollect_stream(resp, **kwargs):
 
 # %% ../nbs/04_anthropic.ipynb #bb11ab62
 def _ant_cc(block, p):
-    "Add cache_control to block if present in Part.data."
-    if (cc := (p.data or {}).get('cache_control')): block['cache_control'] = cc
+    "Add the part's prompt-cache directive to `block`, if it has one."
+    if p.cache_control: block['cache_control'] = p.cache_control
     return block
 
 # %% ../nbs/04_anthropic.ipynb #62e9a042
 def _sanid(id_str): return re.sub(r'[^a-zA-Z0-9_-]', '_', id_str or '')
 
 # %% ../nbs/04_anthropic.ipynb #6ec772cb
-def denorm_tool_use(p:Part):
+def denorm_tool_use(p:ToolUse):
     "Convert canonical tool_use Part to Anthropic tool_use content block."
-    d = p.data or {}
-    block = dict(type='tool_use', id=_sanid(d.get('id','')), name=d.get('name',''), input=d.get('arguments') or {})
-    if 'caller' in d: block['caller'] = d['caller']
+    block = dict(type='tool_use', id=_sanid(p.id or ''), name=p.name or '', input=p.arguments or {})
+    if caller := (p.raw or {}).get('caller'): block['caller'] = caller
     return _ant_cc(block, p)
 
 def denorm_assistant(m:Msg):
     "Convert canonical assistant Msg to Anthropic assistant message + synthetic tool results for non-Anthropic server tools."
     blocks, srv_results, srv_call_id = [], [], None
     for p in m.content:
-        if p.type == PartType.thinking:
+        if isinstance(p, (Thinking, Text)):
             if srv_call_id:
                 srv_results.append(dict(type='tool_result', tool_use_id=srv_call_id, content=p.text or ''))
                 srv_call_id = None
-            elif sig:=(p.data or {}).get('signature',''): blocks.append(dict(type='thinking', thinking=p.text or '', signature=sig))
-            else:                               blocks.append(_ant_cc(dict(type='text', text=p.text or ''), p))
-        elif p.type == PartType.text:
-            if srv_call_id:
-                srv_results.append(dict(type='tool_result', tool_use_id=srv_call_id, content=p.text or ''))
-                srv_call_id = None
+            elif isinstance(p, Thinking) and (sig:=(p.raw or {}).get('signature','')):
+                blocks.append(dict(type='thinking', thinking=p.text or '', signature=sig))
             else: blocks.append(_ant_cc(dict(type='text', text=p.text or ''), p))
-        elif p.type == PartType.tool_use:
-            if p.data.get('server') and (p.data.get('id','') or '').startswith('srvtoolu_'):
-                blocks.append(dict(type='server_tool_use', id=p.data['id'], name=p.data.get('name',''), input=p.data.get('arguments') or {}))
-            elif p.data.get('server'):
+        elif isinstance(p, ToolUse):
+            if p.server and (p.id or '').startswith('srvtoolu_'):
+                blocks.append(dict(type='server_tool_use', id=p.id, name=p.name or '', input=p.arguments or {}))
+            else:
                 blocks.append(denorm_tool_use(p))
-                srv_call_id = p.data.get('id','')
-            else: blocks.append(denorm_tool_use(p))
-        elif p.type == PartType.server_tool_result: blocks.append(p.data if p.data else dict(type='server_tool_result'))
+                if p.server: srv_call_id = p.id or ''
+        elif isinstance(p, ServerToolResult): blocks.append(p.raw or dict(type='server_tool_result'))
     res = [dict(role='assistant', content=blocks)]
     if srv_results: res.append(dict(role='user', content=srv_results))
     return res
 
 def denorm_tool(m:Msg):
     "Convert canonical tool Msg to Anthropic user message with tool_result blocks."
-    blocks = [denorm_tool_result(p) for p in m.content if p.type == PartType.tool_result]
+    blocks = [denorm_tool_result(p) for p in m.content if isinstance(p, ToolResult)]
     return [dict(role='user', content=blocks)]
 
 def denorm_msgs(msgs:list[Msg]):
@@ -224,10 +216,7 @@ def denorm_web_search(v):
 # %% ../nbs/04_anthropic.ipynb #6b485275
 def denorm_system(sp):
     if isinstance(sp, Msg): sp = sp.content[0]
-    if isinstance(sp, Part):
-        block = dict(type='text', text=sp.text)
-        if (cc := (sp.data or {}).get('cache_control')): block['cache_control'] = cc
-        return [block]
+    if isinstance(sp, Part): return [_ant_cc(dict(type='text', text=sp.text), sp)]
     else: return sp
 
 # %% ../nbs/04_anthropic.ipynb #1b990cc9
@@ -235,11 +224,11 @@ def denorm_user(m:Msg):
     "Convert canonical user Msg to Anthropic user message."
     parts = []
     for p in m.content:
-        if   p.type == PartType.text: parts.append(_ant_cc({"type":"text", "text":p.text or ''}, p))
-        elif p.type == PartType.input_image: parts.append(_ant_cc(denorm_image(p), p))
-        elif p.type == PartType.input_audio: raise ValueError("Anthropic does not support audio input")
-        elif p.type == PartType.input_video: raise ValueError("Anthropic does not support video input")
-        elif p.type == PartType.input_file:  parts.append(_ant_cc(denorm_file(p), p))
+        if   isinstance(p, Text):       parts.append(_ant_cc({"type":"text", "text":p.text or ''}, p))
+        elif isinstance(p, InputImage): parts.append(_ant_cc(denorm_image(p), p))
+        elif isinstance(p, InputAudio): raise ValueError("Anthropic does not support audio input")
+        elif isinstance(p, InputVideo): raise ValueError("Anthropic does not support video input")
+        elif isinstance(p, InputFile):  parts.append(_ant_cc(denorm_file(p), p))
     return dict(role='user', content=parts)
 
 # %% ../nbs/04_anthropic.ipynb #edd87272
@@ -255,19 +244,18 @@ def denorm_file(p):
     return {"type": "document", "source": {"type": "url", "url": p.text}}
 
 # %% ../nbs/04_anthropic.ipynb #37b63cc2
-def denorm_tool_result(p:Part):
+def denorm_tool_result(p:ToolResult):
     "Convert canonical tool_result Part to Anthropic tool_result content block."
-    d = p.data or {}
-    tid = _sanid(d.get('id') or d.get('call_id',''))
+    tid = _sanid(p.id or (p.raw or {}).get('call_id',''))
     if isinstance(p.text, list):
         blocks = []
         for pp in p.text:
-            if   pp.type == PartType.text:        blocks.append({"type": "text", "text": pp.text or ""})
-            elif pp.type == PartType.input_image: blocks.append(denorm_image(pp, max_sz=2000))
-            elif pp.type == PartType.input_file:  blocks.append(denorm_file(pp))
+            if   isinstance(pp, Text):       blocks.append({"type": "text", "text": pp.text or ""})
+            elif isinstance(pp, InputImage): blocks.append(denorm_image(pp, max_sz=2000))
+            elif isinstance(pp, InputFile):  blocks.append(denorm_file(pp))
             else: raise ValueError(f"Anthropic tool_result does not support {pp.type}")
         return _ant_cc(dict(type='tool_result', tool_use_id=tid, content=blocks), p)
-    return _ant_cc(dict(type='tool_result', tool_use_id=tid, content=str(p.text)), p)
+    return _ant_cc(dict(type='tool_result', tool_use_id=tid, content=tool_text(p.text)), p)
 
 # %% ../nbs/04_anthropic.ipynb #587d4fe5
 @delegates(payload_kwargs)

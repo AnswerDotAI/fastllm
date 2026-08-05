@@ -15,7 +15,8 @@ from fastcore.meta import *
 from fastspec.errors import api_error_from_event
 
 from .types import *
-from aidialog.msg_parts import Part, PartType, Msg, ToolCall, mk_tool_res_msg, sys_text, part_txt, data_url
+from aidialog.msg_parts import (Part, PartType, Msg, Text, Thinking, Refusal, ToolUse, ToolResult, tool_text, InputImage, InputAudio, InputVideo, InputFile,
+                                mk_tool_res_msg, sys_text, part_txt, data_url)
 from .streaming import *
 from .streaming import mk_acollect_stream
 
@@ -23,12 +24,12 @@ from .streaming import mk_acollect_stream
 def norm_tool_call(item):
     typ = item.get("type", "")
     if typ == "function_call":
-        extra = {k:v for k,v in item.items() if k not in ("id","name","arguments")}
-        return ToolCall(id=item["id"], name=item["name"], arguments=json.loads(item["arguments"]), extra=extra)
+        raw = {k:v for k,v in item.items() if k not in ("id","name","arguments")}
+        return ToolUse(id=item["id"], name=item["name"], arguments=json.loads(item["arguments"]), raw=raw)
     if typ.endswith("_call"):  # web_search_call, file_search_call, etc.
         name = typ.removesuffix("_call")
-        extra = {k:v for k,v in item.items() if k not in ("id")}
-        return ToolCall(id=item.get("id",""), name=name, arguments=item.get("action", {}), server=True, extra=extra)
+        raw = {k:v for k,v in item.items() if k not in ("id")}
+        return ToolUse(id=item.get("id",""), name=name, arguments=item.get("action", {}), server=True, raw=raw)
 
 def norm_tool_calls(resp):
     "Extract Responses API tool call items as normalized tool calls."
@@ -70,15 +71,13 @@ def norm_parts(resp):
             for c in item["content"]:
                 if (ctyp := c["type"]) == "output_text":
                     c['citations'] = c.pop('annotations', [])
-                    parts.append(Part(type=PartType.text, text=c['text'], data=c))
+                    parts.append(Text(c['text'], citations=c['citations'], raw=c))
                 elif ctyp == "refusal":
-                    parts.append(Part(type=PartType.refusal, text=c['refusal'], data=c))
+                    parts.append(Refusal(c['refusal'], raw=c))
         elif typ == "reasoning":
-            for s in item["summary"]: parts.append(Part(type=PartType.thinking, text=s['text'], data=item))
+            for s in item["summary"]: parts.append(Thinking(s['text'], raw=item))
         elif typ == "function_call" or typ.endswith("_call"):
-            tc = norm_tool_call(item)
-            tdata = {**tc.extra, 'id':tc.id, 'name':tc.name, 'arguments':tc.arguments, 'server':tc.server}
-            parts.append(Part(type=PartType.tool_use, data=tdata))
+            parts.append(norm_tool_call(item))
     return parts
 
 # %% ../nbs/02_oai_responses.ipynb #7cd48aa5
@@ -116,32 +115,29 @@ async def acollect_stream(resp, **kwargs):
 def _sanid(id_str): return id_str[:64] # codex max 64 char limit
 
 # %% ../nbs/02_oai_responses.ipynb #b746c82b
-def denorm_tool_use(p:Part):
+def denorm_tool_use(p:ToolUse):
     "Convert canonical tool_use Part back to OpenAI Responses function_call item."
-    return dict(type='function_call', call_id=_sanid(p.data.get('id')), name=p.data.get('name'), arguments=json.dumps(p.data.get('arguments', '{}')))
+    return dict(type='function_call', call_id=_sanid(p.id), name=p.name, arguments=json.dumps(p.arguments))
 
 # %% ../nbs/02_oai_responses.ipynb #8f42adf7
 def denorm_tool(m:Msg):
-    items = []
-    for part in m.content:
-        if part.type == PartType.tool_result: items.append(denorm_tool_result(part))
-    return items
+    return [denorm_tool_result(p) for p in m.content if isinstance(p, ToolResult)]
 
 # %% ../nbs/02_oai_responses.ipynb #67c8de13
 def denorm_assistant(m:Msg):
     items, srv_call_id = [], None
     for p in m.content:
-        if p.type == PartType.tool_use:
+        if isinstance(p, ToolUse):
             items.append(denorm_tool_use(p))
             # TODO: Server tcs are excluded during deserialization in lisette, so this
             # is not used. Anthropic checks for `srvtoolu` and requires the full tool result metadata
             # which is a lot to store.
             # Instead of reconstructing server tool calls as actual tool uses we can make it a regular msg
             # telling AI a server tool was executed
-            if p.data.get('server'):
-                srv_txt = f"[Server tool `{p.data['name']}` executed successfully, results are generated below]"
-                items.append(dict(type='function_call_output', call_id=p.data['id'], output=srv_txt))    
-        elif p.type in (PartType.text, PartType.thinking):
+            if p.server:
+                srv_txt = f"[Server tool `{p.name}` executed successfully, results are generated below]"
+                items.append(dict(type='function_call_output', call_id=p.id, output=srv_txt))    
+        elif isinstance(p, (Text, Thinking)):
             items.append(dict(type="message", role="assistant", content=[dict(type="output_text", text=p.text)]))
     return items
 
@@ -196,11 +192,11 @@ def denorm_user(m:Msg):
     "Convert canonical user Msg to OpenAI Responses input message."
     parts = []
     for p in m.content:
-        if   p.type == PartType.text:        parts.append({"type": "input_text", "text": p.text or ""})
-        elif p.type == PartType.input_image: parts.append(denorm_image(p))
-        elif p.type == PartType.input_audio: raise ValueError("OpenAI Responses API does not support audio input; Coming Soon.") 
-        elif p.type == PartType.input_video: parts.append(denorm_video(p))
-        elif p.type == PartType.input_file:  parts.append(denorm_file(p))
+        if   isinstance(p, Text):       parts.append({"type": "input_text", "text": p.text or ""})
+        elif isinstance(p, InputImage): parts.append(denorm_image(p))
+        elif isinstance(p, InputAudio): raise ValueError("OpenAI Responses API does not support audio input; Coming Soon.") 
+        elif isinstance(p, InputVideo): parts.append(denorm_video(p))
+        elif isinstance(p, InputFile):  parts.append(denorm_file(p))
     return dict(type='message', role='user', content=parts)
 
 # %% ../nbs/02_oai_responses.ipynb #4ced282f
@@ -215,18 +211,18 @@ def denorm_file(p):
     return {"type": "input_file", "file_url": p.text}
 
 # %% ../nbs/02_oai_responses.ipynb #145b1c79
-def denorm_tool_result(m:Part):
+def denorm_tool_result(m:ToolResult):
     "Convert canonical tool result back to OpenAI Responses function_call_output item."
-    cid = _sanid(m.data.get('id', '') or m.data.get('call_id'))
+    cid = _sanid(m.id or (m.raw or {}).get('call_id'))
     if isinstance(m.text, list):
         out = []
         for p in m.text:
-            if   p.type == PartType.text:        out.append({"type": "input_text", "text": p.text or ""})
-            elif p.type == PartType.input_image: out.append(denorm_image(p))
-            elif p.type == PartType.input_file:  out.append(denorm_file(p))
+            if   isinstance(p, Text):       out.append({"type": "input_text", "text": p.text or ""})
+            elif isinstance(p, InputImage): out.append(denorm_image(p))
+            elif isinstance(p, InputFile):  out.append(denorm_file(p))
             else: raise ValueError(f"OpenAI Responses tool_result does not support {p.type}")
         return dict(type='function_call_output', call_id=cid, output=out)
-    return dict(type='function_call_output', call_id=cid, output=str(m.text))
+    return dict(type='function_call_output', call_id=cid, output=tool_text(m.text))
 
 # %% ../nbs/02_oai_responses.ipynb #9b0f81a4
 @delegates(payload_kwargs)

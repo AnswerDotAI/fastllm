@@ -11,19 +11,19 @@ Clone and install locally into your `aai-ws` env
 
 ``` python
 from fastllm.types import Completion
-from aidialog.msg_parts import Msg, Part, PartType, mk_tool_res_msg
+from aidialog.msg_parts import Msg, Part, Text, Thinking, ToolUse, InputImage, mk_tool_res_msg
 from fastllm.acomplete import acomplete
 import asyncio, json
 
 # Helpers
-def user(text): return Msg(role='user', content=[Part(type=PartType.text, text=text)])
+def user(text): return Msg(role='user', content=[Text(text)])
 
 async def stream(msgs, model, max_think=10, **kw):
     "Stream a response, printing each item's `formatted` (🧠 per thinking delta). Returns the final Completion."
     cnt = 0
     async for o in await acomplete(msgs, model, stream=True, **kw):
         if not isinstance(o, Part): continue
-        if o.type == PartType.thinking:
+        if isinstance(o, Thinking):
             cnt += 1
             if cnt > max_think: continue
         print(o.formatted, end='', flush=True)
@@ -216,13 +216,13 @@ Enable model reasoning with `reasoning_effort`. The canonical values (`low`, `me
 print("Claude: ", end='')
 r = await stream([user("What is 127 × 849?")], model='claude-sonnet-4-6', reasoning_effort='low', max_tokens=8192)
 for p in r.message.content:
-    if p.type == PartType.thinking: print(f"\n🧠 {p.text[:150]}...")
+    if isinstance(p, Thinking): print(f"\n🧠 {p.text[:150]}...")
 
 # Kimi with thinking — same interface
 print("\nKimi: ", end='')
 r = await stream([user("What is 127 × 849?")], model='accounts/fireworks/models/kimi-k2p5', vendor_name='fireworks_ai', reasoning_effort='low', max_tokens=8192)
 for p in r.message.content:
-    if p.type == PartType.thinking: print(f"\n🧠 {p.text[:150]}...")
+    if isinstance(p, Thinking): print(f"\n🧠 {p.text[:150]}...")
 ```
 
     Claude: 🧠🧠🧠## Calculating 127 × 849
@@ -283,12 +283,12 @@ print(f"\nServer tools used: {[tc.name for tc in r.tool_calls if tc.server]}")
 
 ## Caching (Anthropic)
 
-Anthropic supports prompt caching via `cache_control`. Pass it through `Part.data` — repeat calls with the same cached content save tokens:
+Anthropic supports prompt caching via `cache_control`. Set it on a part’s `cache_control` — repeat calls with the same cached content save tokens:
 
 ``` python
 # Cache a long system prompt (must be >1024 tokens for Anthropic caching)
 long_ctx = "You are an expert on the solar system. " * 200
-system = Part(type=PartType.text, text=long_ctx, data={'cache_control': {'type': 'ephemeral'}})
+system = Text(long_ctx, cache_control={'type': 'ephemeral'})
 
 print("Call 1: ", end='')
 r1 = await stream([user("What is Jupiter's mass?")], model='claude-sonnet-4-20250514', system=system, max_tokens=mtok)
@@ -347,8 +347,8 @@ Send images to any provider that supports them. The canonical `input_image` part
 ``` python
 img_url = "https://img.freepik.com/free-photo/mountain-range-body-water_53876-139760.jpg?semt=ais_hybrid&w=740&q=80"
 img_msg = Msg(role='user', content=[
-    Part(type=PartType.input_image, text=img_url),
-    Part(type=PartType.text, text="What do you see in this image?")
+    InputImage(img_url),
+    Text("What do you see in this image?")
 ])
 
 for name, kw in [('claude-sonnet-4-20250514', {}), ('gpt-4o-mini', {}), ('models/gemini-3-flash-preview', {})]:
@@ -380,13 +380,13 @@ for name, kw in [('claude-sonnet-4-20250514', {}), ('gpt-4o-mini', {}), ('models
 
     The overall mood of the image is peaceful, cool-toned, and tranquil.
 
-`fastllm` supports four media part types via `PartType`. Provider support varies:
+`fastllm` supports four media part classes. Provider support varies:
 
-| Part Type     | Anthropic | OpenAI Responses | OpenAI Chat | Gemini |
-|---------------|-----------|------------------|-------------|--------|
-| `input_image` | ✅        | ✅               | ✅          | ✅     |
-| `input_audio` | ❌        | ❌ (coming soon) | ✅          | ✅     |
-| `input_video` | ❌        | ❌               | ❌          | ✅     |
-| `input_file`  | ✅        | ✅               | ✅          | ✅     |
+| Media part   | Anthropic | OpenAI Responses | OpenAI Chat | Gemini |
+|--------------|-----------|------------------|-------------|--------|
+| `InputImage` | ✅        | ✅               | ✅          | ✅     |
+| `InputAudio` | ❌        | ❌ (coming soon) | ✅          | ✅     |
+| `InputVideo` | ❌        | ❌               | ❌          | ✅     |
+| `InputFile`  | ✅        | ✅               | ✅          | ✅     |
 
-All media parts accept either a URL or a base64 data URL in `Part.text`. Unsupported combinations raise a clear `ValueError`.
+All media parts accept either a URL or a base64 data URL as their `text`. Unsupported combinations raise a clear `ValueError`.

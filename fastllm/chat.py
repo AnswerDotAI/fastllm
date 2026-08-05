@@ -17,7 +17,7 @@ from fastcore.meta import delegates
 from dataclasses import dataclass
 
 from .types import *
-from aidialog.msg_parts import (Msg, Part, PartType, ToolCall, mk_tool_res_msg, mk_tr_details,
+from aidialog.msg_parts import (Msg, Part, PartType, Text, Thinking, ToolUse, ToolResult, InputImage, tool_text, mk_tool_res_msg, mk_tr_details,
     tool_info, usage_info, think_start, think_end, StopResponse, ToolResponse, display_list, fmt2hist, hist2fmt,
     mk_content, mk_result_fence, split_fence_msgs, extract_fence_call, trunc_str)
 from .acomplete import *
@@ -32,18 +32,17 @@ def _add_cache_control(
     cc = {"type": "ephemeral"} | ({"ttl": ttl} if ttl else {})
     cache_idx = None
     for idx, part in enumerate(msg.content):
-        if part.type in (PartType.text, PartType.tool_use): cache_idx = idx
-    msg.content[idx].data = merge(msg.content[idx].data or {}, dict(cache_control=cc))
+        if isinstance(part, (Text, ToolUse)): cache_idx = idx
+    msg.content[idx].cache_control = cc
     return msg
 
 def _has_cache(msg):
     "Check if msg has cache_control set"
-    return any(part.data and 'cache_control' in part.data for part in msg.content)
+    return any(part.cache_control for part in msg.content)
 
 def remove_cache_ckpts(msg):
     "remove cache checkpoints and return msg."
-    for part in msg.content:
-        if part.data: part.data.pop('cache_control', None)
+    for part in msg.content: part.cache_control = None
     return msg
 
 
@@ -68,10 +67,10 @@ def mk_msg(
     if content is None: return None
     if isinstance(content, Msg): return content
     if isinstance(content, Completion): return content.message
-    if isinstance(content, list) and len(content) == 1 and isinstance(content[0], str): parts = [Part(PartType.text, content[0])]
+    if isinstance(content, list) and len(content) == 1 and isinstance(content[0], str): parts = [Text(content[0])]
     elif isinstance(content, list): parts = [mk_content(o) for o in content]
-    elif isinstance(content, dict): return Msg(role=content['role'], content=[Part(PartType.text, content['content'])])
-    else: parts = [Part(PartType.text, content)]
+    elif isinstance(content, dict): return Msg(role=content['role'], content=[Text(content['content'])])
+    else: parts = [Text(content)]
     msg = Msg(role=role, content=parts)
     return _add_cache_control(msg, ttl=ttl) if cache else msg
 
@@ -115,8 +114,7 @@ def cite_footnote(citations):
 # %% ../nbs/07_chat.ipynb #2680479a
 def postproc(chunk):
     'Convert Anthropic citations into hyperlink text'
-    if isinstance(chunk, Part) and (chunk.data or {}).get('citations'):
-        return Part(PartType.text, text=cite_footnote(chunk.data['citations']))
+    if isinstance(chunk, Text) and chunk.citations: return Text(cite_footnote(chunk.citations))
     return chunk
 
 # %% ../nbs/07_chat.ipynb #1757f134
@@ -138,12 +136,10 @@ def lite_mk_func(f):
 def _mk_tool_result(res):
     "Unwrap `ToolResponse`, and format tool result message"
     if isinstance(res, ToolResponse): return res.content
-    if isinstance(res, str): content = res
-    else: content = str(res)
-    return content
+    return tool_text(res)
 
 # %% ../nbs/07_chat.ipynb #a0fcc96e
-def _call_func(tc:ToolCall, tool_schemas, ns, callf):
+def _call_func(tc:ToolUse, tool_schemas, ns, callf):
     "Call tool function synchronously and return formatted result"
     fn, valid = tc.name, {nested_idx(o,'function','name') for o in tool_schemas or []}
     if fn not in valid: return f"Tool not defined in tool_schemas: {fn}"
@@ -177,7 +173,7 @@ effort = AttrDict({o[0]:o for o in ('low','medium','high')})
 effort['x'] = 'max'
 
 # %% ../nbs/07_chat.ipynb #e1facb77
-def _mk_prefill(pf): return Part(PartType.text, text=pf)
+def _mk_prefill(pf): return Text(pf)
 
 # %% ../nbs/07_chat.ipynb #dc17f844
 def _has_stop(tres_parts): return any(isinstance(p.text, StopResponse) for p in tres_parts)
@@ -275,13 +271,13 @@ class AsyncChat:
         "Prepare the system prompt and messages list for the API call"
         sp = self.sp
         if sp:
-            if 0 in self.cache_idxs: sp = _add_cache_control(Msg('',[Part(PartType.text, sp)]))
+            if 0 in self.cache_idxs: sp = _add_cache_control(Msg('',[Text(sp)]))
             cache_idxs = L(self.cache_idxs).filter().map(lambda o: o-1 if o>0 else o)
         else: cache_idxs = self.cache_idxs
         if msg: self.hist = self.hist+[msg]
         self.hist = mk_msgs(self.hist, self.cache and 'claude' in self.model, cache_idxs, self.ttl)
         msgs = self.hist
-        if prefill: msgs = self.hist + [Msg(role='assistant', content=[Part(PartType.text, prefill)])]
+        if prefill: msgs = self.hist + [Msg(role='assistant', content=[Text(prefill)])]
         return sp, msgs
     
     @property
@@ -376,8 +372,7 @@ async def _call(self:AsyncChat, msg=None, prefill=None, temp=None, think=None, s
         if self.prefill: yield _mk_prefill(self.prefill)
         res = astream_with_complete(res, postproc=postproc)
         async for chunk in res:
-            if isinstance(chunk, Part) and chunk.type==PartType.thinking and self.showthink:
-                chunk.data = {**(chunk.data or {}), 'showthink': True}
+            if isinstance(chunk, Thinking) and self.showthink: chunk.showthink = True
             yield chunk
         res = res.value
     self.turn_res, self.turn_msg = res, contents(res)
@@ -460,7 +455,7 @@ class DeepseekMsgsCallback(ChatCallback):
     async def after_msgs(self):
         if 'deepseek' not in self.model: return
         for m in self.turn_msgs:
-            if m.role=='assistant' and not any(p.type==PartType.thinking for p in m.content): m.content.append(Part(PartType.thinking, ''))
+            if m.role=='assistant' and not any(isinstance(p, Thinking) for p in m.content): m.content.append(Thinking(''))
         if False: yield
 
 # %% ../nbs/07_chat.ipynb #14baac3e
@@ -473,7 +468,7 @@ class DeepseekPrefillCallback(ChatCallback):
 
 # %% ../nbs/07_chat.ipynb #ce47dc4a
 def add_warning(r, msg):
-    wrn = Part(PartType.text, f"<warning>{msg}</warning>")
+    wrn = Text(f"<warning>{msg}</warning>")
     if r.message.content: r.message.content.append(wrn)
     else: r.message.content = [wrn]
 
@@ -534,11 +529,11 @@ class FenceToolCallback(ChatCallback):
                 lang, code = fence
                 out = await run_fence_tool(lang, code, self.ns)
                 for p in reversed(m.content):
-                    if p.type == PartType.text:
+                    if isinstance(p, Text):
                         p.text += out
                         break
                 self.chat.toolloop = True
-                if self.stream: yield Part(PartType.text, text=out)
+                if self.stream: yield Text(out)
 
 # %% ../nbs/07_chat.ipynb #1897aea2
 def _inject_tool_reminder(msgs, reminder):
@@ -546,7 +541,7 @@ def _inject_tool_reminder(msgs, reminder):
     while i>0 and msgs[i-1].role=='tool': i-=1
     if i>=len(msgs): return msgs
     msgs,m = list(msgs),msgs[i]
-    m.content.append(Part(type=PartType.text, text=reminder))
+    m.content.append(Text(reminder))
     msgs[i] = m
     return msgs
 

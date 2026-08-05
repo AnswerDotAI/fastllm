@@ -14,7 +14,8 @@ from fastcore.meta import *
 from fastspec.errors import api_error_from_event
 
 from .types import *
-from aidialog.msg_parts import Part, PartType, Msg, ToolCall, sys_text, part_txt, data_url
+from aidialog.msg_parts import (Part, PartType, Msg, Text, Thinking, Refusal, ToolUse, ToolResult, tool_text,
+                                InputImage, InputAudio, InputVideo, InputFile, sys_text, part_txt, data_url)
 from .streaming import *
 from .streaming import mk_acollect_stream
 from .openai_responses import norm_usage
@@ -27,9 +28,9 @@ def norm_tool_calls(resp, delta=False):
     if not   (tcs:= nested_idx(resp, 'choices', 0, key, 'tool_calls')): return out
     for tc in tcs:
         if not (fn:=tc.get("function")): continue
-        extra = {k:v for k,v in tc.items() if k not in ("id","function")}
-        args  = json.loads(fn.get("arguments")) if not delta else {'_delta': fn.get("arguments")}
-        out.append(ToolCall(id=tc.get("id",""), name=fn.get("name",""), arguments=args, extra=extra))
+        raw  = {k:v for k,v in tc.items() if k not in ("id","function")}
+        args = json.loads(fn.get("arguments")) if not delta else {'_delta': fn.get("arguments")}
+        out.append(ToolUse(id=tc.get("id",""), name=fn.get("name",""), arguments=args, raw=raw))
     return out
 
 # %% ../nbs/03_oai_chat.ipynb #b387d62d
@@ -43,14 +44,10 @@ def norm_parts(resp):
     "Normalize chat.completions response object into Completion."
     msg = nested_idx(resp, 'choices', 0, 'message') or {}
     parts = []
-    if thinking := msg.get('reasoning_content'): parts.append(Part(type="thinking", text=thinking))
-    if cts := msg.get('content'): parts.append(Part(type="text",text=cts,data=dict(citations=msg.get('annotations',[]))))
-    if ref := msg.get('refusal'): parts.append(Part(type="refusal",text=ref))
-    tcs = norm_tool_calls(resp)
-    for tc in tcs: 
-        tdata = {**tc.extra, 'id':tc.id, 'name':tc.name, 'arguments':tc.arguments, 'server':tc.server}
-        parts.append(Part(type="tool_use", data=tdata))
-    return parts
+    if thinking := msg.get('reasoning_content'): parts.append(Thinking(thinking))
+    if cts := msg.get('content'): parts.append(Text(cts, citations=msg.get('annotations',[])))
+    if ref := msg.get('refusal'): parts.append(Refusal(ref))
+    return parts + norm_tool_calls(resp)
 
 # %% ../nbs/03_oai_chat.ipynb #9baac40e
 def norm_sse_event(ev, **kwargs):
@@ -69,7 +66,7 @@ def norm_sse_event(ev, **kwargs):
 def delta_index_fn(d, typ, last_typ, last_idx):
     'Returns accumulation index for current delta and updated last idx'
     if d.tool_calls: 
-        tc_idx = nested_idx(d.tool_calls, 0, 'extra', 'index')
+        tc_idx = nested_idx(d.tool_calls, 0, 'raw', 'index')
         return f"tool_{tc_idx}", last_idx
     if not (last_typ or last_idx): return 0,0
     if typ == last_typ: return last_idx, last_idx
@@ -82,30 +79,30 @@ async def acollect_stream(resp, **kwargs):
     async for o in res: yield o
 
 # %% ../nbs/03_oai_chat.ipynb #5a7129f1
-def denorm_tool_use(p:Part):
+def denorm_tool_use(p:ToolUse):
     "Convert canonical tool_use Part to OpenAI Chat tool_call dict."
-    return dict(id=p.data.get('id'), type='function', function=dict(name=p.data.get('name'), arguments=json.dumps(p.data.get('arguments', '{}'))))
+    return dict(id=p.id, type='function', function=dict(name=p.name, arguments=json.dumps(p.arguments)))
 
 def denorm_assistant(m:Msg):
     "Convert canonical assistant Msg to OpenAI Chat assistant message + synthetic tool responses for server tools."
     tcs, srv_responses, texts = [], [], []
     for p in m.content:
-        if p.type == PartType.tool_use:
+        if isinstance(p, ToolUse):
             tcs.append(denorm_tool_use(p))
-            if p.data.get('server'):
-                srv_txt = f"[Server tool `{p.data['name']}` executed successfully, results are generated]"
-                srv_responses.append(dict(role='tool', tool_call_id=p.data['id'], content=srv_txt))
-        elif p.type == PartType.text: texts.append(p)
+            if p.server:
+                srv_txt = f"[Server tool `{p.name}` executed successfully, results are generated]"
+                srv_responses.append(dict(role='tool', tool_call_id=p.id, content=srv_txt))
+        elif isinstance(p, Text): texts.append(p)
     msg = dict(role='assistant')
     if texts: msg['content'] = texts[0].text if len(texts)==1 else [dict(type='text', text=p.text or '') for p in texts]
     if tcs: msg['tool_calls'] = tcs
-    thinking = [p for p in m.content if p.type == PartType.thinking]
+    thinking = [p for p in m.content if isinstance(p, Thinking)]
     if thinking: msg['reasoning_content'] = ''.join(p.text or '' for p in thinking)
     return [msg] + srv_responses
 
 def denorm_tool(m:Msg):
     "Convert canonical tool Msg to list of OpenAI Chat tool messages."
-    return [denorm_tool_result(p) for p in m.content if p.type == PartType.tool_result]
+    return [denorm_tool_result(p) for p in m.content if isinstance(p, ToolResult)]
 
 def denorm_msgs(msgs:list[Msg]):
     "Convert list of canonical Msgs to OpenAI Chat messages."
@@ -147,11 +144,11 @@ def denorm_user(m:Msg):
     "Convert canonical user Msg to OpenAI Chat user message."
     parts = []
     for p in m.content:
-        if   p.type == PartType.text:        parts.append({"type": "text", "text": p.text or ""})
-        elif p.type == PartType.input_image: parts.append(denorm_image(p))
-        elif p.type == PartType.input_audio: parts.append(denorm_audio(p))
-        elif p.type == PartType.input_video: raise ValueError("OpenAI Chat API does not support video input")
-        elif p.type == PartType.input_file:  parts.append(denorm_file(p))
+        if   isinstance(p, Text):       parts.append({"type": "text", "text": p.text or ""})
+        elif isinstance(p, InputImage): parts.append(denorm_image(p))
+        elif isinstance(p, InputAudio): parts.append(denorm_audio(p))
+        elif isinstance(p, InputVideo): raise ValueError("OpenAI Chat API does not support video input")
+        elif isinstance(p, InputFile):  parts.append(denorm_file(p))
     if len(parts) == 1 and parts[0].get('type') == 'text': return dict(role='user', content=parts[0]['text'])
     return dict(role='user', content=parts)
 
@@ -170,10 +167,10 @@ def denorm_file(p):
     raise ValueError("OpenAI Chat file input requires base64 data URL or file_id, not URLs")
 
 # %% ../nbs/03_oai_chat.ipynb #0e9751c8
-def denorm_tool_result(p:Part):
+def denorm_tool_result(p:ToolResult):
     "Convert canonical tool_result Part to OpenAI Chat tool message."
     if isinstance(p.text, list): raise ValueError("OpenAI Chat does not support media in tool results")
-    return dict(role='tool', tool_call_id=p.data.get('id') or p.data.get('call_id', ''), content=str(p.text))
+    return dict(role='tool', tool_call_id=p.id or (p.raw or {}).get('call_id', ''), content=tool_text(p.text))
 
 # %% ../nbs/03_oai_chat.ipynb #d2f55686
 @delegates(payload_kwargs)
