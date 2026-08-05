@@ -2,10 +2,10 @@
 
 # %% auto #0
 __all__ = ['ant_tc_types', 'norm_tool_call', 'norm_tool_calls', 'norm_usage', 'finalize_usage', 'norm_finish', 'norm_parts',
-           'norm_sse_event', 'delta_index_fn', 'acollect_stream', 'denorm_tool_use', 'denorm_assistant', 'denorm_tool',
-           'denorm_msgs', 'denorm_tool_schs', 'denorm_tool_choice', 'denorm_reasoning', 'denorm_web_search',
-           'denorm_system', 'denorm_user', 'denorm_image', 'denorm_file', 'denorm_tool_result', 'mk_payload',
-           'get_hdrs', 'cost']
+           'norm_tr_parts', 'norm_sse_event', 'delta_index_fn', 'acollect_stream', 'denorm_tool_use',
+           'denorm_assistant', 'denorm_tool', 'denorm_msgs', 'denorm_tool_schs', 'denorm_tool_choice',
+           'denorm_reasoning', 'denorm_web_search', 'denorm_system', 'denorm_user', 'denorm_image', 'denorm_file',
+           'denorm_tool_result', 'mk_payload', 'get_hdrs', 'cost']
 
 # %% ../nbs/04_anthropic.ipynb #02afd3d7
 import json
@@ -15,7 +15,7 @@ from fastcore.meta import *
 from fastspec.errors import api_error_from_event
 
 from .types import *
-from aidialog.msg_parts import (Part, PartType, Msg, Text, Thinking, ToolUse, ToolResult, tool_text, ServerToolResult,
+from aidialog.msg_parts import (Part, PartType, mk_part, Msg, Text, Thinking, ToolUse, ToolResult, tool_text, ServerToolResult,
                                 InputImage, InputAudio, InputVideo, InputFile, data_url)
 from .streaming import *
 from .streaming import mk_acollect_stream
@@ -80,6 +80,20 @@ def norm_parts(resp):
             if tc := norm_tool_call(b): parts.append(tc)
         elif typ == PartType.server_tool_result: parts.append(ServerToolResult(b.get("text", ""), raw=b))
         else: parts.append(Text(b.get("text", ""), raw=b))
+    return parts
+
+# %% ../nbs/04_anthropic.ipynb #5d1440b7
+def norm_tr_parts(content):
+    "Normalize an Anthropic `tool_result` content str or block list to canonical `Part`s"
+    if isinstance(content, str): return [Text(content)]
+    parts = []
+    for b in content:
+        typ = b.get('type', 'text')
+        if typ=='text': parts.append(Text(b.get('text',''), raw=b))
+        elif typ=='image':
+            s = b['source']
+            parts.append(InputImage(f"data:{s['media_type']};base64,{s['data']}", mime=s['media_type'], raw=b))
+        else: parts.append(mk_part(**b))
     return parts
 
 # %% ../nbs/04_anthropic.ipynb #a3869e31
