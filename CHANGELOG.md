@@ -2,6 +2,15 @@
 
 <!-- do not remove -->
 
+## 0.0.38
+
+### New Features
+
+- Add `norm_tr_parts` to anthropic ([#82](https://github.com/AnswerDotAI/fastllm/issues/82))
+- Replace generic Part/ToolCall with typed part classes (Text, Thinking, ToolUse, ToolResult, Input...) across all providers ([#81](https://github.com/AnswerDotAI/fastllm/issues/81))
+- Refactor streaming to yield typed Part/Status objects with `formatted` rendering, replacing dict chunks and StreamFormatter with StreamAccum/Refresh ([#80](https://github.com/AnswerDotAI/fastllm/issues/80))
+
+
 ## 0.0.37
 
 ### New Features
