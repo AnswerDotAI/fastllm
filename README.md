@@ -10,21 +10,23 @@ Clone and install locally into your `aai-ws` env
 ## Setup
 
 ``` python
-from fastllm.types import Msg, Part, PartType, Completion
-from fastllm.acomplete import acomplete, mk_tool_res_msg
+from fastllm.types import Completion
+from aidialog.msg_parts import Msg, Part, PartType, mk_tool_res_msg
+from fastllm.acomplete import acomplete
 import asyncio, json
 
 # Helpers
 def user(text): return Msg(role='user', content=[Part(type=PartType.text, text=text)])
 
-async def stream(msgs, model, **kw):
-    "Stream a response, printing text/thinking as it arrives. Returns the final Completion."
-    cnt, max_think = 0, 10
+async def stream(msgs, model, max_think=10, **kw):
+    "Stream a response, printing each item's `formatted` (🧠 per thinking delta). Returns the final Completion."
+    cnt = 0
     async for o in await acomplete(msgs, model, stream=True, **kw):
-        if not isinstance(o, Completion):
-            if o.get('thinking') and cnt < max_think: print('🧠', end='', flush=True)
-            if txt := o.get('text'): print(txt, end='', flush=True)
+        if not isinstance(o, Part): continue
+        if o.type == PartType.thinking:
             cnt += 1
+            if cnt > max_think: continue
+        print(o.formatted, end='', flush=True)
     print()
     return o
 ```
@@ -35,8 +37,7 @@ mtok = 1024
 
 ## Chat — One Interface, Every Provider
 
-The same [`acomplete`](./acomplete.html#acomplete) call works with
-Claude, GPT, Gemini, and Kimi. Just change the model name:
+The same `acomplete` call works with Claude, GPT, Gemini, and Kimi. Just change the model name:
 
 ``` python
 models = [
@@ -51,19 +52,22 @@ for name, kw in models:
 ```
 
           claude-sonnet-4-20250514 → Bonjour!
-                       gpt-4o-mini → "Hello" in French is "Bonjour."
+                       gpt-4o-mini → In French, "hello" is said as "bonjour."
      models/gemini-3-flash-preview → Bonjour.
-    accounts/fireworks/models/kimi-k2p5 → The user wants me to say "hello" in French. The word for "hello" in French is "Bonjour". 
+    accounts/fireworks/models/kimi-k2p5 → The user is asking me to say "hello" in French. This is a very straightforward request. The common ways to say hello in French are:
 
-    This is a simple, straightforward request. I should provide the translation and perhaps a bit of context (like when it's used), but the main thing is to say "Bonjour".
+    1. "Bonjour" - the standard, formal way to say hello/good day
+    2. "Salut" - informal way to say hi/hello (also used for goodbye)
+    3. "Bonsoir" - good evening
+    4. "Coucou" - very informal, cute way to say hi
 
-    I should not overcomplicate this. Just provide the French word for hello.
+    Since the user just asked for "hello" without specifying context, "Bonjour" is the most appropriate and standard answer. I should provide the most common translation and perhaps mention the informal alternative for completeness.
+
+    The response should be simple and direct.
 
 ## Multi-Turn — Swap Providers Mid-Conversation
 
-Build a conversation with one provider, then seamlessly continue it with
-another. `fastllm` translates between every provider’s native format
-automatically:
+Build a conversation with one provider, then seamlessly continue it with another. `fastllm` translates between every provider’s native format automatically:
 
 ``` python
 # Turn 1: Claude starts the conversation
@@ -81,7 +85,7 @@ print("GPT: ", end='')
 r2 = await stream(msgs, model='gpt-4o-mini', max_tokens=mtok)
 ```
 
-    GPT: As of now, Saturn has the most moons, surpassing Jupiter.
+    GPT: As of now, Saturn has the most moons, with over 80 confirmed moons.
 
 ``` python
 # Turn 3: Switch to Gemini — same msgs, different provider
@@ -90,7 +94,7 @@ print("Gemini: ", end='')
 r3 = await stream(msgs, model='models/gemini-3-flash-preview', max_tokens=mtok)
 ```
 
-    Gemini: We identified the largest planets in our solar system and confirmed that Saturn currently has the most moons.
+    Gemini: The conversation identified the three largest planets in the solar system and noted that Saturn currently has the most moons.
 
 ``` python
 # Turn 4: Switch to Kimi — works the same way
@@ -99,13 +103,11 @@ print("Kimi: ", end='')
 r4 = await stream(msgs, model='accounts/fireworks/models/kimi-k2p5', vendor_name='fireworks_ai', max_tokens=mtok)
 ```
 
-    Kimi: 🧠🧠🧠🧠🧠🧠🧠🧠🧠🧠Saturn is the only planet less dense than water, meaning it would theoretically float in a giant bathtub.
+    Kimi: 🧠🧠🧠🧠🧠🧠🧠🧠🧠🧠Saturn is less dense than water, meaning it would theoretically float if you could find a bathtub large enough to hold it.
 
 ## System Prompts
 
-Pass a system prompt to any provider — `fastllm` maps it to each API’s
-native mechanism (Anthropic `system`, OpenAI `instructions`, Gemini
-`system_instruction`):
+Pass a system prompt to any provider — `fastllm` maps it to each API’s native mechanism (Anthropic `system`, OpenAI `instructions`, Gemini `system_instruction`):
 
 ``` python
 sys = "You are a pirate chef. Always respond in pirate speak and mention food."
@@ -117,35 +119,34 @@ print("Gemini: ", end='')
 r = await stream([user("What should I do today?")], model='models/gemini-3-flash-preview', system=sys, max_tokens=mtok)
 ```
 
-    Claude: Ahoy there, me hearty! *tips pirate hat* 
+    Claude: Ahoy there, me hearty! *tips chef's hat with a feathered plume* 
 
-    Ye be askin' what to do today, eh? Well, as a seasoned sea cook, I'd say ye should start by raidin' yer galley for some fine grub! Perhaps whip up some hearty hardtack biscuits or a steamin' bowl of seafarer's stew with potatoes and salted pork, arrr!
+    Ye be askin' what to do on this fine day, eh? Well, shiver me spatulas, I've got some tasty suggestions for ye!
 
-    If ye be feelin' adventurous, why not venture out to the market like ye be searchin' for buried treasure? Hunt down the finest fish, the ripest tropical fruits, and maybe some exotic spices from distant shores! 
+    First, ye should be raidin' yer galley (that be yer kitchen, landlubber!) and whip up some grub fit for a crew! Perhaps some hearty sea biscuits with honey, or a fine fish stew that'll warm yer bones like treasure warms the heart!
 
-    And if the weather be fair, consider cookin' outdoors on the deck - er, I mean yer patio! Fire up the grill and roast some catch of the day with a side of ship's biscuits. Nothing beats the taste of food cooked under the open sky, savvy?
+    Then, if the weather be fair, take yerself outside and feel that salty breeze on yer face while ye munch on some portable provisions - maybe some dried fruits and nuts, perfect for any seafarin' adventure!
 
-    Whatever ye choose to do, make sure ye don't sail on an empty stomach, ye scallywag! A well-fed pirate be a happy pirate! 
+    And if ye be feelin' ambitious, batten down the hatches and try cookin' somethin' new! A spicy jambalaya or some coconut rice that'll transport ye straight to the Caribbean seas!
 
-    *waves wooden spoon in the air* 
+    Remember, me matey - a pirate's day ain't complete without good food in yer belly and the spirit of adventure in yer heart! Now off with ye, and may yer meals be as bountiful as buried treasure! 
 
-    Now off with ye, and may yer day be filled with delicious adventures! Arrr! 🏴‍☠️
-    Gemini: Ahoy there, ye scurvy dog! If ye be lookin' for a way to spend the tide, I’ve got a recipe for adventure—and a belly full of grub!
+    *waves wooden spoon like a cutlass*
 
-    First, haul yer carcass down to the galley! A true buccaneer starts the day by breakin' his fast with a bowl of **Salmagundi**—that be a fine mess of chopped meats, pickled herrings, and whatever greens we haven't fed to the parrots yet. 
+    Arrr, what say ye? Does any of this grub sound temptin' to yer taste buds?
+    Gemini: Ahoy there, ye scurvy bilge-rat! If ye be lookin' for a way to spend yer daylight hours, I’ve got just the plan for a hungry soul like yerself.
 
-    Once yer belly is lined with **salted pork and hardtack**, ye ought to sharpen yer cutlass and go huntin' for the greatest treasure of all: a merchant ship carryin' a fresh crate of **cinnamon and exotic nutmeg**! 
+    First, ye should sharpen yer cutlass—not for fightin' off the Royal Navy, mind ye, but for slicin' through a thick slab of **salted pork** and some **ripe mangoes**! A dull blade is the mark of a lazy cook, and we'll have none of that on this vessel.
 
-    If the winds be calm, ye can spend the afternoon fishin' off the stern for some **mahi-mahi**. We’ll grill it over a charcoal brazier with a squeeze of **sour lime** to keep the scurvy from claimin' yer teeth!
+    Once yer steel is keen, head down to the shoreline and see if ye can't scavenge some **clams** or a **fat crustacean** from the tide pools. If ye find a crab the size of a cannonball, we'll toss it in the pot with some stolen spices and a splash of grog to make a **bisque** that’ll make yer toes curl!
 
-    Now scurry off before I make ye peel a mountain of **onions** for me famous "Shipwreck Stew"! Arrr!
+    And if the wind be light, ye can spend the afternoon scrubbin' the barnacles off the hull—it builds an appetite for a massive bowl of **hardtack and lobscouse stew**. 
+
+    Now, quit yer lollygaggin' and get to the galley! There be **onions** that won't peel themselves, and I'll be hornswoggled if I let a single clove of **garlic** go to waste! Arrr!
 
 ## Tool Calling — Define Once, Use Anywhere
 
-Define tools in a single canonical format. `fastllm` translates to each
-provider’s native tool schema automatically. Here we start a tool-use
-conversation with Claude, provide the result, then switch to GPT and
-Gemini to continue:
+Define tools in a single canonical format. `fastllm` translates to each provider’s native tool schema automatically. Here we start a tool-use conversation with Claude, provide the result, then switch to GPT and Gemini to continue:
 
 ``` python
 tools = [{"type": "function", "function": {
@@ -160,8 +161,8 @@ r1 = await stream(msgs, model='claude-sonnet-4-20250514', tools=tools, max_token
 print("Tool calls:", r1.tool_calls)
 ```
 
-    I'll get the current weather information for Paris.
-    Tool calls: [ToolCall(id='toolu_01JNRNBQxzxT7uMXFQh16g8H', name='get_weather', arguments={'city': 'Paris'}, server=False, extra={'caller': {'type': 'direct'}})]
+    I'll check the current weather in Paris for you.
+    Tool calls: [ToolCall(id='toolu_01RMN1WM7vPBT3ovv5Ex6VzC', name='get_weather', arguments={'city': 'Paris'}, server=False, extra={'caller': {'type': 'direct'}})]
 
 ``` python
 # Provide the tool result
@@ -173,7 +174,7 @@ print("GPT: ", end='')
 r2 = await stream(msgs, model='gpt-4o-mini', tools=tools, max_tokens=mtok)
 ```
 
-    GPT: With the current temperature in Paris at 22°C and sunny with light clouds, you likely won't need a jacket. A light layer might be comfortable if you're out in the evening, but otherwise, it should be warm enough.
+    GPT: With the temperature at 22°C and sunny with light clouds, a jacket isn't necessary for most people. However, if you tend to feel cold easily or if you plan to be out in the evening when it might cool down a bit, it could be a good idea to bring a light jacket.
 
 ``` python
 # Turn 3: Gemini sees the full cross-provider tool history
@@ -181,16 +182,15 @@ msgs += [r2.message, user("How about tomorrow — will it rain?")]
 r3 = await stream(msgs, model='models/gemini-3-flash-preview', tools=tools, max_tokens=mtok, web_search_options={})
 ```
 
-    No, it's not expected to rain in Paris tomorrow, Thursday, April 30. 
+    Tomorrow in Paris (Saturday, June 13), the weather is expected to be mostly pleasant and sunny. 
 
-    The forecast is looking very pleasant with sunny skies throughout the day and clear conditions at night. You can expect a high of around **24°C (75°F)** and a low of **11°C (52°F)**. It should be a great day for outdoor activities, though the temperature will drop in the evening, so you might want that jacket if you're out late! 
+    While there is a small chance of light, passing showers (around a 20-25% chance), most forecasts indicate a dry day with mostly clear or scattered clouds. Temperatures will likely reach a comfortable high of around 22°C to 27°C (72°F to 80°F), making it a great day for being outdoors. 
 
-    Rain is currently predicted to return on Friday, May 1.
+    So, while you might see a stray shower, you likely won't need to worry about heavy rain!
 
 ## Tool Choice
 
-Control whether the model must use tools, can’t use tools, or decides on
-its own:
+Control whether the model must use tools, can’t use tools, or decides on its own:
 
 ``` python
 # Force the model to call a tool (even for a greeting)
@@ -203,15 +203,13 @@ r = await stream([user("What's the weather?")], model='claude-sonnet-4-20250514'
 ```
 
 
-    Forced: [ToolCall(id='toolu_01PvVn1rxozZjW3FBwmVPHms', name='get_weather', arguments={'city': '<UNKNOWN>'}, server=False, extra={'caller': {'type': 'direct'}})]
+    Forced: [ToolCall(id='toolu_01U7tAXjXAtwjp6xNSMbsyPU', name='get_weather', arguments={'city': '<UNKNOWN>'}, server=False, extra={'caller': {'type': 'direct'}})]
 
-    No tools: I'd be happy to help you check the weather! However, I need to know which city you'd like me to check the weather for. Could you please tell me the name of the city?
+    No tools: I'd be happy to help you get the weather information! However, I need to know which city you'd like me to check the weather for. Could you please tell me the city name?
 
 ## Thinking / Extended Reasoning
 
-Enable model reasoning with `reasoning_effort`. The canonical values
-(`low`, `medium`, `high`) map to each provider’s native budget system.
-Thinking tokens stream as 🧠:
+Enable model reasoning with `reasoning_effort`. The canonical values (`low`, `medium`, `high`) map to each provider’s native budget system. Thinking tokens stream as 🧠:
 
 ``` python
 # Claude with thinking
@@ -239,23 +237,26 @@ for p in r.message.content:
 
     🧠 127 × 849:
     127 × 800 = 101,600
-    127 × 49 = 127 × 50 - 127 = 6,350 - 127 = 6,223
+    127 × 49 = 127 × 50 - 127 = 6350 - 127 = 6223
     Total: 107,823...
 
-    Kimi: 🧠🧠🧠🧠🧠🧠🧠🧠🧠🧠$127 \times 849 = 107{,}823$
+    Kimi: 🧠🧠🧠🧠🧠🧠🧠🧠🧠🧠**107,823**
 
-    🧠 The user is asking for the product of 127 and 849. I need to calculate this.
+    Here's the calculation:
+    - 127 × 800 = 101,600
+    - 127 × 40 = 5,080  
+    - 127 × 9 = 1,143
+    - **Total: 101,600 + 5,080 + 1,143 = 107,823**
 
-    Let me break it down:
-    127 × 849
+    🧠 The user is asking for the product of 127 and 849. I need to calculate 127 × 849.
 
-    I can use the distributive property:
-    12...
+    Let me calculate this step by step.
+
+    Method 1: Standard multiplicat...
 
 ## Web Search (Server Tools)
 
-OpenAI’s Responses API supports server-side web search. Server tool
-calls are normalized alongside regular tool calls:
+OpenAI’s Responses API supports server-side web search. Server tool calls are normalized alongside regular tool calls:
 
 ``` python
 ws_tools = [{"type": "web_search_preview"}]
@@ -264,18 +265,25 @@ r = await stream([user("What is the latest Python release?")], model='gpt-4o-min
 print(f"\nServer tools used: {[tc.name for tc in r.tool_calls if tc.server]}")
 ```
 
-    GPT + web search: As of April 29, 2026, the latest stable release of Python is version 3.14.4, which was released on April 7, 2026. ([ivyml.space](https://ivyml.space/downloads/?utm_source=openai)) This version is currently in the "bugfix" phase, receiving full support for bug fixes and security updates. Python 3.14 was first released on October 7, 2025, and is scheduled to receive support until October 31, 2030. ([eol.wiki](https://eol.wiki/python/?utm_source=openai))
+    GPT + web search: As of June 12, 2026, the latest stable release of Python is version 3.14.5, which was released on May 10, 2026. ([test.python.org](https://test.python.org/downloads/latest?utm_source=openai))
 
-    Python 3.15 is currently in the alpha development phase, with the first alpha release (3.15.0a1) planned for October 14, 2025. ([peps.python.org](https://peps.python.org/pep-0790/?utm_source=openai)) The stable release of Python 3.15 is expected in October 2026.
+    Python 3.14 introduced several significant features, including:
 
-    For more information on Python releases and their support statuses, you can visit the official Python documentation. ([python.org](https://www.python.org/doc/versions/?utm_source=openai)) 
+    - **PEP 779**: Official support for free-threaded Python, allowing threads to run more concurrently.
+    - **PEP 649**: Deferred evaluation of annotations, improving the semantics of using annotations.
+    - **PEP 750**: Template string literals (t-strings) for custom string processing, using the familiar syntax of f-strings.
+    - **PEP 734**: Support for multiple interpreters in the standard library.
+    - **PEP 784**: A new module `compression.zstd` providing support for the Zstandard compression algorithm.
+
+    For a comprehensive list of changes and improvements in Python 3.14, you can refer to the official release notes. ([docs.python.org](https://docs.python.org/it/3.14/whatsnew/3.14.html?utm_source=openai))
+
+    You can download the latest version of Python from the official Python website. ([python.org](https://www.python.org/downloads/?lang=python&utm_source=openai)) 
 
     Server tools used: ['web_search']
 
 ## Caching (Anthropic)
 
-Anthropic supports prompt caching via `cache_control`. Pass it through
-`Part.data` — repeat calls with the same cached content save tokens:
+Anthropic supports prompt caching via `cache_control`. Pass it through `Part.data` — repeat calls with the same cached content save tokens:
 
 ``` python
 # Cache a long system prompt (must be >1024 tokens for Anthropic caching)
@@ -291,48 +299,50 @@ r2 = await stream([user("How about Saturn?")], model='claude-sonnet-4-20250514',
 print(f"Usage: {r2.usage}")
 ```
 
-    Call 1: Jupiter's mass is approximately 1.898 × 10^27 kilograms (or 1,898,000,000,000,000,000,000,000,000 kg).
+    Call 1: Jupiter's mass is approximately 1.898 × 10²⁷ kilograms (or 1,898,000,000,000,000,000,000,000,000 kg).
 
     To put this in perspective:
     - Jupiter is about 318 times more massive than Earth
     - It contains more than twice the mass of all other planets in our solar system combined
-    - It's about 1/1047th the mass of our Sun
+    - Jupiter's mass is about 1/1047th the mass of the Sun
 
-    This enormous mass is what makes Jupiter such a dominant gravitational force in our solar system, allowing it to capture and hold onto its 95+ known moons and play a crucial role in shaping the orbits of other celestial bodies.
-    Usage: Usage(prompt_tokens=1814, completion_tokens=151, total_tokens=1965, cached_tokens=0, cache_creation_tokens=1802, reasoning_tokens=0, raw={'input_tokens': 12, 'cache_creation_input_tokens': 1802, 'cache_read_input_tokens': 0, 'output_tokens': 151})
-    Call 2: Saturn is truly one of the most spectacular planets in our solar system! Here are some key facts about this magnificent world:
+    This enormous mass gives Jupiter its strong gravitational influence, which helps it act as a "cosmic vacuum cleaner" by capturing asteroids and comets that might otherwise threaten the inner planets.
+    Usage: Usage(prompt_tokens=1814, completion_tokens=145, total_tokens=1959, cached_tokens=0, cache_creation_tokens=1802, reasoning_tokens=0, raw={'input_tokens': 12, 'cache_creation_input_tokens': 1802, 'cache_read_input_tokens': 0, 'output_tokens': 145})
+    Call 2: Saturn is truly one of the most spectacular planets in our solar system! Here are some key facts about this gas giant:
 
-    **Basic characteristics:**
-    - The sixth planet from the Sun and second-largest in our solar system
-    - A gas giant composed primarily of hydrogen and helium
-    - About 9.5 times Earth's distance from the Sun
-    - Takes about 29.5 Earth years to orbit the Sun
+    **Basic Characteristics:**
+    - Sixth planet from the Sun
+    - Second largest planet (after Jupiter)
+    - Composed primarily of hydrogen and helium
+    - Has the lowest density of any planet - it would actually float in water!
 
-    **Famous ring system:**
-    - Saturn's rings are its most iconic feature - made of countless ice and rock particles
-    - The main rings span about 175,000 miles across but are surprisingly thin (often less than 30 feet thick)
-    - There are several distinct ring groups (A, B, C rings are the most prominent)
-    - The rings may be relatively young - possibly only 10-100 million years old
-
-    **Physical properties:**
-    - Diameter about 9 times larger than Earth
-    - Surprisingly low density - it would actually float in water!
-    - Rotates very quickly (about 10.5 hour days), causing it to bulge at the equator
-    - Has beautiful banded cloud patterns in its atmosphere
+    **Famous Ring System:**
+    - Most prominent and extensive ring system in the solar system
+    - Made primarily of ice particles and rocky debris
+    - Rings are organized into distinct sections (A, B, C rings are the main ones)
+    - Ring particles range from tiny ice crystals to house-sized chunks
 
     **Moons:**
-    - Saturn has 146 confirmed moons, including Titan (larger than Mercury, with lakes of liquid methane) and Enceladus (which shoots geysers of water ice from its south pole)
+    - Has 146 confirmed moons (the most of any planet)
+    - Titan is its largest moon - larger than Mercury and has a thick atmosphere
+    - Enceladus has geysers of water ice erupting from its south pole
+    - Many other fascinating moons like Iapetus, Mimas, and Dione
+
+    **Physical Features:**
+    - Takes about 29.5 Earth years to orbit the Sun
+    - A day on Saturn is only about 10.7 hours
+    - Has extreme winds reaching up to 1,800 km/h
+    - Beautiful hexagonal storm at its north pole
 
     **Exploration:**
-    - Visited by Pioneer 11, Voyager 1 & 2, and most extensively by the Cassini mission (2004-2017)
+    - Visited by Pioneer 11, Voyager 1 & 2, and most notably the Cassini mission (2004-2017)
 
-    What aspect of Saturn interests you most?
-    Usage: Usage(prompt_tokens=1812, completion_tokens=350, total_tokens=2162, cached_tokens=1802, cache_creation_tokens=0, reasoning_tokens=0, raw={'input_tokens': 10, 'cache_creation_input_tokens': 0, 'cache_read_input_tokens': 1802, 'output_tokens': 350})
+    Is there a particular aspect of Saturn you'd like to know more about?
+    Usage: Usage(prompt_tokens=1812, completion_tokens=337, total_tokens=2149, cached_tokens=1802, cache_creation_tokens=0, reasoning_tokens=0, raw={'input_tokens': 10, 'cache_creation_input_tokens': 0, 'cache_read_input_tokens': 1802, 'output_tokens': 337})
 
 ## Media Inputs
 
-Send images to any provider that supports them. The canonical
-`input_image` part works everywhere:
+Send images to any provider that supports them. The canonical `input_image` part works everywhere:
 
 ``` python
 img_url = "https://img.freepik.com/free-photo/mountain-range-body-water_53876-139760.jpg?semt=ais_hybrid&w=740&q=80"
@@ -346,29 +356,31 @@ for name, kw in [('claude-sonnet-4-20250514', {}), ('gpt-4o-mini', {}), ('models
     r = await stream([img_msg], model=name, max_tokens=mtok, **kw)
 ```
 
-          claude-sonnet-4-20250514: I see a beautiful, serene landscape featuring:
+          claude-sonnet-4-20250514: I see a beautiful, serene landscape photograph taken from what appears to be a wooden dock or platform. The image shows:
 
-    - A calm lake or body of water that creates perfect mirror-like reflections
-    - Snow-capped mountains in the background creating a dramatic backdrop
-    - Dense forest of evergreen trees (likely pine or fir) lining the shoreline
-    - A wooden deck or boardwalk in the foreground with weathered planks
-    - Clear blue sky with some clouds
-    - The scene has a peaceful, pristine quality typical of alpine or mountain lake environments
+    - A perfectly still lake that creates mirror-like reflections
+    - Snow-capped mountains in the background under a partly cloudy sky
+    - Dense forests of evergreen trees (likely pine or fir) lining the shoreline
+    - The mountains, trees, and sky all reflected clearly in the calm water
+    - Wooden planks in the foreground, suggesting the photo was taken from a dock or wooden viewing platform
+    - The lighting appears soft and atmospheric, possibly during golden hour
+    - The overall scene has a very peaceful, pristine wilderness quality typical of places like the Canadian Rockies, Alaska, or similar mountainous lake regions
 
-    The composition creates a sense of tranquility and natural beauty, with the wooden platform providing a viewing point to take in this scenic mountain landscape. The perfect reflections in the still water double the visual impact of the mountains and trees.
-                       gpt-4o-mini: The image shows a serene landscape featuring a calm lake that reflects surrounding mountains and trees. The foreground includes a wooden deck or platform, which adds a sense of depth to the scene. In the background, the mountains are partially covered by mist, creating a peaceful and tranquil atmosphere. The overall color palette is dominated by blues and greens, evoking a natural and serene vibe.
-     models/gemini-3-flash-preview: This image is a serene landscape featuring a mountain lake. It is composed of several distinct layers:
+    The composition creates a sense of depth and tranquility, with the wooden platform in the foreground leading the eye toward the expansive natural landscape beyond.
+                       gpt-4o-mini: The image features a serene landscape with a body of water reflecting surrounding trees and mountains. In the foreground, there is a wooden deck or platform, enhancing the picturesque view. The scene is calm and depicts natural beauty, characterized by lush greenery, a clear sky, and distant snow-capped mountains.
+     models/gemini-3-flash-preview: This image depicts a serene and majestic landscape, viewed from the perspective of someone standing on a wooden deck.
 
-    *   **Foreground:** At the bottom of the image, there is a rustic **wooden deck or platform** made of dark brown, weathered planks. The perspective makes it look as though the viewer is standing on this deck looking out at the view.
-    *   **Middle Ground:** A **calm, blue lake** sits directly behind the deck. The water is so still that it acts like a mirror, perfectly reflecting the trees and mountains above it.
-    *   **Shoreline:** Along the edge of the water, there is a thin strip of golden-yellow grass or low-lying vegetation. This is followed by a **dense line of green trees**, including some tall, dark conifers.
-    *   **Background:** In the far distance, **massive mountains** rise up. They are a hazy blue-grey color, with their peaks covered in snow and ice. 
-    *   **Sky:** The sky is a very pale blue, almost white, with soft, bright light suggesting a sunny but perhaps slightly hazy day.
+    Here is a breakdown of what is visible:
 
-    The overall atmosphere of the image is peaceful and majestic.
+    *   **Foreground:** In the immediate foreground are weathered brown wooden planks of a deck or pier. The planks run diagonally, drawing the eye toward the center of the image.
+    *   **Midground (The Lake):** Beyond the deck is a large, still lake. The water is a deep blue and acts as a perfect mirror, reflecting the trees and mountains above with startling clarity.
+    *   **Shoreline:** Along the far edge of the lake is a dense line of lush green evergreen trees. A thin, bright yellow or golden strip of vegetation runs along the very edge of the water.
+    *   **Background (Mountains):** Towering over the entire scene are massive, rugged mountains. The peaks are covered in white snow or glaciers and appear in shades of light blue and grey due to a soft, atmospheric haze.
+    *   **Sky:** The sky is a pale, bright blue, almost white in some areas, with a few soft clouds visible in the upper right corner.
 
-`fastllm` supports four media part types via `PartType`. Provider
-support varies:
+    The overall mood of the image is peaceful, cool-toned, and tranquil.
+
+`fastllm` supports four media part types via `PartType`. Provider support varies:
 
 | Part Type     | Anthropic | OpenAI Responses | OpenAI Chat | Gemini |
 |---------------|-----------|------------------|-------------|--------|
@@ -377,5 +389,4 @@ support varies:
 | `input_video` | ❌        | ❌               | ❌          | ✅     |
 | `input_file`  | ✅        | ✅               | ✅          | ✅     |
 
-All media parts accept either a URL or a base64 data URL in `Part.text`.
-Unsupported combinations raise a clear `ValueError`.
+All media parts accept either a URL or a base64 data URL in `Part.text`. Unsupported combinations raise a clear `ValueError`.

@@ -48,6 +48,10 @@ class Completion:
     vendor_name: str = None
     raw: dict = field(default_factory=dict)
 
+# %% ../nbs/00_types.ipynb #4901e693
+@patch(as_prop=True)
+def formatted(self:Completion): return ''
+
 # %% ../nbs/00_types.ipynb #1b0dbab0
 @patch
 def _repr_markdown_(self: Completion):
