@@ -4,6 +4,10 @@
 
 ## 0.0.39
 
+### New Features
+
+- Move `mk_msg`/`mk_msgs` and Completion to aidialog, relocate prompt caching to anthropic module, drop prefill support ([#83](https://github.com/AnswerDotAI/fastllm/issues/83))
+
 
 ## 0.0.38
 
