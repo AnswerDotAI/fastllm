@@ -6,51 +6,29 @@
 __all__ = ['FinishReason', 'api_registry', 'model_prices_url', 'haik45', 'sonn45', 'sonn46', 'sonn', 'sonn5', 'opus46', 'opus48',
            'opus', 'opus5', 'fable', 'fable5', 'gpt54', 'gpt54m', 'gpt55', 'codex54', 'codex54m', 'codex55',
            'codex53spark', 'model_info_registry', 'modern_llm', 'deepseek_v4_common', 'mimo_v25_common',
-           'codex_pricing', 'sol', 'terra', 'luna', 'gpt56s', 'Usage', 'Completion', 'APIRegistry', 'mk_completion',
-           'fn_schema', 'payload_kwargs', 'get_api_key', 'resize_b64', 'model_prices_meta', 'infer_api_name',
-           'get_model_meta', 'register_model_info', 'get_model_info', 'get_model_pricing', 'approx_pricing',
-           'is_deepseek_peak_hour', 'price_tier', 'tier_rate']
+           'codex_pricing', 'sol', 'terra', 'luna', 'gpt56s', 'Usage', 'APIRegistry', 'mk_completion', 'fn_schema',
+           'payload_kwargs', 'get_api_key', 'resize_b64', 'model_prices_meta', 'infer_api_name', 'get_model_meta',
+           'register_model_info', 'get_model_info', 'get_model_pricing', 'approx_pricing', 'is_deepseek_peak_hour',
+           'price_tier', 'tier_rate']
 
 # %% ../nbs/00_types.ipynb #b4d047fd
 import httpx, base64, io
 from importlib.metadata import entry_points
-from dataclasses import dataclass, field
 from datetime import datetime, timezone
-from fastcore.net import urljson
 from fastcore.utils import *
 from PIL import Image as PImg
-from aidialog.msg_parts import Part, PartType, Msg, Text, Thinking, ToolUse, ToolResult, InputImage, InputAudio, InputVideo, InputFile, data_url
+from aidialog.msg_parts import Msg, Thinking, ToolUse, Completion
 
 
 # %% ../nbs/00_types.ipynb #802ad832
-@dataclass(frozen=True)
-class Usage:
+class Usage(BasicRepr):
     "Normalized usage."
-    prompt_tokens: int = 0
-    completion_tokens: int = 0
-    total_tokens: int = 0
-    cached_tokens: int = 0
-    cache_creation_tokens: int = 0
-    reasoning_tokens: int = 0
-    raw: dict = field(default_factory=dict)
+    def __init__(self, prompt_tokens=0, completion_tokens=0, total_tokens=0, cached_tokens=0,
+        cache_creation_tokens=0, reasoning_tokens=0, raw=None):
+        store_attr()
+        self.raw = ifnone(raw, {})
+    def __eq__(self, o): return type(o) is type(self) and self.__dict__ == o.__dict__
 
-
-# %% ../nbs/00_types.ipynb #297a1672
-@dataclass(frozen=True)
-class Completion:
-    "Normalized completion response."
-    model: str
-    message: Msg
-    finish_reason: str = None
-    usage: Usage = None
-    api_name: str = None
-    vendor_name: str = None
-    raw: dict = field(default_factory=dict)
-
-    @property
-    def tool_calls(self):
-        "The `ToolUse` parts of `message`: a call lives in the content, not beside it"
-        return [p for p in self.message.content if isinstance(p, ToolUse)]
 
 # %% ../nbs/00_types.ipynb #4901e693
 @patch(as_prop=True)
@@ -62,18 +40,18 @@ def _repr_markdown_(self: Completion):
     content = ''
     for p in self.message.content:
         if isinstance(p, Thinking):
-            if p.text: content += f"<details><summary>Thinking</summary>\n\n{p.text}\n\n</details>\n\n"
+            if p.text: content += f"\n::: details\n## Thinking\n\n{p.text}\n\n:::\n\n"
         elif isinstance(p, ToolUse): content += f"\n\n🔧 {p.name}({p.arguments})\n"
         elif txt := p.text: content += txt
     details = [f"model: `{self.model}`", f"finish_reason: `{self.finish_reason}`", f"usage: `{self.usage}`"]
     det_str = '\n- '.join(details)    
     return f"""{content}
 
-<details markdown='1'>
+::: details
 
 - {det_str}
 
-</details>"""
+:::"""
 
 # %% ../nbs/00_types.ipynb #ce59e431
 FinishReason = str_enum('finish_reason', 'stop', 'tool_calls', 'length', 'content_filter')
@@ -123,7 +101,8 @@ def fn_schema(t):
     return None
 
 # %% ../nbs/00_types.ipynb #28c698fe
-def payload_kwargs(msgs, model, stream=False, system=None, max_tokens=None, temperature=None, tools=None, tool_choice=None, reasoning_effort=None, web_search_options=None, stop_callables=None): pass
+def payload_kwargs(msgs, model, stream=False, system=None, max_tokens=None, temperature=None, tools=None, tool_choice=None,
+    reasoning_effort=None, web_search_options=None, cache_idxs=None, ttl=None, stop_callables=None): pass
 
 # %% ../nbs/00_types.ipynb #c2a2cb49
 def get_api_key(api_key, default):
@@ -234,7 +213,7 @@ register_model_info('gpt-5.4-mini', vendor_name='openai', base='gpt-5.4-mini', s
 
 for model in ('kimi-k2.5', 'kimi-k2.6' , 'kimi-k3'):
     register_model_info(model, vendor_name='moonshot', base=f'moonshot/{model}', base_vendor_name=None,
-        supports_reasoning=True, supports_vision=True, supports_assistant_prefill=True)
+        supports_reasoning=True, supports_vision=True)
 
 register_model_info('gemini-3.1-flash-lite', vendor_name='gemini', base='gemini-3.1-flash-lite-preview')
 register_model_info('models/gemini-3.1-flash-lite', vendor_name='gemini', base='gemini-3.1-flash-lite-preview')
@@ -252,8 +231,7 @@ register_model_info('kimi-k3', vendor_name='moonshot', base='kimi-k2.6',
     input_cost_per_token=3e-6, cache_read_input_token_cost=0.30e-6, output_cost_per_token=15.0e-6)
 
 # %% ../nbs/00_types.ipynb #948d55d0
-deepseek_v4_common = dict(**modern_llm, supports_assistant_prefill=True,
-    max_input_tokens=1048576, max_output_tokens=393216, max_tokens=393216)
+deepseek_v4_common = dict(**modern_llm, max_input_tokens=1048576, max_output_tokens=393216, max_tokens=393216)
 
 register_model_info('deepseek-v4-flash', vendor_name='deepseek', base='deepseek/deepseek-v3.2', **deepseek_v4_common,
     input_cost_per_token=1.4e-07, input_cost_per_token_cache_hit=2.8e-09,

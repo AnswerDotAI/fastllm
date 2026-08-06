@@ -5,7 +5,7 @@ __all__ = ['ant_tc_types', 'norm_tool_call', 'norm_tool_calls', 'norm_usage', 'f
            'norm_tr_parts', 'norm_sse_event', 'delta_index_fn', 'acollect_stream', 'denorm_tool_use',
            'denorm_assistant', 'denorm_tool', 'denorm_msgs', 'denorm_tool_schs', 'denorm_tool_choice',
            'denorm_reasoning', 'denorm_web_search', 'denorm_system', 'denorm_user', 'denorm_image', 'denorm_file',
-           'denorm_tool_result', 'mk_payload', 'get_hdrs', 'cost']
+           'denorm_tool_result', 'apply_cache_idxs', 'mk_payload', 'get_hdrs', 'cost']
 
 # %% ../nbs/04_anthropic.ipynb #02afd3d7
 import json
@@ -271,12 +271,47 @@ def denorm_tool_result(p:ToolResult):
         return _ant_cc(dict(type='tool_result', tool_use_id=tid, content=blocks), p)
     return _ant_cc(dict(type='tool_result', tool_use_id=tid, content=tool_text(p.text)), p)
 
+# %% ../nbs/04_anthropic.ipynb #e4eb8d3b
+def _add_cache_control(
+    msg,     # Canonical Msg to mark
+    ttl=None # Cache TTL: '5m' (default) or '1h'
+):
+    "Set a cache breakpoint on the last `Text` or `ToolUse` part of `msg`"
+    cc = {"type": "ephemeral"} | ({"ttl": ttl} if ttl else {})
+    idxs = [i for i,p in enumerate(msg.content) if isinstance(p, (Text, ToolUse))]
+    if idxs: msg.content[idxs[-1]].cache_control = cc
+    return msg
+
+# %% ../nbs/04_anthropic.ipynb #6bc52ef5
+def apply_cache_idxs(
+    msgs,            # Canonical Msgs to mark
+    cache_idxs=[-1], # Breakpoint idxs into `msgs` (tool-role msgs excluded); 0 is `sp` when given
+    sp=None,         # System prompt: str, Msg, or Part
+    ttl=None         # Cache TTL: '5m' (default) or '1h'
+):
+    "Strip all cache breakpoints from `msgs`, then mark `cache_idxs`; returns `sp`, marked if 0 is included"
+    for m in msgs:
+        for p in m.content: p.cache_control = None
+    if sp:
+        if 0 in cache_idxs:
+            if isinstance(sp, str): sp = Text(sp)
+            if isinstance(sp, Part): sp = Msg('', [sp])
+            _add_cache_control(sp, ttl)
+        cache_idxs = [o-1 if o>0 else o for o in cache_idxs if o]
+    ms = [j for j,m in enumerate(msgs) if m.role != 'tool']
+    for i in cache_idxs:
+        try: _add_cache_control(msgs[ms[i]], ttl)
+        except IndexError: continue
+    return sp
+
 # %% ../nbs/04_anthropic.ipynb #587d4fe5
 @delegates(payload_kwargs)
 def mk_payload(msgs, model, **kwargs):
+    sp = kwargs.get('system')
+    if (ci:=kwargs.get('cache_idxs')) is not None: sp = apply_cache_idxs(msgs, ci, sp, kwargs.get('ttl'))
     payload = dict(model=model, messages=denorm_msgs(msgs), max_tokens=kwargs.get('max_tokens') or 1024)
     if kwargs.get('stream'):                payload['stream'] = True
-    if sp:=kwargs.get('system'):            payload['system'] = denorm_system(sp)
+    if sp:                              payload['system'] = denorm_system(sp)
     if tools:=kwargs.get('tools'):          payload['tools'] = denorm_tool_schs(tools)
     if tchc:=kwargs.get('tool_choice'):     payload['tool_choice'] = denorm_tool_choice(tchc)
     if thk:=kwargs.get('reasoning_effort'): payload.update(denorm_reasoning(thk))

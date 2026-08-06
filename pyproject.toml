@@ -15,7 +15,7 @@ classifiers = [
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3 :: Only",
 ]
-dependencies = ['fastcore>=2.1.18', 'aidialog>=0.0.8', 'fastspec>=0.0.11', 'pillow']
+dependencies = ['fastcore>=2.1.18', 'aidialog>=0.0.10', 'fastspec>=0.0.11', 'pillow']
 
 [project.urls]
 Repository = "https://github.com/AnswerDotAI/fastllm"

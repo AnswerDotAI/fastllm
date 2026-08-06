@@ -8,26 +8,21 @@ __all__ = ['Delta', 'norm_and_yield', 'PrintStream', 'PartAccum', 'FenceToolStop
 
 # %% ../nbs/01_streaming.ipynb #0df5c926
 import json,copy
-from dataclasses import dataclass, field, fields
 from fastcore.utils import *
 from fastcore.meta import delegates
 from fastspec.errors import *
 from .types import *
-from aidialog.msg_parts import Part, PartType, Msg, Text, Thinking, ToolUse, ToolResult, ServerToolResult, mk_part, fence_call_re
+from aidialog.msg_parts import Part, PartType, Msg, Text, Thinking, ToolUse, ToolResult, ServerToolResult, mk_part, fence_call_re, Completion
 
 # %% ../nbs/01_streaming.ipynb #400d628a
-@dataclass
-class Delta:
+class Delta(BasicRepr):
     "Normalized streaming delta event."
-    text: str = ""
-    thinking: str = ""
-    refusal: str = ""
-    tool_calls: list[ToolUse] = field(default_factory=list)
-    citations: list = field(default_factory=list)
-    server_tool_result: dict = None
-    finish_reason: str = None
-    usage: Usage = None
-    raw: dict = field(default_factory=dict)
+    def __init__(self, text='', thinking='', refusal='', tool_calls=None, citations=None,
+        server_tool_result=None, finish_reason=None, usage=None, raw=None):
+        store_attr()
+        self.tool_calls,self.citations,self.raw = ifnone(tool_calls,[]),ifnone(citations,[]),ifnone(raw,{})
+    def __eq__(self, o): return type(o) is type(self) and self.__dict__ == o.__dict__
+    def __hash__(self): return hash((self.text, self.thinking, self.finish_reason))
 
 # %% ../nbs/01_streaming.ipynb #f59f837b
 async def norm_and_yield(resp, norm_func):
@@ -47,10 +42,13 @@ class PrintStream:
         if f: print(f, end='', flush=True)
 
 # %% ../nbs/01_streaming.ipynb #a7f1738a
-@dataclass
-class PartAccum:
+class PartAccum(BasicRepr):
     "Accumulate streamed part deltas by index"
-    parts: dict = field(default_factory=dict)
+    def __init__(self, parts=None):
+        store_attr()
+        self.parts = ifnone(parts, {})
+    def __eq__(self, o): return type(o) is type(self) and self.__dict__ == o.__dict__
+    def __hash__(self): return hash(len(self.parts))
 
     def append(self, typ, index, txt='', citations=None, **tc_kwargs):
         'Create and accumulate same type sequential parts'
@@ -117,11 +115,12 @@ def stop_sequences(seqs):
     return _stop
 
 # %% ../nbs/01_streaming.ipynb #90f91955
-@dataclass
-class Status:
+class Status(BasicRepr):
     "Stream marker for activity that isn't model content (e.g. draining deltas after a stop sequence)"
-    status: str
     type = 'status'
+    def __init__(self, status): store_attr()
+    def __eq__(self, o): return type(o) is type(self) and self.__dict__ == o.__dict__
+    def __hash__(self): return hash(self.status)
     @property
     def formatted(self): return '🧠'
 
