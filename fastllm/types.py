@@ -25,8 +25,8 @@ class Usage(BasicRepr):
     "Normalized usage."
     def __init__(self, prompt_tokens=0, completion_tokens=0, total_tokens=0, cached_tokens=0,
         cache_creation_tokens=0, reasoning_tokens=0, raw=None):
+        if raw is None: raw = {}
         store_attr()
-        self.raw = ifnone(raw, {})
     def __eq__(self, o): return type(o) is type(self) and self.__dict__ == o.__dict__
 
 

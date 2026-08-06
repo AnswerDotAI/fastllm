@@ -19,8 +19,10 @@ class Delta(BasicRepr):
     "Normalized streaming delta event."
     def __init__(self, text='', thinking='', refusal='', tool_calls=None, citations=None,
         server_tool_result=None, finish_reason=None, usage=None, raw=None):
+        if tool_calls is None: tool_calls = []
+        if citations is None: citations = []
+        if raw is None: raw = {}
         store_attr()
-        self.tool_calls,self.citations,self.raw = ifnone(tool_calls,[]),ifnone(citations,[]),ifnone(raw,{})
     def __eq__(self, o): return type(o) is type(self) and self.__dict__ == o.__dict__
     def __hash__(self): return hash((self.text, self.thinking, self.finish_reason))
 
@@ -45,8 +47,8 @@ class PrintStream:
 class PartAccum(BasicRepr):
     "Accumulate streamed part deltas by index"
     def __init__(self, parts=None):
+        if parts is None: parts = {}
         store_attr()
-        self.parts = ifnone(parts, {})
     def __eq__(self, o): return type(o) is type(self) and self.__dict__ == o.__dict__
     def __hash__(self): return hash(len(self.parts))
 
