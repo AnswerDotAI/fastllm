@@ -2,6 +2,13 @@
 
 <!-- do not remove -->
 
+## 0.0.40
+
+### New Features
+
+- Rename `_query` kwarg to `query_` for SSE streaming in gemini ([#84](https://github.com/AnswerDotAI/fastllm/issues/84))
+
+
 ## 0.0.39
 
 ### New Features
