@@ -259,7 +259,7 @@ def mk_payload(msgs, model, **kwargs):
         has_srv = any(k in t for t in gem_tools for k in ('googleSearch','codeExecution','googleSearchRetrieval'))
         if has_fn and has_srv: payload.setdefault('tool_config', {})['includeServerSideToolInvocations'] = True
     if tchc:=denorm_tool_choice(kwargs.get('tool_choice')): payload.setdefault('tool_config', {}).update(tchc)
-    if kwargs.get('stream'): payload.update(stream=True, _query={"alt": "sse"})
+    if kwargs.get('stream'): payload.update(stream=True, query_={"alt": "sse"})
     return payload
 
 # %% ../nbs/05_gemini.ipynb #60d52c1f
