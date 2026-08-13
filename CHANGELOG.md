@@ -2,6 +2,13 @@
 
 <!-- do not remove -->
 
+## 0.0.41
+
+### New Features
+
+- Replace httpx with httpx2 ([#85](https://github.com/AnswerDotAI/fastllm/issues/85))
+
+
 ## 0.0.40
 
 ### New Features
