@@ -12,7 +12,7 @@ __all__ = ['FinishReason', 'api_registry', 'model_prices_url', 'haik45', 'sonn45
            'price_tier', 'tier_rate']
 
 # %% ../nbs/00_types.ipynb #b4d047fd
-import httpx, base64, io
+import httpx2, base64, io
 from importlib.metadata import entry_points
 from datetime import datetime, timezone
 from fastcore.utils import *
@@ -128,7 +128,7 @@ model_prices_url = 'https://raw.githubusercontent.com/BerriAI/litellm/main/model
 def model_prices_meta():
     "Download model prices to the module dir once, then load from disk."
     p = Path(__file__).parent/'model_prices.json'
-    if not p.exists(): p.write_text(httpx.get(model_prices_url, follow_redirects=True).text)
+    if not p.exists(): p.write_text(httpx2.get(model_prices_url, follow_redirects=True).text)
     return loads(p.read_text())
 
 # %% ../nbs/00_types.ipynb #68e488d8

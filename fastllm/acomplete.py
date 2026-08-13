@@ -7,7 +7,7 @@ __all__ = ['specs_path', 'ant_spec', 'oai_spec', 'gem_spec', 'vendor_mapping', '
            'mk_client', 'ContextWindowExceededError', 'acomplete']
 
 # %% ../nbs/06_acomplete.ipynb #f2f57253
-import asyncio,json,httpx
+import asyncio,json,httpx2
 from importlib.resources import files
 from fastcore.utils import *
 from fastcore.meta import *
@@ -79,7 +79,7 @@ def _codex_mtime_policy():
 # %% ../nbs/06_acomplete.ipynb #79075d95
 @flexicache(_codex_mtime_policy())
 def mk_client(model=None, vendor_name=None, api_name=None, api_key=None, base_url=None, xtra_hdrs=None,
-    timeout=httpx.Timeout(connect=30, read=300, write=30, pool=10)):
+    timeout=httpx2.Timeout(connect=30, read=300, write=30, pool=10)):
     err_msg = f"please pass a valid one vendor: {', '.join(list(vendor_mapping))} or pass `api_name`,`base_url` and `api_key`"
     if not vendor_name and not api_name and not (base_url and api_key):
         v, m = split_vendor(model)
