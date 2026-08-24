@@ -281,4 +281,6 @@ d = { 'settings': { 'branch': 'main',
                                'fastllm.types.price_tier': ('types.html#price_tier', 'fastllm/types.py'),
                                'fastllm.types.register_model_info': ('types.html#register_model_info', 'fastllm/types.py'),
                                'fastllm.types.resize_b64': ('types.html#resize_b64', 'fastllm/types.py'),
-                               'fastllm.types.tier_rate': ('types.html#tier_rate', 'fastllm/types.py')}}}
+                               'fastllm.types.tier_rate': ('types.html#tier_rate', 'fastllm/types.py'),
+                               'fastllm.types.unwrap_typed': ('types.html#unwrap_typed', 'fastllm/types.py'),
+                               'fastllm.types.wrap_typed': ('types.html#wrap_typed', 'fastllm/types.py')}}}

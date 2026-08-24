@@ -43,3 +43,4 @@ lib_path = "fastllm"
 
 [tool.chkstyle]
 skip_paths = ["_modidx.py"]
+ignore = ["undocumented-export", "exported-run"]

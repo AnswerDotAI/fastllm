@@ -7,9 +7,9 @@ __all__ = ['FinishReason', 'api_registry', 'model_prices_url', 'haik45', 'sonn45
            'opus', 'opus5', 'fable', 'fable5', 'gpt54', 'gpt54m', 'gpt55', 'codex54', 'codex54m', 'codex55',
            'codex53spark', 'model_info_registry', 'modern_llm', 'deepseek_v4_common', 'mimo_v25_common',
            'codex_pricing', 'sol', 'terra', 'luna', 'gpt56s', 'Usage', 'APIRegistry', 'mk_completion', 'fn_schema',
-           'payload_kwargs', 'get_api_key', 'resize_b64', 'model_prices_meta', 'infer_api_name', 'get_model_meta',
-           'register_model_info', 'get_model_info', 'get_model_pricing', 'approx_pricing', 'is_deepseek_peak_hour',
-           'price_tier', 'tier_rate']
+           'payload_kwargs', 'get_api_key', 'wrap_typed', 'unwrap_typed', 'resize_b64', 'model_prices_meta',
+           'infer_api_name', 'get_model_meta', 'register_model_info', 'get_model_info', 'get_model_pricing',
+           'approx_pricing', 'is_deepseek_peak_hour', 'price_tier', 'tier_rate']
 
 # %% ../nbs/00_types.ipynb #b4d047fd
 import httpx2, base64, io
@@ -17,7 +17,7 @@ from importlib.metadata import entry_points
 from datetime import datetime, timezone
 from fastcore.utils import *
 from PIL import Image as PImg
-from aidialog.msg_parts import Msg, Thinking, ToolUse, Completion
+from aidialog.msg_parts import Msg, Thinking, ToolUse, Completion, StopResponse, FullResponse
 
 
 # %% ../nbs/00_types.ipynb #802ad832
@@ -81,14 +81,8 @@ def mk_completion(resp, model, api_name, vendor_name):
     tcs = api.norm_tool_calls(resp)
     parts = api.norm_parts(resp)
     usg = api.finalize_usage(api.norm_usage(resp), parts)
-    return Completion(
-        model=model,
-        message=Msg(role="assistant", content=parts),
-        finish_reason=api.norm_finish(resp, tcs),
-        usage=usg,
-        api_name=api_name,
-        vendor_name=vendor_name,
-        raw=resp)
+    return Completion(model=model, message=Msg(role="assistant", content=parts), finish_reason=api.norm_finish(resp, tcs),
+        usage=usg, api_name=api_name, vendor_name=vendor_name, raw=resp)
 
 # %% ../nbs/00_types.ipynb #8a8e468b
 def fn_schema(t):
@@ -109,6 +103,20 @@ def get_api_key(api_key, default):
     key = api_key or os.getenv(default)
     if not key: raise ValueError(f"Missing API key: set environment variable '{default}' or pass `api_key` parameter")
     return key
+
+# %% ../nbs/00_types.ipynb #e6e9ac99
+_typed_re = re.compile(r'^𝍁(\w+)𝍁(.+)$', re.S)
+_typed_strs = {c.__name__: c for c in (StopResponse, FullResponse)}
+
+def wrap_typed(s):
+    "Mark `s` with a `𝍁TypeName𝍁` prefix when it is a `str` subclass, so the type survives a plain-string wire"
+    return s if type(s) is str else f'𝍁{type(s).__name__}𝍁{s}'
+
+def unwrap_typed(s):
+    "Rebuild the named `str` subclass from a `𝍁`-marked string; unknown names get a minted ephemeral type"
+    if not (m := _typed_re.match(s)): return s
+    nm,body = m.groups()
+    return _typed_strs.setdefault(nm, type(nm, (str,), {}))(body)
 
 # %% ../nbs/00_types.ipynb #25e9cd60
 def resize_b64(b64, max_sz):
@@ -204,8 +212,7 @@ register_model_info('accounts/fireworks/routers/glm-5p2-fast', vendor_name='fire
     input_cost_per_token=2.8e-6, cache_read_input_token_cost=0.28e-6, output_cost_per_token=8.8e-6)
 
 register_model_info('gemini-3.5-flash', vendor_name='gemini', base='gemini-3-flash-preview',
-    input_cost_per_token=1.5e-6, output_cost_per_token=9e-6,
-    output_cost_per_reasoning_token=9e-6, cache_read_input_token_cost=1.5e-7)
+    input_cost_per_token=1.5e-6, output_cost_per_token=9e-6, output_cost_per_reasoning_token=9e-6, cache_read_input_token_cost=1.5e-7)
 
 register_model_info('gpt-5.4', vendor_name='openai', base='gpt-5.4', supports_web_search=True, mode=None)
 # Upstream metadata says 1,050,000 input tokens for gpt-5.4-mini, but OpenAI documents a 272k limit
@@ -226,9 +233,8 @@ register_model_info('accounts/fireworks/models/kimi-k2p6', vendor_name='firework
     input_cost_per_token=0.95e-6, cache_read_input_token_cost=0.16e-6, output_cost_per_token=4.0e-6)
 register_model_info('kimi-k2.7-code', vendor_name='moonshot', base='kimi-k2.6',
     input_cost_per_token=0.95e-6, cache_read_input_token_cost=0.19e-6, output_cost_per_token=4.0e-6)
-register_model_info('kimi-k3', vendor_name='moonshot', base='kimi-k2.6',
-    supports_reasoning=True, supports_vision=True, max_input_tokens=1_000_000,
-    input_cost_per_token=3e-6, cache_read_input_token_cost=0.30e-6, output_cost_per_token=15.0e-6)
+register_model_info('kimi-k3', vendor_name='moonshot', base='kimi-k2.6', supports_reasoning=True, supports_vision=True,
+    max_input_tokens=1_000_000, input_cost_per_token=3e-6, cache_read_input_token_cost=0.30e-6, output_cost_per_token=15.0e-6)
 
 # %% ../nbs/00_types.ipynb #948d55d0
 deepseek_v4_common = dict(**modern_llm, max_input_tokens=1048576, max_output_tokens=393216, max_tokens=393216)
@@ -251,18 +257,16 @@ register_model_info('mimo-v2.5-pro-ultraspeed', vendor_name='mimo', **mimo_v25_c
     input_cost_per_token=1.305e-6, output_cost_per_token=2.61e-6, cache_read_input_token_cost=0.0108e-6, search_context_cost_per_query=0.005)
 
 # %% ../nbs/00_types.ipynb #defb1c5c
-register_model_info('MiniMax-M3', vendor_name='minimax', **modern_llm, max_input_tokens=512_000, max_output_tokens=512_000, max_tokens=512_000, input_cost_per_token=0.3e-6,  output_cost_per_token=1.2e-6, cache_read_input_token_cost=0.06e-6, supports_vision=True, supports_video_input=True)
+register_model_info('MiniMax-M3', vendor_name='minimax', **modern_llm, max_input_tokens=512_000, max_output_tokens=512_000, max_tokens=512_000,
+    input_cost_per_token=0.3e-6, output_cost_per_token=1.2e-6, cache_read_input_token_cost=0.06e-6, supports_vision=True, supports_video_input=True)
 
 # %% ../nbs/00_types.ipynb #4e1b40b3
-register_model_info('muse-spark-1.1', vendor_name='meta_ai', **modern_llm,
-    max_input_tokens=1_048_576, max_output_tokens=128000, max_tokens=128000,
-    supports_vision=True, supports_image_input=True, supports_video_input=True, supports_pdf_input=True,
-    supports_web_search=True, search_context_cost_per_query=0.0025,
-    input_cost_per_token=1.25e-6, output_cost_per_token=4.25e-6, cache_read_input_token_cost=0.15e-6)
+register_model_info('muse-spark-1.1', vendor_name='meta_ai', **modern_llm, max_input_tokens=1_048_576, max_output_tokens=128000, max_tokens=128000,
+    supports_vision=True, supports_image_input=True, supports_video_input=True, supports_pdf_input=True, supports_web_search=True,
+    search_context_cost_per_query=0.0025, input_cost_per_token=1.25e-6, output_cost_per_token=4.25e-6, cache_read_input_token_cost=0.15e-6)
 
 # %% ../nbs/00_types.ipynb #2c23d11e
-codex_pricing = dict(
-    input_cost_per_token = 0.10/1_000_000, output_cost_per_token = 0.50/1_000_000,
+codex_pricing = dict(input_cost_per_token = 0.10/1_000_000, output_cost_per_token = 0.50/1_000_000,
     cache_creation_input_token_cost = 0.10/1_000_000, cache_read_input_token_cost = 0.10/1_000_000)
 
 def _rm_ctx_tiers(vendor_name, model):
@@ -284,8 +288,7 @@ for model in (haik45, sonn45, sonn46, sonn5, opus46, opus48, opus5, fable5):
 
 # %% ../nbs/00_types.ipynb #bb0c4c2a
 sol,terra,luna = gpt56s = 'gpt-5.6-sol gpt-5.6-terra gpt-5.6-luna'.split()
-for model in ['gpt-5.6']+gpt56s:
-    register_model_info(model, 'openai', base=model, base_vendor_name='openai')
+for model in ['gpt-5.6']+gpt56s: register_model_info(model, 'openai', base=model, base_vendor_name='openai')
 # Codex serves only the suffixed names; bare `gpt-5.6` is rejected with a ChatGPT account.
 # Its window is smaller than the API's: 371,331 input tokens is accepted and 371,981 is not, on all three.
 for model in gpt56s:
@@ -294,8 +297,7 @@ for model in gpt56s:
 
 # %% ../nbs/00_types.ipynb #24cc47ec
 def get_model_pricing(mn, vendor_name, million=True):
-    return {k:round(v * (1e6 if million else 1), 6)
-        for k,v in get_model_info(mn, vendor_name).items()
+    return {k:round(v * (1e6 if million else 1), 6) for k,v in get_model_info(mn, vendor_name).items()
         if 'cost' in k and isinstance(v,float) and 'priority' not in k}
 
 # %% ../nbs/00_types.ipynb #79304cd9
