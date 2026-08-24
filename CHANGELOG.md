@@ -2,6 +2,13 @@
 
 <!-- do not remove -->
 
+## 0.0.42
+
+### New Features
+
+- Add `wrap_typed`/`unwrap_typed` to preserve str subclasses over the wire ([#87](https://github.com/AnswerDotAI/fastllm/issues/87))
+
+
 ## 0.0.41
 
 ### New Features
