@@ -2,6 +2,13 @@
 
 <!-- do not remove -->
 
+## 0.0.43
+
+### New Features
+
+- Add glm-5.3-flash ([#88](https://github.com/AnswerDotAI/fastllm/issues/88))
+
+
 ## 0.0.42
 
 ### New Features
