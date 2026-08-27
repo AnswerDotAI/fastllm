@@ -265,6 +265,13 @@ register_model_info('muse-spark-1.1', vendor_name='meta_ai', **modern_llm, max_i
     supports_vision=True, supports_image_input=True, supports_video_input=True, supports_pdf_input=True, supports_web_search=True,
     search_context_cost_per_query=0.0025, input_cost_per_token=1.25e-6, output_cost_per_token=4.25e-6, cache_read_input_token_cost=0.15e-6)
 
+# %% ../nbs/00_types.ipynb #5a2b3430
+# z.ai list pricing (a 50% discount applies until 2026-09-09)
+register_model_info('glm-5.3-flash', vendor_name='zai', base='glm-5.1', **modern_llm,
+    supports_vision=True, supports_image_input=True,
+    max_input_tokens=1_000_000, max_output_tokens=128_000, max_tokens=128_000,
+    input_cost_per_token=0.15e-6, cache_read_input_token_cost=0.03e-6, output_cost_per_token=0.5e-6)
+
 # %% ../nbs/00_types.ipynb #2c23d11e
 codex_pricing = dict(input_cost_per_token = 0.10/1_000_000, output_cost_per_token = 0.50/1_000_000,
     cache_creation_input_token_cost = 0.10/1_000_000, cache_read_input_token_cost = 0.10/1_000_000)

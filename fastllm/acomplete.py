@@ -47,7 +47,8 @@ vendor_mapping = {
     "fireworks_ai": ('openai_chat', "https://api.fireworks.ai/inference/v1", "FIREWORKS_API_KEY"),
     "qwen":         ('openai_chat', "https://dashscope.aliyuncs.com/compatible-mode/v1", "QWEN_API_KEY"),
     "minimax":      ('anthropic', "https://api.minimax.io/anthropic", "MINIMAX_API_KEY"),
-    "meta_ai":      ('openai', "https://api.meta.ai/v1", "META_API_KEY")
+    "meta_ai":      ('openai', "https://api.meta.ai/v1", "META_API_KEY"),
+    "zai":          ('openai_chat', "https://api.z.ai/api/paas/v4", "ZAI_API_KEY")
 }
 
 # %% ../nbs/06_acomplete.ipynb #77d27ea7
