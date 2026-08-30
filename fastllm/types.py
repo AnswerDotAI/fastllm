@@ -96,7 +96,7 @@ def fn_schema(t):
 
 # %% ../nbs/00_types.ipynb #28c698fe
 def payload_kwargs(msgs, model, stream=False, system=None, max_tokens=None, temperature=None, tools=None, tool_choice=None,
-    reasoning_effort=None, web_search_options=None, cache_idxs=None, ttl=None, stop_callables=None): pass
+    parallel_tool_calls=None, previous_response_id=None, reasoning_effort=None, web_search_options=None, cache_idxs=None, ttl=None, stop_callables=None): pass
 
 # %% ../nbs/00_types.ipynb #c2a2cb49
 def get_api_key(api_key, default):
@@ -267,10 +267,9 @@ register_model_info('muse-spark-1.1', vendor_name='meta_ai', **modern_llm, max_i
 
 # %% ../nbs/00_types.ipynb #5a2b3430
 # z.ai list pricing (a 50% discount applies until 2026-09-09)
-register_model_info('glm-5.3-flash', vendor_name='zai', base='glm-5.1', **modern_llm,
-    supports_vision=True, supports_image_input=True,
-    max_input_tokens=1_000_000, max_output_tokens=128_000, max_tokens=128_000,
-    input_cost_per_token=0.15e-6, cache_read_input_token_cost=0.03e-6, output_cost_per_token=0.5e-6)
+register_model_info('glm-5.3-flash', vendor_name='zai', base='glm-5.1', **modern_llm, supports_vision=True, supports_image_input=True,
+    max_input_tokens=1000000, max_output_tokens=128000, max_tokens=128000, input_cost_per_token=1.5e-07, cache_read_input_token_cost=3e-08,
+    output_cost_per_token=5e-07)
 
 # %% ../nbs/00_types.ipynb #2c23d11e
 codex_pricing = dict(input_cost_per_token = 0.10/1_000_000, output_cost_per_token = 0.50/1_000_000,

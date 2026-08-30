@@ -125,10 +125,9 @@ class UsageStats:
     @classmethod
     def from_response(cls, r):
         u = r.usage
-        return cls(
-            model=r.model or '', prompt_tokens=u.prompt_tokens or 0, completion_tokens=u.completion_tokens or 0, total_tokens=u.total_tokens or 0,
-            cached_tokens=u.cached_tokens or 0, cache_creation_tokens=u.cache_creation_tokens or 0, reasoning_tokens=u.reasoning_tokens or 0,
-            web_search_requests=search_count(r), cost=r.cost)
+        return cls(model=r.model or '', prompt_tokens=u.prompt_tokens or 0, completion_tokens=u.completion_tokens or 0,
+            total_tokens=u.total_tokens or 0, cached_tokens=u.cached_tokens or 0, cache_creation_tokens=u.cache_creation_tokens or 0,
+            reasoning_tokens=u.reasoning_tokens or 0, web_search_requests=search_count(r), cost=r.cost)
 
     def __add__(self, other):
         if other is None: return self
@@ -171,6 +170,7 @@ class AsyncChat:
         api_key=None,             # API key when model can't be resolved or vendor_name is not known or codex
         base_url=None,            # API base url when model can't be resolved or vendor_name is not known
         extra_headers=None,       # Extra HTTP headers for custom providers
+        use_previous_response_id=False, # Continue tool rounds with Responses IDs instead of replaying history
         markup=0,                 # Cost markup multiplier (e.g. 0.5 for 50%)
         showthink=False,          # Stamp streamed thinking parts to display their text rather than 🧠 glyphs
         cbs:list=None,            # Chat callbacks
@@ -187,6 +187,7 @@ class AsyncChat:
         elif ns is None: ns = globals()
         self.tool_schemas = [lite_mk_func(t) for t in tools] if tools else None
         self.use = UsageStats()
+        self.response_id,self._response_hist_idx = None,0
         self._turn_start = 0    # index into `hist` where the current turn began, for `full`
         self.last_req_use = None  # usage of the latest request only; `use` accumulates across a turn's tool-call steps
         store_attr(but='cbs')
@@ -280,13 +281,15 @@ async def _call(self:AsyncChat, msg=None, temp=None, think=None, search=None, st
     final_prompt=None, tool_choice=None, max_tokens=None, n_workers=8, pause=0.001, tc_timeout=7200, **kwargs):
     if step>max_steps+1: return
     max_tokens = self._prep_call(search, max_tokens, kwargs, stream=stream, think=think)
-    self.turn_sysp, self.turn_msgs = self._prep_msg(msg)
+    self.turn_sysp, turn_msgs = self._prep_msg(msg)
+    self.turn_msgs = turn_msgs[self._response_hist_idx:] if self.response_id else turn_msgs
     async for o in self._call_cbs('after_msgs'): yield o
 
     self.turn_kwargs, self.stream = kwargs, stream
     async for o in self._call_cbs('before_acomplete'): yield o
     res = await acomplete(self.turn_msgs, self.model, system=self.turn_sysp, stream=stream, tools=self.tool_schemas,
         tool_choice=tool_choice, max_tokens=int(max_tokens), temperature=None if think else ifnone(temp,self.temp),
+        previous_response_id=self.response_id if self.use_previous_response_id else None,
         cache_idxs=self.cache_idxs if self.cache else [], ttl=self.ttl, **self.turn_kwargs)
     if stream:
         res = astream_with_complete(res, postproc=postproc)
@@ -296,6 +299,9 @@ async def _call(self:AsyncChat, msg=None, temp=None, think=None, search=None, st
         res = res.value
     self.turn_res, self.turn_msg = res, contents(res)
     self.hist.append(self.turn_msg)
+    if self.use_previous_response_id:
+        if not res.response_id: raise ValueError('use_previous_response_id requires the OpenAI Responses API transport')
+        self.response_id,self._response_hist_idx = res.response_id,len(self.hist)
     async for o in self._call_cbs('after_acomplete'): yield o
     self._track(self.turn_res)
     yield res
@@ -340,6 +346,7 @@ async def __call__(
     return_all=False,  # Returns all intermediate ModelResponses if not streaming and has tool calls
     **kwargs
 ):
+    self.response_id,self._response_hist_idx = None,0
     self.use = UsageStats()
     self._turn_start = len(self.hist)
     result_gen = self._call(msg, temp, think, search, stream, max_steps, 1, final_prompt, **kwargs)

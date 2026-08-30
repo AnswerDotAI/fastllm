@@ -15,7 +15,7 @@ from fastspec.errors import api_error_from_event
 
 from .types import *
 from aidialog.msg_parts import (Part, PartType, Msg, Text, Thinking, Refusal, ToolUse, ToolResult, tool_text,
-                                InputImage, InputAudio, InputVideo, InputFile, sys_text, part_txt, data_url)
+    InputImage, InputAudio, InputVideo, InputFile, sys_text, part_txt, data_url)
 from .streaming import *
 from .streaming import mk_acollect_stream
 from .openai_responses import norm_usage
@@ -123,7 +123,7 @@ def denorm_tool_choice(v):
     "Map canonical tool_choice to OpenAI Chat format."
     _tc_modes = {'auto', 'required', 'any', 'force', 'none', 'off', 'disabled'}
     if v is None: return None
-    if v in _tc_modes: return v if v in ('auto','none','required') else {'any':'required','force':'required','off':'none','disabled':'none'}[v]
+    if v in _tc_modes: return v if v in ('auto','none','required') else dict(any='required', force='required', off='none', disabled='none')[v]
     return {'type': 'function', 'function': {'name': v}}
 
 # %% ../nbs/03_oai_chat.ipynb #02ba4ab7
@@ -181,15 +181,14 @@ def mk_payload(msgs, model, **kwargs):
     if mt:=kwargs.get('max_tokens'):        payload['max_tokens'] = mt
     if tools:=kwargs.get('tools'):          payload['tools'] = denorm_tool_schs(tools)
     if tchc:=kwargs.get('tool_choice'):     payload['tool_choice'] = denorm_tool_choice(tchc)
+    if (ptc:=kwargs.get('parallel_tool_calls')) is not None: payload['parallel_tool_calls'] = ptc
     if thk:=kwargs.get('reasoning_effort'): payload['reasoning_effort'] = denorm_reasoning(thk)
-    if (wopts:=kwargs.get('web_search_options')) is not None: 
-        payload['web_search_options'] = denorm_web_search(wopts)
+    if (wopts:=kwargs.get('web_search_options')) is not None:  payload['web_search_options'] = denorm_web_search(wopts)
     if (temp:=kwargs.get('temperature')) is not None: payload['temperature'] = temp
     return payload
 
 # %% ../nbs/03_oai_chat.ipynb #16e813d2
-def get_hdrs(api_key=None):
-    return {"Authorization": f"Bearer {get_api_key(api_key, 'OPENAI_API_KEY')}"}
+def get_hdrs(api_key=None): return {"Authorization": f"Bearer {get_api_key(api_key, 'OPENAI_API_KEY')}"}
 
 # %% ../nbs/03_oai_chat.ipynb #f89e2bf6
 def cost(usage, m):
@@ -206,13 +205,7 @@ def cost(usage, m):
     return cost
 
 # %% ../nbs/03_oai_chat.ipynb #e2b0908e
-api_ns = dict(norm_tool_calls=norm_tool_calls,
-                norm_parts=norm_parts,
-                norm_finish=norm_finish,
-                norm_usage=norm_usage,
-                acollect_stream=acollect_stream,
-                mk_payload=mk_payload,
-                cost=cost,
-                get_hdrs=get_hdrs, 
-                op_path=('chat.create_chat_completion','chat.create_chat_completion'))
+api_ns = dict(norm_tool_calls=norm_tool_calls, norm_parts=norm_parts, norm_finish=norm_finish, norm_usage=norm_usage,
+    acollect_stream=acollect_stream, mk_payload=mk_payload, cost=cost, get_hdrs=get_hdrs,
+    op_path=('chat.create_chat_completion', 'chat.create_chat_completion'))
 api_registry.register('openai_chat', **api_ns)

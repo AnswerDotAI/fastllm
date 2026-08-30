@@ -48,11 +48,10 @@ vendor_mapping = {
     "qwen":         ('openai_chat', "https://dashscope.aliyuncs.com/compatible-mode/v1", "QWEN_API_KEY"),
     "minimax":      ('anthropic', "https://api.minimax.io/anthropic", "MINIMAX_API_KEY"),
     "meta_ai":      ('openai', "https://api.meta.ai/v1", "META_API_KEY"),
-    "zai":          ('openai_chat', "https://api.z.ai/api/paas/v4", "ZAI_API_KEY")
-}
+    "zai":          ('openai_chat', "https://api.z.ai/api/paas/v4", "ZAI_API_KEY")}
 
 # %% ../nbs/06_acomplete.ipynb #77d27ea7
-api2spec = {'openai':oai_spec, 'openai_chat':oai_spec, 'anthropic':ant_spec, 'gemini':gem_spec}
+api2spec = dict(openai=oai_spec, openai_chat=oai_spec, anthropic=ant_spec, gemini=gem_spec)
 
 # %% ../nbs/06_acomplete.ipynb #e3ed40fb
 def split_vendor(model):
@@ -114,8 +113,8 @@ def _is_ctx_exceeded(code, msg):
     if any(x in m for x in ("string_above_max_length", "invalid 'user'")): return False
     if str(code or "").lower() == "context_length_exceeded": return True
     return any(s in m for s in ("exceed context limit", "maximum context length", "maximum context limit",
-    "longer than the model's context length", "input tokens exceed the configured limit",
-    "exceeds the maximum number of tokens allowed", "prompt is too long", "exceeds the context window"))
+        "longer than the model's context length", "input tokens exceed the configured limit",
+        "exceeds the maximum number of tokens allowed", "prompt is too long", "exceeds the context window"))
 
 def _classify_error(exc):
     "Upgrade generic `APIError` to a specific subclass if applicable."
@@ -139,8 +138,7 @@ def _debug_print(model, api_name, vendor_name, payload, func):
     "Pretty-print acomplete inputs when defaults.debug_mode is set"
     from pprint import pformat
     p = dict(payload)
-    if defaults.debug_mode == 'brief' and 'tools' in p:
-        p['tools'] = '; '.join(o.get('name', o.get('type', o)) for o in p['tools'])
+    if defaults.debug_mode == 'brief' and 'tools' in p: p['tools'] = '; '.join(o.get('name', o.get('type', o)) for o in p['tools'])
     print('━'*60)
     print(f"\033[1;36mfastllm debug\033[0m  model={model} vendor={vendor_name} api={api_name} base_url={func.base_url} path={func.path}")
     print('─'*60)
@@ -170,14 +168,15 @@ async def _retry_stream(mk_gen, retries=2, retry_delay=0.5):
 
 # %% ../nbs/06_acomplete.ipynb #2379ec94
 @delegates(payload_kwargs)
-async def acomplete(msgs, model, api_name=None, vendor_name=None, api_key=None,
-                    base_url=None, xtra_body=None, xtra_hdrs=None, stream=False,
-                    stop_callables=None, retries=2, retry_delay=0.5, **kwargs):
+async def acomplete(msgs, model, api_name=None, vendor_name=None, api_key=None, base_url=None, xtra_body=None, xtra_hdrs=None,
+    stream=False, previous_response_id=None, stop_callables=None, retries=2, retry_delay=0.5, **kwargs):
     "Unified completion across different APIs."
     if not vendor_name and not api_name and not (base_url and api_key):
         v, m = split_vendor(model)
         if v in vendor_mapping: vendor_name, model = v, m
         elif v: api_name, model = v, m  # a registered transport api (e.g. claude_code): not an HTTP vendor
+    if previous_response_id is not None and api_name == 'claude_code':
+        raise ValueError('previous_response_id requires the OpenAI Responses API transport')
     if api_name == 'claude_code':
         if not stream: raise NotImplementedError("claude_code backend supports stream=True only for now")
         api = api_registry[api_name]
@@ -186,6 +185,9 @@ async def acomplete(msgs, model, api_name=None, vendor_name=None, api_key=None,
             async for o in api.acollect_stream(payload, model=model, vendor_name='claude_code', stop_callables=stop_callables): yield o
         return _retry_stream(_mk_gen, retries, retry_delay)
     cli, api_name, vendor_name = mk_client(model=model, vendor_name=vendor_name, api_name=api_name, api_key=api_key, base_url=base_url, xtra_hdrs=xtra_hdrs)
+    if previous_response_id is not None:
+        if api_name != 'openai': raise ValueError('previous_response_id requires the OpenAI Responses API transport')
+        kwargs['previous_response_id'] = previous_response_id
     api = api_registry[api_name]
     payload = api.mk_payload(msgs, model, stream=stream, **kwargs)
     payload = merge(payload, ifnone(xtra_body, {}))

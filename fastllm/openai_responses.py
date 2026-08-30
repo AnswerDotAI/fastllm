@@ -15,8 +15,8 @@ from fastcore.meta import *
 from fastspec.errors import api_error_from_event
 
 from .types import *
-from aidialog.msg_parts import (Part, PartType, Msg, Text, Thinking, Refusal, ToolUse, ToolResult, tool_text, InputImage, InputAudio, InputVideo, InputFile,
-                                mk_tool_res_msg, sys_text, part_txt, data_url)
+from aidialog.msg_parts import (Completion, Part, PartType, Msg, Text, Thinking, Refusal, ToolUse, ToolResult, tool_text,
+    InputImage, InputAudio, InputVideo, InputFile, mk_tool_res_msg, sys_text, part_txt, data_url)
 from .streaming import *
 from .streaming import mk_acollect_stream
 
@@ -24,8 +24,8 @@ from .streaming import mk_acollect_stream
 def norm_tool_call(item):
     typ = item.get("type", "")
     if typ == "function_call":
-        raw = {k:v for k,v in item.items() if k not in ("id","name","arguments")}
-        return ToolUse(id=item["id"], name=item["name"], arguments=json.loads(item["arguments"]), raw=raw)
+        raw = {k:v for k,v in item.items() if k not in ("call_id","name","arguments")}
+        return ToolUse(id=item.get("call_id") or item["id"], name=item["name"], arguments=json.loads(item["arguments"]), raw=raw)
     if typ.endswith("_call"):  # web_search_call, file_search_call, etc.
         name = typ.removesuffix("_call")
         raw = {k:v for k,v in item.items() if k not in ("id")}
@@ -52,7 +52,7 @@ def norm_usage(resp):
     server_tool_use = dict(Counter(o['type'] for o in resp.get('output', []) if o.get('type') != 'function_call' and o.get('type', '').endswith('_call')))
     if server_tool_use: usg['server_tool_use'] = server_tool_use
     return Usage(prompt_tokens=pt, completion_tokens=ct, total_tokens=tt,
-                 cached_tokens=cached, reasoning_tokens=reasoning, raw=usg)
+        cached_tokens=cached, reasoning_tokens=reasoning, raw=usg)
 
 
 # %% ../nbs/02_oai_responses.ipynb #95102df4
@@ -72,13 +72,20 @@ def norm_parts(resp):
                 if (ctyp := c["type"]) == "output_text":
                     c['citations'] = c.pop('annotations', [])
                     parts.append(Text(c['text'], citations=c['citations'], raw=c))
-                elif ctyp == "refusal":
-                    parts.append(Refusal(c['refusal'], raw=c))
+                elif ctyp == "refusal": parts.append(Refusal(c['refusal'], raw=c))
         elif typ == "reasoning":
             for s in item["summary"]: parts.append(Thinking(s['text'], raw=item))
-        elif typ == "function_call" or typ.endswith("_call"):
-            parts.append(norm_tool_call(item))
+        elif typ == "function_call" or typ.endswith("_call"): parts.append(norm_tool_call(item))
     return parts
+
+# %% ../nbs/02_oai_responses.ipynb #ef2d19f3
+@patch(as_prop=True)
+def response_id(self:Completion):
+    "Responses continuation identifier."
+    if self.api_name != 'openai': return
+    if rid := self.raw.get('id'): return rid
+    for d in reversed(self.raw.get('deltas', [])):
+        if rid := nested_idx(d.raw, 'response', 'id'): return rid
 
 # %% ../nbs/02_oai_responses.ipynb #7cd48aa5
 def norm_sse_event(ev, **kwargs):
@@ -92,8 +99,7 @@ def norm_sse_event(ev, **kwargs):
     if typ == "response.output_item.done":
         item = ev.get("item", {})
         itype = item.get("type", "")
-        if itype == "function_call" or itype.endswith("_call"):
-            return Delta(tool_calls=[norm_tool_call(item)], raw=ev, **kwargs)
+        if itype == "function_call" or itype.endswith("_call"): return Delta(tool_calls=[norm_tool_call(item)], raw=ev, **kwargs)
     if typ in ("response.completed", "response.incomplete"):
         resp = ev.get("response", {})
         return Delta(finish_reason=norm_finish(resp), usage=norm_usage(resp), raw=ev, **kwargs)
@@ -120,8 +126,7 @@ def denorm_tool_use(p:ToolUse):
     return dict(type='function_call', call_id=_sanid(p.id), name=p.name, arguments=json.dumps(p.arguments))
 
 # %% ../nbs/02_oai_responses.ipynb #8f42adf7
-def denorm_tool(m:Msg):
-    return [denorm_tool_result(p) for p in m.content if isinstance(p, ToolResult)]
+def denorm_tool(m:Msg): return [denorm_tool_result(p) for p in m.content if isinstance(p, ToolResult)]
 
 # %% ../nbs/02_oai_responses.ipynb #67c8de13
 def denorm_assistant(m:Msg):
@@ -166,7 +171,7 @@ def denorm_tool_choice(v):
     "Map canonical tool_choice to OpenAI Responses format."
     _tc_modes = {'auto', 'required', 'any', 'force', 'none', 'off', 'disabled'}
     if v is None: return None
-    if v in _tc_modes: return v if v in ('auto','none','required') else {'auto':'auto','any':'required','force':'required','off':'none','disabled':'none'}[v]
+    if v in _tc_modes: return v if v in ('auto','none','required') else dict(auto='auto', any='required', force='required', off='none', disabled='none')[v]
     return {'type': 'function', 'name': v}
 
 # %% ../nbs/02_oai_responses.ipynb #b1dcf1d3
@@ -207,7 +212,7 @@ def denorm_video(p): return {"type": "input_video", "video_url": p.text}
 
 # %% ../nbs/02_oai_responses.ipynb #6e79a133
 def denorm_file(p):
-    if (b64:=data_url(p.text)): return {"type": "input_file", "file_data": p.text, "filename": f"upload.{b64[0].split('/')[-1]}"}
+    if (b64:=data_url(p.text)): return dict(type="input_file", file_data=p.text, filename=f"upload.{b64[0].split('/')[-1]}")
     return {"type": "input_file", "file_url": p.text}
 
 # %% ../nbs/02_oai_responses.ipynb #145b1c79
@@ -233,15 +238,15 @@ def mk_payload(msgs, model, **kwargs):
     if mt:=kwargs.get('max_tokens'):        payload['max_output_tokens'] = mt
     if tools:=kwargs.get('tools'):          payload['tools'] = denorm_tool_schs(tools)
     if tchc:=kwargs.get('tool_choice'):     payload['tool_choice'] = denorm_tool_choice(tchc)
+    if rid:=kwargs.get('previous_response_id'): payload['previous_response_id'] = rid
+    if (ptc:=kwargs.get('parallel_tool_calls')) is not None: payload['parallel_tool_calls'] = ptc
     if thk:=kwargs.get('reasoning_effort'): payload['reasoning'] = denorm_reasoning(thk)
-    if (wopts:=kwargs.get('web_search_options')) is not None: 
-        payload.setdefault('tools', []).append(denorm_web_search(wopts))
+    if (wopts:=kwargs.get('web_search_options')) is not None:  payload.setdefault('tools', []).append(denorm_web_search(wopts))
     if (temp:=kwargs.get('temperature')) is not None: payload['temperature'] = temp
     return payload
 
 # %% ../nbs/02_oai_responses.ipynb #529fd4bc
-def get_hdrs(api_key=None):
-    return {"Authorization": f"Bearer {get_api_key(api_key, 'OPENAI_API_KEY')}"}
+def get_hdrs(api_key=None): return {"Authorization": f"Bearer {get_api_key(api_key, 'OPENAI_API_KEY')}"}
 
 # %% ../nbs/02_oai_responses.ipynb #a907ffa8
 def cost(usage, m):
@@ -254,13 +259,7 @@ def cost(usage, m):
     return cost
 
 # %% ../nbs/02_oai_responses.ipynb #07114b55
-api_ns = dict(norm_tool_calls=norm_tool_calls,
-                norm_parts=norm_parts,
-                norm_finish=norm_finish,
-                norm_usage=norm_usage,
-                acollect_stream=acollect_stream,
-                mk_payload=mk_payload,
-                cost=cost,
-                get_hdrs=get_hdrs,
-                op_path=('responses.create_response','responses.create_response'))
+api_ns = dict(norm_tool_calls=norm_tool_calls, norm_parts=norm_parts, norm_finish=norm_finish, norm_usage=norm_usage,
+    acollect_stream=acollect_stream, mk_payload=mk_payload, cost=cost, get_hdrs=get_hdrs,
+    op_path=('responses.create_response', 'responses.create_response'))
 api_registry.register('openai', **api_ns)
