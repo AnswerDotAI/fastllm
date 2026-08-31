@@ -10,8 +10,7 @@ Clone and install locally into your `aai-ws` env
 ## Setup
 
 ``` python
-from fastllm.types import Completion
-from aidialog.msg_parts import Msg, Part, Text, Thinking, ToolUse, InputImage, mk_tool_res_msg
+from aidialog.msg_parts import Msg, Part, Text, Thinking, ToolUse, InputImage, mk_tool_res_msg, Completion
 from fastllm.acomplete import acomplete
 import asyncio, json
 
@@ -162,7 +161,9 @@ print("Tool calls:", r1.tool_calls)
 ```
 
     I'll check the current weather in Paris for you.
-    Tool calls: [ToolCall(id='toolu_01RMN1WM7vPBT3ovv5Ex6VzC', name='get_weather', arguments={'city': 'Paris'}, server=False, extra={'caller': {'type': 'direct'}})]
+    - ⏳ `get_weather(city="Paris")` ⏳
+
+    Tool calls: [ToolUse(raw={'caller': {'type': 'direct'}}, cache_control=None, id='toolu_01RMN1WM7vPBT3ovv5Ex6VzC', name='get_weather', arguments={'city': 'Paris'}, server=False, text=None)]
 
 ``` python
 # Provide the tool result
@@ -202,8 +203,9 @@ print("\nNo tools: ", end='')
 r = await stream([user("What's the weather?")], model='claude-sonnet-4-20250514', tools=tools, tool_choice='none', max_tokens=mtok)
 ```
 
+    - ⏳ `get_weather(city="<UNKNOWN>")` ⏳
 
-    Forced: [ToolCall(id='toolu_01U7tAXjXAtwjp6xNSMbsyPU', name='get_weather', arguments={'city': '<UNKNOWN>'}, server=False, extra={'caller': {'type': 'direct'}})]
+    Forced: [ToolUse(raw={'caller': {'type': 'direct'}}, cache_control=None, id='toolu_01U7tAXjXAtwjp6xNSMbsyPU', name='get_weather', arguments={'city': '<UNKNOWN>'}, server=False, text=None)]
 
     No tools: I'd be happy to help you get the weather information! However, I need to know which city you'd like me to check the weather for. Could you please tell me the city name?
 
@@ -265,7 +267,25 @@ r = await stream([user("What is the latest Python release?")], model='gpt-4o-min
 print(f"\nServer tools used: {[tc.name for tc in r.tool_calls if tc.server]}")
 ```
 
-    GPT + web search: As of June 12, 2026, the latest stable release of Python is version 3.14.5, which was released on May 10, 2026. ([test.python.org](https://test.python.org/downloads/latest?utm_source=openai))
+    GPT + web search: 
+
+    ```json {.tool}
+    {
+      "id": "ws_0f48f4b49d3a4937006a2c04cb944481a3882056257ae43956",
+      "name": "web_search",
+      "args": {
+        "type": "search",
+        "queries": [
+          "latest Python release October 2023"
+        ],
+        "query": "latest Python release October 2023"
+      },
+      "result": "Server tool call executed.",
+      "server": true
+    }
+    ```
+
+    As of June 12, 2026, the latest stable release of Python is version 3.14.5, which was released on May 10, 2026. ([test.python.org](https://test.python.org/downloads/latest?utm_source=openai))
 
     Python 3.14 introduced several significant features, including:
 

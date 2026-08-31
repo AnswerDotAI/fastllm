@@ -175,20 +175,23 @@ async def acomplete(msgs, model, api_name=None, vendor_name=None, api_key=None, 
         v, m = split_vendor(model)
         if v in vendor_mapping: vendor_name, model = v, m
         elif v: api_name, model = v, m  # a registered transport api (e.g. claude_code): not an HTTP vendor
-    if previous_response_id is not None and api_name == 'claude_code':
-        raise ValueError('previous_response_id requires the OpenAI Responses API transport')
     if api_name == 'claude_code':
-        if not stream: raise NotImplementedError("claude_code backend supports stream=True only for now")
         api = api_registry[api_name]
-        payload = api.mk_payload(msgs, model, stream=stream, **kwargs)
+        if previous_response_id is not None and not getattr(api, 'supports_previous_response_id', False):
+            raise ValueError('previous_response_id is not supported by this transport')
+        payload = api.mk_payload(msgs, model, stream=stream, previous_response_id=previous_response_id, **kwargs)
         async def _mk_gen():
             async for o in api.acollect_stream(payload, model=model, vendor_name='claude_code', stop_callables=stop_callables): yield o
-        return _retry_stream(_mk_gen, retries, retry_delay)
+        result = _retry_stream(_mk_gen, retries, retry_delay)
+        if stream: return result
+        async for completion in result: pass
+        return completion
     cli, api_name, vendor_name = mk_client(model=model, vendor_name=vendor_name, api_name=api_name, api_key=api_key, base_url=base_url, xtra_hdrs=xtra_hdrs)
-    if previous_response_id is not None:
-        if api_name != 'openai': raise ValueError('previous_response_id requires the OpenAI Responses API transport')
-        kwargs['previous_response_id'] = previous_response_id
     api = api_registry[api_name]
+    if previous_response_id is not None:
+        if not getattr(api, 'supports_previous_response_id', False):
+            raise ValueError('previous_response_id is not supported by this transport')
+        kwargs['previous_response_id'] = previous_response_id
     payload = api.mk_payload(msgs, model, stream=stream, **kwargs)
     payload = merge(payload, ifnone(xtra_body, {}))
     if vendor_name == 'codex':

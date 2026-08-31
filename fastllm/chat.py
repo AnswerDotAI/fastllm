@@ -300,8 +300,9 @@ async def _call(self:AsyncChat, msg=None, temp=None, think=None, search=None, st
     self.turn_res, self.turn_msg = res, contents(res)
     self.hist.append(self.turn_msg)
     if self.use_previous_response_id:
-        if not res.response_id: raise ValueError('use_previous_response_id requires the OpenAI Responses API transport')
-        self.response_id,self._response_hist_idx = res.response_id,len(self.hist)
+        if res.response_id: self.response_id,self._response_hist_idx = res.response_id,len(self.hist)
+        elif res.tool_calls: raise ValueError('tool-call response requires a continuation-capable transport')
+        else: self.response_id,self._response_hist_idx = None,0
     async for o in self._call_cbs('after_acomplete'): yield o
     self._track(self.turn_res)
     yield res

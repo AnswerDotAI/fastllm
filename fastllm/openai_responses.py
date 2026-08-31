@@ -81,11 +81,18 @@ def norm_parts(resp):
 # %% ../nbs/02_oai_responses.ipynb #ef2d19f3
 @patch(as_prop=True)
 def response_id(self:Completion):
-    "Responses continuation identifier."
+    "Provider continuation identifier."
+    if self.vendor_name == 'codex': return
+    if rid := self.raw.get('response_id'): return rid
     if self.api_name != 'openai': return
     if rid := self.raw.get('id'): return rid
     for d in reversed(self.raw.get('deltas', [])):
         if rid := nested_idx(d.raw, 'response', 'id'): return rid
+
+@patch(as_prop=True)
+def response_id_reusable(self:Completion):
+    "Can the provider continuation identifier be consumed more than once?"
+    return self.raw.get('response_id_reusable', True)
 
 # %% ../nbs/02_oai_responses.ipynb #7cd48aa5
 def norm_sse_event(ev, **kwargs):
@@ -260,6 +267,6 @@ def cost(usage, m):
 
 # %% ../nbs/02_oai_responses.ipynb #07114b55
 api_ns = dict(norm_tool_calls=norm_tool_calls, norm_parts=norm_parts, norm_finish=norm_finish, norm_usage=norm_usage,
-    acollect_stream=acollect_stream, mk_payload=mk_payload, cost=cost, get_hdrs=get_hdrs,
+    supports_previous_response_id=True, acollect_stream=acollect_stream, mk_payload=mk_payload, cost=cost, get_hdrs=get_hdrs,
     op_path=('responses.create_response', 'responses.create_response'))
 api_registry.register('openai', **api_ns)
