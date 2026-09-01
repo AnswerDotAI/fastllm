@@ -1,3 +1,4 @@
+.sesskey
 o200k.pkl
 *.egg-info/
 **/specs/*.ipynb
