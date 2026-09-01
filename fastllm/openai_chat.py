@@ -12,7 +12,7 @@ import json
 from collections import Counter
 from fastcore.utils import *
 from fastcore.meta import *
-from fastspec.errors import api_error_from_event
+from fasttransport.errors import api_error_from_event
 
 from .types import *
 from aidialog.msg_parts import (Part, PartType, Msg, Text, Thinking, Refusal, ToolUse, ToolResult, tool_text,

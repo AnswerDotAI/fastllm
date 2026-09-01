@@ -14,7 +14,7 @@ __all__ = ['FinishReason', 'api_registry', 'model_prices_url', 'haik45', 'sonn45
 # %% ../nbs/00_types.ipynb #b4d047fd
 import httpx2, base64, io
 from fasttransport.core import AsyncHttpCli
-import fastspec.errors  # patches httpx2 exceptions with .api_error(), which provider_req relies on
+import fasttransport.errors  # patches httpx2 exceptions with .api_error(), which provider_req relies on
 from importlib.metadata import entry_points
 from datetime import datetime, timezone
 from fastcore.utils import *

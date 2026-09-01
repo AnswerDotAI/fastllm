@@ -10,7 +10,7 @@ import asyncio,json,httpx2
 from fastcore.utils import *
 from fastcore.meta import *
 from fasttransport.core import AsyncHttpCli
-from fastspec.errors import APIError
+from fasttransport.errors import APIError
 
 from .types import *
 from aidialog.msg_parts import (Part, PartType, Msg, Text, Thinking, ToolUse, ToolResult, InputImage, InputAudio, InputVideo,
