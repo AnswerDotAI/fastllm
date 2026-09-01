@@ -256,7 +256,7 @@ def _prep_call(self:AsyncChat, search, max_tokens, kwargs, stream=False, think=N
     if self.api_key:       kwargs['api_key'] = self.api_key
     if self.base_url:      kwargs['base_url'] = self.base_url
     if self.endpoint:      kwargs['endpoint'] = self.endpoint
-    if self.extra_headers: kwargs['xtra_headers'] = self.extra_headers
+    if self.extra_headers: kwargs['xtra_hdrs'] = self.extra_headers
     kwargs.update(_think_kw(self.model, think, self.vendor_name))
     return max_tokens
 

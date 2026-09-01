@@ -4,12 +4,12 @@
 
 # %% auto #0
 __all__ = ['FinishReason', 'api_registry', 'model_prices_url', 'haik45', 'sonn45', 'sonn46', 'sonn', 'sonn5', 'opus46', 'opus48',
-           'opus', 'opus5', 'fable', 'fable5', 'gpt54', 'gpt54m', 'gpt55', 'codex54', 'codex54m', 'codex55',
-           'codex53spark', 'model_info_registry', 'modern_llm', 'deepseek_v4_common', 'mimo_v25_common',
-           'codex_pricing', 'sol', 'terra', 'luna', 'gpt56s', 'Usage', 'APIRegistry', 'mk_completion', 'fn_schema',
-           'payload_kwargs', 'provider_req', 'get_api_key', 'wrap_typed', 'unwrap_typed', 'resize_b64',
-           'model_prices_meta', 'infer_api_name', 'get_model_meta', 'register_model_info', 'get_model_info',
-           'get_model_pricing', 'approx_pricing', 'is_deepseek_peak_hour', 'price_tier', 'tier_rate']
+           'opus', 'opus5', 'fable', 'fable5', 'fable51', 'gpt54', 'gpt54m', 'gpt55', 'codex54', 'codex54m', 'codex55',
+           'codex53spark', 'model_info_registry', 'modern_llm', 'deepseek_v4_common', 'deepseek_v4_flash_prices',
+           'mimo_v25_common', 'codex_pricing', 'sol', 'terra', 'luna', 'gpt56s', 'Usage', 'APIRegistry',
+           'mk_completion', 'fn_schema', 'payload_kwargs', 'provider_req', 'get_api_key', 'wrap_typed', 'unwrap_typed',
+           'resize_b64', 'model_prices_meta', 'infer_api_name', 'get_model_meta', 'register_model_info',
+           'get_model_info', 'get_model_pricing', 'approx_pricing', 'is_deepseek_peak_hour', 'price_tier', 'tier_rate']
 
 # %% ../nbs/00_types.ipynb #b4d047fd
 import httpx2, base64, io
@@ -186,6 +186,7 @@ opus46 = "claude-opus-4-6"
 opus48 = "claude-opus-4-8"
 opus = opus5 = "claude-opus-5"
 fable = fable5 = 'claude-fable-5'
+fable51 = 'claude-fable-5-1'
 gpt54 = "gpt-5.4"
 gpt54m = "gpt-5.4-mini"
 gpt55 = "gpt-5.5"
@@ -258,14 +259,18 @@ register_model_info('kimi-k3', vendor_name='moonshot', base='kimi-k2.6', support
     max_input_tokens=1_000_000, input_cost_per_token=3e-6, cache_read_input_token_cost=0.30e-6, output_cost_per_token=15.0e-6)
 
 # %% ../nbs/00_types.ipynb #948d55d0
-deepseek_v4_common = dict(**modern_llm, max_input_tokens=1048576, max_output_tokens=393216, max_tokens=393216)
+# The price map carries DeepSeek's peak rates, and `Completion.cost` doubles at peak, so register the off-peak rates
+deepseek_v4_common = dict(supports_native_structured_output=True, max_input_tokens=1048576)
+deepseek_v4_flash_prices = dict(input_cost_per_token=0.22e-6, input_cost_per_token_cache_hit=0.007e-6,
+    cache_read_input_token_cost=0.007e-6, output_cost_per_token=0.66e-6)
 
-register_model_info('deepseek-v4-flash', vendor_name='deepseek', base='deepseek/deepseek-v3.2', **deepseek_v4_common,
-    input_cost_per_token=1.4e-07, input_cost_per_token_cache_hit=2.8e-09,
-    output_cost_per_token=2.8e-07, cache_read_input_token_cost=1.4e-07/10)
-register_model_info('deepseek-v4-pro', vendor_name='deepseek', base='deepseek/deepseek-v3.2', **deepseek_v4_common,
-    input_cost_per_token=4.35e-07, input_cost_per_token_cache_hit=3.625e-09,
-    output_cost_per_token=8.7e-07, cache_read_input_token_cost=4.35e-07/10)
+register_model_info('deepseek-v4-flash', vendor_name='deepseek', base='deepseek-v4-flash',
+    **deepseek_v4_common, **deepseek_v4_flash_prices)
+register_model_info('deepseek-v4-flash-vision-exp', vendor_name='deepseek', base='deepseek-v4-flash-vision-exp',
+    **deepseek_v4_common, **deepseek_v4_flash_prices, supports_image_input=True)
+register_model_info('deepseek-v4-pro', vendor_name='deepseek', base='deepseek-v4-pro', **deepseek_v4_common,
+    input_cost_per_token=0.66e-6, input_cost_per_token_cache_hit=0.022e-6,
+    cache_read_input_token_cost=0.022e-6, output_cost_per_token=1.98e-6)
 
 mimo_v25_common = dict(**modern_llm, supports_web_search=True, max_input_tokens=1048576, max_output_tokens=131072, max_tokens=131072)
 
@@ -310,7 +315,9 @@ register_model_info(codex53spark, 'codex', **codex_pricing,
     max_tokens=128000, max_input_tokens=128000, max_output_tokens=128000)
 
 # %% ../nbs/00_types.ipynb #5d3e4720
-for model in (haik45, sonn45, sonn46, sonn5, opus46, opus48, opus5, fable5):
+# Fable 5.1 isn't in the price map yet; it prices and behaves like Fable 5
+register_model_info(fable51, 'anthropic', base=fable5)
+for model in (haik45, sonn45, sonn46, sonn5, opus46, opus48, opus5, fable5, fable51):
     register_model_info(model, 'claude_code', base=model, base_vendor_name='anthropic', **codex_pricing)
 
 # %% ../nbs/00_types.ipynb #bb0c4c2a
