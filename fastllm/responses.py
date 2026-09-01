@@ -17,7 +17,7 @@ __all__ = ['ResponsesError', 'response_input', 'normalize_call_ids', 'response_o
 # %% ../nbs/06a_responses.ipynb #e16fc24e
 import asyncio, json, secrets, time
 from fastcore.utils import *
-from fastspec.errors import APIError
+from fasttransport.errors import APIError
 
 from .acomplete import acomplete
 from .streaming import Status

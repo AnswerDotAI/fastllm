@@ -10,7 +10,7 @@ __all__ = ['Delta', 'norm_and_yield', 'PrintStream', 'PartAccum', 'FenceToolStop
 import json,copy
 from fastcore.utils import *
 from fastcore.meta import delegates
-from fastspec.errors import *
+from fasttransport.errors import *
 from .types import *
 from aidialog.msg_parts import Part, PartType, Msg, Text, Thinking, ToolUse, ToolResult, ServerToolResult, mk_part, fence_call_re, Completion
 
