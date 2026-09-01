@@ -2,6 +2,13 @@
 
 <!-- do not remove -->
 
+## 0.0.46
+
+### New Features
+
+- Add Fable 5.1 and DeepSeek V4 Flash Vision, with official DeepSeek pricing ([#92](https://github.com/AnswerDotAI/fastllm/pull/92)), thanks to [@jph00](https://github.com/jph00)
+
+
 ## 0.0.45
 
 ### New Features
