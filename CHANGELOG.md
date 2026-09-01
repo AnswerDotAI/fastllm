@@ -2,6 +2,14 @@
 
 <!-- do not remove -->
 
+## 0.0.44
+
+### New Features
+
+- Initial responses API support ([#90](https://github.com/AnswerDotAI/fastllm/issues/90))
+- Add Responses API continuation via `previous_response_id` and Completion.`response_id`; use `call_id` for tool call IDs ([#89](https://github.com/AnswerDotAI/fastllm/issues/89))
+
+
 ## 0.0.43
 
 ### New Features
