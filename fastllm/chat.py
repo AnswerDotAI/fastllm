@@ -71,7 +71,7 @@ def _mk_tool_result(res):
 # %% ../nbs/07_chat.ipynb #a0fcc96e
 def _call_func(tc:ToolUse, tool_schemas, ns, callf):
     "Call tool function synchronously and return formatted result"
-    fn, valid = tc.name, {nested_idx(o,'function','name') for o in tool_schemas or []}
+    fn, valid = tc.name, {fs[0] for o in tool_schemas or [] if (fs:=fn_schema(o))}
     if fn not in valid: return f"Tool not defined in tool_schemas: {fn}"
     else: return callf(fn, tc.arguments, ns=ns, raise_on_err=False)
 
@@ -92,14 +92,14 @@ async def structured(
 ):
     "Return the value of the tool call (generally used for structured outputs)"
     t = lite_mk_func(tool)
-    r = await acomplete(msgs, m, system=sp, tools=[t], tool_choice=nested_idx(t, 'function', 'name'), **kwargs)
+    r = await acomplete(msgs, m, system=sp, tools=[t], tool_choice=fn_schema(t)[0], **kwargs)
     return tool(**r.tool_calls[0].arguments)
 
 # %% ../nbs/07_chat.ipynb #1fe8a9bc
 def _has_search(info): return bool(info.get('search_context_cost_per_query') or info.get('supports_web_search'))
 
 # %% ../nbs/07_chat.ipynb #2d78087b
-effort = AttrDict({o[0]:o for o in ('low','medium','high')})
+effort = AttrDict({o[0]:o for o in ('none','low','medium','high')})
 effort['x'] = 'max'
 
 # %% ../nbs/07_chat.ipynb #dc17f844
@@ -169,6 +169,7 @@ class AsyncChat:
         vendor_name=None,         # Vendor name, one of vendor_mapping which resolves api_base/api_key automatically
         api_key=None,             # API key when model can't be resolved or vendor_name is not known or codex
         base_url=None,            # API base url when model can't be resolved or vendor_name is not known
+        endpoint=None,            # Override the transport's request path, for a server mounting Responses at a custom location
         extra_headers=None,       # Extra HTTP headers for custom providers
         use_previous_response_id=False, # Continue tool rounds with Responses IDs instead of replaying history
         markup=0,                 # Cost markup multiplier (e.g. 0.5 for 50%)
@@ -224,7 +225,10 @@ class AsyncChat:
 def _usrtools(tcs): return L(tcs).filter(lambda o: not o.server) if tcs else None
 
 # %% ../nbs/07_chat.ipynb #19b87f53
+_effort_names = dict(none='n', low='l', medium='m', high='h', xhigh='x', max='x')
+
 def _think_kw(model, think, vendor_name):
+    think = _effort_names.get(think, think)
     if not think: return {}
     if 'opus-4-7' in model:
         e = 'xhigh' if think=='h' else effort.get(think)
@@ -251,6 +255,7 @@ def _prep_call(self:AsyncChat, search, max_tokens, kwargs, stream=False, think=N
     if self.vendor_name:   kwargs['vendor_name'] = self.vendor_name
     if self.api_key:       kwargs['api_key'] = self.api_key
     if self.base_url:      kwargs['base_url'] = self.base_url
+    if self.endpoint:      kwargs['endpoint'] = self.endpoint
     if self.extra_headers: kwargs['xtra_headers'] = self.extra_headers
     kwargs.update(_think_kw(self.model, think, self.vendor_name))
     return max_tokens
@@ -277,21 +282,23 @@ async def astream_with_complete(self, agen, postproc=noop):
 # %% ../nbs/07_chat.ipynb #a049cf52
 @patch
 @delegates(acomplete)
-async def _call(self:AsyncChat, msg=None, temp=None, think=None, search=None, stream=False, max_steps=2, step=1,
-    final_prompt=None, tool_choice=None, max_tokens=None, n_workers=8, pause=0.001, tc_timeout=7200, **kwargs):
-    if step>max_steps+1: return
-    max_tokens = self._prep_call(search, max_tokens, kwargs, stream=stream, think=think)
+async def _call(self:AsyncChat, msg=None, step=1, search=None, tool_choice=None, initial_body=None, **kwargs):
+    "One model turn plus its tool round, recursing for the next; turn-constant options come from `turn_opts`"
+    t = AttrDict(self.turn_opts)
+    if step>t.max_steps+1: return
+    max_tokens = self._prep_call(search, t.max_tokens, kwargs, stream=t.stream, think=t.think)
     self.turn_sysp, turn_msgs = self._prep_msg(msg)
     self.turn_msgs = turn_msgs[self._response_hist_idx:] if self.response_id else turn_msgs
     async for o in self._call_cbs('after_msgs'): yield o
 
-    self.turn_kwargs, self.stream = kwargs, stream
+    self.turn_kwargs, self.stream = kwargs, t.stream
+    kw = merge(kwargs, dict(xtra_body=merge(kwargs.get('xtra_body'), initial_body))) if initial_body else kwargs
     async for o in self._call_cbs('before_acomplete'): yield o
-    res = await acomplete(self.turn_msgs, self.model, system=self.turn_sysp, stream=stream, tools=self.tool_schemas,
-        tool_choice=tool_choice, max_tokens=int(max_tokens), temperature=None if think else ifnone(temp,self.temp),
+    res = await acomplete(self.turn_msgs, self.model, system=self.turn_sysp, stream=t.stream, tools=self.tool_schemas,
+        tool_choice=tool_choice, max_tokens=int(max_tokens), temperature=None if t.think else ifnone(t.temp,self.temp),
         previous_response_id=self.response_id if self.use_previous_response_id else None,
-        cache_idxs=self.cache_idxs if self.cache else [], ttl=self.ttl, **self.turn_kwargs)
-    if stream:
+        cache_idxs=self.cache_idxs if self.cache else [], ttl=self.ttl, **kw)
+    if t.stream:
         res = astream_with_complete(res, postproc=postproc)
         async for chunk in res:
             if isinstance(chunk, Thinking) and self.showthink: chunk.showthink = True
@@ -310,47 +317,51 @@ async def _call(self:AsyncChat, msg=None, temp=None, think=None, search=None, st
     self.toolloop, self.prompt, tmsg = False, None, None
     async for o in self._call_cbs('before_tool_calls'): yield o
     if tcs := _usrtools(res.tool_calls):
-        tres = await parallel_async(_alite_call_func, tcs, timeout=tc_timeout, n_workers=n_workers, pause=pause, **self.tcdict)
+        tres = await parallel_async(_alite_call_func, tcs, timeout=t.tc_timeout, n_workers=t.n_workers, pause=t.pause, **self.tcdict)
         tmsg = mk_tool_res_msg(tcs, tres)
         for r in tmsg.content: yield r
         self.hist.append(tmsg)
         yield Refresh()
-        if step>=max_steps-1 or _has_stop(tmsg.content): self.prompt,tool_choice,search = mk_msg(final_prompt),'none',False
+        if step>=t.max_steps-1 or _has_stop(tmsg.content): self.prompt,tool_choice,search = mk_msg(t.final_prompt),'none',False
         self.toolloop = True
 
     async for o in self._call_cbs('after_tool_calls'): yield o
-    if self.toolloop and step <= max_steps:
+    if self.toolloop and step <= t.max_steps:
         try:
-            async for result in self._call(
-                self.prompt, temp, think, search, stream, max_steps, step+1,
-                final_prompt, tool_choice=tool_choice, **kwargs): yield result
+            async for result in self._call(self.prompt, step+1, search, tool_choice, **kwargs): yield result
         except ContextWindowExceededError:
             if tmsg is not None:
                 for p in tmsg.content:
                     if len(p.text)>1000: p.text = _cwe_msg + trunc_str(p.text, mx=1000)
-            async for result in self._call(
-                self.prompt, temp, think, search, stream, max_steps, step+1,
-                final_prompt, tool_choice='none', **kwargs): yield result
+            async for result in self._call(self.prompt, step+1, search, 'none', **kwargs): yield result
 
 # %% ../nbs/07_chat.ipynb #1361515a
 @patch
-@delegates(AsyncChat._call)
+@delegates(acomplete)
 async def __call__(
     self:AsyncChat,
     msg=None,          # Message str, or list of multiple message parts
     temp=None,         # Override temp set on chat initialization
-    think=None,        # Thinking (l,m,h)
+    think=None,        # Thinking effort: l/m/h/x, or the full names
     search=None,       # Override search set on chat initialization (l,m,h)
     stream=False,      # Stream results
-    max_steps=2, # Maximum number of tool calls
+    max_steps=2,       # Maximum number of tool calls
     final_prompt=_final_prompt, # Final prompt when tool calls have ran out
+    initial_body=None, # Extra body fields sent with the first request only; tool-loop continuations use the standard payload
     return_all=False,  # Returns all intermediate ModelResponses if not streaming and has tool calls
+    tool_choice=None,  # Force ('required'/a tool name) or disable ('none') tool use
+    max_tokens=None,   # Response token limit (default: the model's maximum)
+    n_workers=8,       # Max concurrent tool executions
+    pause=0.001,       # Pause between tool submissions
+    tc_timeout=7200,   # Per-tool-call timeout in seconds
     **kwargs
 ):
     self.response_id,self._response_hist_idx = None,0
     self.use = UsageStats()
     self._turn_start = len(self.hist)
-    result_gen = self._call(msg, temp, think, search, stream, max_steps, 1, final_prompt, **kwargs)
+    self.turn_opts = dict(temp=temp, think=think, stream=stream, max_steps=max_steps, final_prompt=final_prompt,
+        max_tokens=max_tokens, n_workers=n_workers, pause=pause, tc_timeout=tc_timeout)
+    result_gen = self._call(msg, 1, search, tool_choice, initial_body, **kwargs)
     if stream or return_all: return result_gen
     async for res in result_gen: pass
     return res # normal chat behavior only return last msg
@@ -414,7 +425,7 @@ _lang2tool = dict(py='python', bash='bash')
 def _active_fence_langs(tool_schemas):
     "Return set of active fence langs whose mapped tool is registered"
     if not tool_schemas: return set()
-    names = {nested_idx(t, 'function', 'name') for t in tool_schemas}
+    names = {fs[0] for t in tool_schemas if (fs:=fn_schema(t))}
     return {lang for lang, tname in _lang2tool.items() if tname in names}
 
 # %% ../nbs/07_chat.ipynb #72274cdc
@@ -423,7 +434,7 @@ async def run_fence_tool(lang, code, ns):
     tname = _lang2tool[lang]
     arg = dict(code=code) if lang == 'py' else dict(cmd=code)
     res = _mk_tool_result(await call_func_async(tname, arg, ns=ns, raise_on_err=False))
-    return mk_result_fence(trunc_str(str(res)))
+    return mk_result_fence(trunc_str(tool_text(res)))
 
 # %% ../nbs/07_chat.ipynb #740ee3a4
 class FenceToolCallback(ChatCallback):

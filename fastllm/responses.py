@@ -71,7 +71,9 @@ def response_input(inp):
                 except json.JSONDecodeError: pass
             msgs.append(Msg('assistant', [ToolUse(id=item.get('call_id'), name=item.get('name'), arguments=args)]))
         elif typ == 'function_call_output':
-            pending_tools.append(ToolResult(id=item.get('call_id'), name=item.get('name', ''), text=_text_content(item.get('output', ''))))
+            out = item.get('output', '')
+            pending_tools.append(ToolResult(id=item.get('call_id'), name=item.get('name', ''),
+                text=out if isinstance(out, str) else _msg_parts(out)))
         else: raise ResponsesError(f'Unsupported input item type: {typ}', param='input')
     flush_tools()
     return msgs,'\n\n'.join(filter(None, systems))
@@ -159,6 +161,10 @@ class AsyncResponses:
         if previous and previous.model != model: raise ResponsesError('model must match the previous response', param='model')
         new_msgs,input_system = response_input(body['input'])
         history = (*previous.history, *new_msgs) if previous else tuple(new_msgs)
+        names = {p.id: p.name for m in history for p in m.content if isinstance(p, ToolUse)}
+        for m in new_msgs:
+            for p in m.content:
+                if isinstance(p, ToolResult) and not p.name: p.name = names.get(p.id, '')
         instructions = '\n\n'.join(filter(None, [body.get('instructions', ''), input_system]))
         provider_messages = new_msgs if previous and previous.provider_response_id else list(history)
         return ResponseTurn(_new_id('resp'), int(time.time()), body, history, provider_messages, instructions, previous)
@@ -171,7 +177,8 @@ async def call(self:AsyncResponses, turn):
     reasoning = body.get('reasoning') or {}
     kwargs = dict(previous_response_id=turn.provider_previous_id, system=turn.system or None, tools=body.get('tools'))
     kwargs.update(tool_choice=body.get('tool_choice'), parallel_tool_calls=body.get('parallel_tool_calls', True),
-        reasoning_effort=reasoning.get('effort'), max_tokens=body.get('max_output_tokens'), temperature=body.get('temperature'))
+        reasoning_effort=reasoning.get('effort'), max_tokens=body.get('max_output_tokens'), temperature=body.get('temperature'),
+        cache_idxs=body.get('cache_idxs'), ttl=body.get('ttl'), web_search_options=body.get('web_search_options'))
     return await acomplete(turn.provider_messages, model=body['model'], stream=True, **kwargs)
 
 # %% ../nbs/06a_responses.ipynb #4f424285

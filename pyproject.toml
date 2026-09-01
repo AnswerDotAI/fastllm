@@ -15,7 +15,7 @@ classifiers = [
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3 :: Only",
 ]
-dependencies = ['fastcore>=2.1.18', 'aidialog>=0.0.10', 'fastspec>=0.2.1', 'pillow']
+dependencies = ['fastcore>=2.1.18', 'aidialog>=0.0.10', 'fastspec>=0.2.1', 'fasttransport>=0.0.2', 'pillow']
 
 [project.urls]
 Repository = "https://github.com/AnswerDotAI/fastllm"
@@ -28,9 +28,6 @@ version = {attr = "fastllm.__version__"}
 
 [tool.setuptools.packages.find]
 include = ["fastllm*"]
-
-[tool.setuptools.package-data]
-fastllm = ["specs/*.yml", "specs/*.json"]
 
 [project.entry-points.fastaudit_import_allow]
 fastllm = "fastllm"

@@ -7,12 +7,14 @@ __all__ = ['FinishReason', 'api_registry', 'model_prices_url', 'haik45', 'sonn45
            'opus', 'opus5', 'fable', 'fable5', 'gpt54', 'gpt54m', 'gpt55', 'codex54', 'codex54m', 'codex55',
            'codex53spark', 'model_info_registry', 'modern_llm', 'deepseek_v4_common', 'mimo_v25_common',
            'codex_pricing', 'sol', 'terra', 'luna', 'gpt56s', 'Usage', 'APIRegistry', 'mk_completion', 'fn_schema',
-           'payload_kwargs', 'get_api_key', 'wrap_typed', 'unwrap_typed', 'resize_b64', 'model_prices_meta',
-           'infer_api_name', 'get_model_meta', 'register_model_info', 'get_model_info', 'get_model_pricing',
-           'approx_pricing', 'is_deepseek_peak_hour', 'price_tier', 'tier_rate']
+           'payload_kwargs', 'provider_req', 'get_api_key', 'wrap_typed', 'unwrap_typed', 'resize_b64',
+           'model_prices_meta', 'infer_api_name', 'get_model_meta', 'register_model_info', 'get_model_info',
+           'get_model_pricing', 'approx_pricing', 'is_deepseek_peak_hour', 'price_tier', 'tier_rate']
 
 # %% ../nbs/00_types.ipynb #b4d047fd
 import httpx2, base64, io
+from fasttransport.core import AsyncHttpCli
+import fastspec.errors  # patches httpx2 exceptions with .api_error(), which provider_req relies on
 from importlib.metadata import entry_points
 from datetime import datetime, timezone
 from fastcore.utils import *
@@ -97,6 +99,25 @@ def fn_schema(t):
 # %% ../nbs/00_types.ipynb #28c698fe
 def payload_kwargs(msgs, model, stream=False, system=None, max_tokens=None, temperature=None, tools=None, tool_choice=None,
     parallel_tool_calls=None, previous_response_id=None, reasoning_effort=None, web_search_options=None, cache_idxs=None, ttl=None, stop_callables=None): pass
+
+# %% ../nbs/00_types.ipynb #0c582256
+async def provider_req(
+    cli, # `AsyncHttpCli` bound to the provider's base URL and auth headers
+    path, # Request path on the client's base URL
+    body, # JSON request body
+    params=None, # Query parameters
+    stream=False, # Return an async generator of SSE events instead of the decoded response?
+):
+    "POST `body` to `path` on `cli`: the decoded response, or SSE events when `stream`"
+    url = cli._url(path)
+    if not stream:
+        try: return dict2obj(await cli.transport.request('POST', url, params=params, json=body))
+        except (httpx2.HTTPStatusError, httpx2.RequestError) as e: raise e.api_error() from e
+    async def _events():
+        try:
+            async for ev in cli.transport.stream('POST', url, params=params, json=body): yield dict2obj(ev)
+        except (httpx2.HTTPStatusError, httpx2.RequestError) as e: raise e.api_error() from e
+    return _events()
 
 # %% ../nbs/00_types.ipynb #c2a2cb49
 def get_api_key(api_key, default):
@@ -337,6 +358,7 @@ def tier_rate(meta, key, tier):
 @patch(as_prop=True)
 def cost(self:Completion):
     meta = dict2obj(get_model_info(self.model, self.vendor_name))
+    if not meta: return 0.0  # unregistered model (e.g. a custom base_url server): no pricing metadata
     api = api_registry[self.api_name]
     if not hasattr(api, 'cost'): raise NotImplementedError(f"API: {self.api_name} doesn't have a registered `cost` function in ns")
     res = api.cost(self.usage, meta)

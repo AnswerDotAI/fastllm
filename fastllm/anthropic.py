@@ -343,4 +343,4 @@ def cost(usage, m):
 # %% ../nbs/04_anthropic.ipynb #f7c0b989
 api_registry.register('anthropic', norm_tool_calls=norm_tool_calls, norm_parts=norm_parts, norm_finish=norm_finish, norm_usage=norm_usage,
     finalize_usage=finalize_usage, acollect_stream=acollect_stream, mk_payload=mk_payload, cost=cost, get_hdrs=get_hdrs,
-    op_path=('messages.messages_post','messages.messages_post'))
+    endpoint='/v1/messages')

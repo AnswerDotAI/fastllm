@@ -4,7 +4,8 @@
 __all__ = ['api_ns', 'norm_tool_calls', 'norm_finish', 'norm_parts', 'norm_sse_event', 'delta_index_fn', 'acollect_stream',
            'denorm_tool_use', 'denorm_assistant', 'denorm_tool', 'denorm_msgs', 'denorm_tool_schs',
            'denorm_tool_choice', 'denorm_reasoning', 'denorm_web_search', 'denorm_system', 'denorm_user',
-           'denorm_image', 'denorm_audio', 'denorm_file', 'denorm_tool_result', 'mk_payload', 'get_hdrs', 'cost']
+           'denorm_image', 'denorm_audio', 'denorm_file', 'denorm_tool_result', 'mk_payload', 'get_hdrs', 'cost',
+           'fix_payload']
 
 # %% ../nbs/03_oai_chat.ipynb #493e3606
 import json
@@ -115,8 +116,17 @@ def denorm_msgs(msgs:list[Msg]):
 
 # %% ../nbs/03_oai_chat.ipynb #76f84455
 def denorm_tool_schs(tools):
-    "Passthrough — canonical format is already OpenAI Chat."
-    return tools
+    "Convert tools to OpenAI Chat format; already-nested dicts pass through unchanged."
+    out = []
+    for t in tools:
+        if isinstance(t, dict) and isinstance(t.get('function'), dict): out.append(t); continue
+        fn = fn_schema(t)
+        if fn is None: out.append(t); continue
+        name, desc, params = fn
+        f = dict(name=name, description=desc, parameters=params)
+        if isinstance(t, dict) and 'strict' in t: f['strict'] = t['strict']
+        out.append({'type':'function', 'function':f})
+    return out
 
 # %% ../nbs/03_oai_chat.ipynb #659fdab9
 def denorm_tool_choice(v):
@@ -204,8 +214,15 @@ def cost(usage, m):
     cost += out_audio * m.get('output_cost_per_audio_token', 0)
     return cost
 
+# %% ../nbs/03_oai_chat.ipynb #8aae2ed5
+def fix_payload(payload, model, vendor_name):
+    "Apply vendor request quirks to a built payload."
+    if nested_idx(payload, 'messages', -1, 'role') == 'assistant':
+        if vendor_name == 'deepseek' and 'v4' in model:   payload['messages'][-1]['prefix'] = True
+        if vendor_name == 'moonshot' and 'kimi' in model: payload['messages'][-1]['partial'] = True
+
 # %% ../nbs/03_oai_chat.ipynb #e2b0908e
 api_ns = dict(norm_tool_calls=norm_tool_calls, norm_parts=norm_parts, norm_finish=norm_finish, norm_usage=norm_usage,
-    acollect_stream=acollect_stream, mk_payload=mk_payload, cost=cost, get_hdrs=get_hdrs,
-    op_path=('chat.create_chat_completion', 'chat.create_chat_completion'))
+    acollect_stream=acollect_stream, mk_payload=mk_payload, cost=cost, get_hdrs=get_hdrs, fix_payload=fix_payload,
+    endpoint='/chat/completions')
 api_registry.register('openai_chat', **api_ns)

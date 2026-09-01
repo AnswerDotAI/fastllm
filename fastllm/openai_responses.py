@@ -5,7 +5,7 @@ __all__ = ['api_ns', 'norm_tool_call', 'norm_tool_calls', 'norm_usage', 'norm_fi
            'delta_index_fn', 'acollect_stream', 'denorm_tool_use', 'denorm_tool', 'denorm_assistant', 'denorm_msgs',
            'denorm_tool_schs', 'denorm_tool_choice', 'denorm_reasoning', 'denorm_web_search', 'denorm_system',
            'denorm_user', 'denorm_image', 'denorm_video', 'denorm_file', 'denorm_tool_result', 'mk_payload', 'get_hdrs',
-           'cost']
+           'cost', 'fix_payload']
 
 # %% ../nbs/02_oai_responses.ipynb #591f55b5
 import json
@@ -167,6 +167,7 @@ def denorm_tool_schs(tools):
     "Convert canonical tools to OpenAI Responses format."
     out = []
     for t in tools:
+        if isinstance(t, dict) and t.get('type')=='function' and 'name' in t and 'parameters' in t: out.append(t); continue
         fn = fn_schema(t)
         if fn is None: out.append(t); continue
         name, desc, params = fn
@@ -239,7 +240,8 @@ def denorm_tool_result(m:ToolResult):
 # %% ../nbs/02_oai_responses.ipynb #9b0f81a4
 @delegates(payload_kwargs)
 def mk_payload(msgs, model, **kwargs):
-    payload = dict(model=model, input=denorm_msgs(msgs))
+    payload = dict(model=model)
+    if msgs: payload['input'] = denorm_msgs(msgs)
     if stream:=kwargs.get('stream'):        payload['stream'] = True
     if sp:=kwargs.get('system'):            payload['instructions'] = denorm_system(sp)
     if mt:=kwargs.get('max_tokens'):        payload['max_output_tokens'] = mt
@@ -265,8 +267,15 @@ def cost(usage, m):
     cost += cached * tier_rate(m, 'cache_read_input_token_cost', tier)
     return cost
 
+# %% ../nbs/02_oai_responses.ipynb #2efda2a1
+def fix_payload(payload, model, vendor_name):
+    "Apply vendor request quirks to a built payload."
+    if vendor_name == 'codex':
+        for k in 'temperature max_tokens max_output_tokens max_completion_tokens metadata'.split(): payload.pop(k, None)
+        payload['store'] = False
+
 # %% ../nbs/02_oai_responses.ipynb #07114b55
 api_ns = dict(norm_tool_calls=norm_tool_calls, norm_parts=norm_parts, norm_finish=norm_finish, norm_usage=norm_usage,
-    supports_previous_response_id=True, acollect_stream=acollect_stream, mk_payload=mk_payload, cost=cost, get_hdrs=get_hdrs,
-    op_path=('responses.create_response', 'responses.create_response'))
+    supports_previous_response_id=True, acollect_stream=acollect_stream, mk_payload=mk_payload, cost=cost, get_hdrs=get_hdrs, fix_payload=fix_payload,
+    endpoint='/responses')
 api_registry.register('openai', **api_ns)
