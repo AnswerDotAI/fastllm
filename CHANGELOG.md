@@ -2,6 +2,13 @@
 
 <!-- do not remove -->
 
+## 0.0.45
+
+### New Features
+
+- Import APIError from fasttransport, and drop the fastspec dependency ([#91](https://github.com/AnswerDotAI/fastllm/pull/91)), thanks to [@jph00](https://github.com/jph00)
+
+
 ## 0.0.44
 
 ### New Features
