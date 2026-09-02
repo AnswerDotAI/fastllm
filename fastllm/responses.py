@@ -143,7 +143,7 @@ def response_object(rid, body, comp, previous_response_id=None, created_at=None)
 # %% ../nbs/06a_responses.ipynb #73a2fc16
 class ResponseState(BasicRepr):
     "Canonical history and optional provider continuation metadata."
-    def __init__(self, id, model, history, provider_response_id=None, provider_response_reusable=True): store_attr()
+    def __init__(self, id, model, history, provider_response_id=None): store_attr()
 
 # %% ../nbs/06a_responses.ipynb #c9ca3744
 class ResponseTurn(BasicRepr):
@@ -203,7 +203,7 @@ def state(self:AsyncResponses, turn, comp, results=()):
     "Build the next continuation state; `results` are server tool results answering `comp`'s calls."
     normalize_call_ids(comp)
     history = (*turn.history, comp.message, *([Msg('tool', list(results))] if results else []))
-    return ResponseState(turn.id, turn.body['model'], history, comp.response_id, comp.response_id_reusable)
+    return ResponseState(turn.id, turn.body['model'], history, comp.response_id)
 
 
 # %% ../nbs/06a_responses.ipynb #7615b274

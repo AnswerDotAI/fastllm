@@ -15,7 +15,7 @@ classifiers = [
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3 :: Only",
 ]
-dependencies = ['fastcore>=2.1.18', 'aidialog>=0.0.10', 'fasttransport>=0.0.2', 'pillow']
+dependencies = ['fastcore>=2.1.18', 'aidialog>=0.0.24', 'fasttransport>=0.0.2', 'pillow']
 
 [project.scripts]
 fastllm-auth = "fastllm.codex:main"

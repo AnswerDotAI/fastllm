@@ -68,7 +68,8 @@ FinishReason = str_enum('finish_reason', 'stop', 'tool_calls', 'length', 'conten
 # %% ../nbs/00_types.ipynb #fc681c52
 class APIRegistry(dict):
     _eps = None
-    def register(self, name, finalize_usage=noop, **kwargs): self[name] = SimpleNamespace(finalize_usage=finalize_usage, **kwargs)
+    def register(self, name, finalize_usage=noop, raw_msg=noop, collate_raw=noop, **kwargs):
+        self[name] = SimpleNamespace(finalize_usage=finalize_usage, raw_msg=raw_msg, collate_raw=collate_raw, **kwargs)
     def _load(self, name):
         "Import the plugin providing api `name` from the `fastllm.apis` entry-point group; its import registers the api."
         if self._eps is None: self._eps = {o.name:o for o in entry_points(group='fastllm.apis')}
@@ -90,7 +91,7 @@ def mk_completion(resp, model, api_name, vendor_name):
     tcs = api.norm_tool_calls(resp)
     parts = api.norm_parts(resp)
     usg = api.finalize_usage(api.norm_usage(resp), parts)
-    return Completion(model=model, message=Msg(role="assistant", content=parts), finish_reason=api.norm_finish(resp, tcs),
+    return Completion(model=model, message=Msg(role="assistant", content=parts, raw=api.raw_msg(resp)), finish_reason=api.norm_finish(resp, tcs),
         usage=usg, api_name=api_name, vendor_name=vendor_name, raw=resp)
 
 # %% ../nbs/00_types.ipynb #8a8e468b
