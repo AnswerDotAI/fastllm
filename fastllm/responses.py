@@ -15,13 +15,14 @@ __all__ = ['ResponsesError', 'response_input', 'normalize_call_ids', 'response_o
            'ResponseState', 'ResponseTurn', 'AsyncResponses', 'response_event', 'pending_response']
 
 # %% ../nbs/06a_responses.ipynb #e16fc24e
-import asyncio, json, secrets, time
+import asyncio, copy, json, secrets, time
 from fastcore.utils import *
+from fastcore.funccall import call_func_async, get_schema
 from fasttransport.errors import APIError
 
 from .acomplete import acomplete
 from .streaming import Status
-from aidialog.msg_parts import Msg, Text, ToolUse, ToolResult, InputImage, InputFile, Completion
+from aidialog.msg_parts import Msg, Text, ToolUse, ToolResult, InputImage, InputFile, Completion, tool_text
 
 # %% ../nbs/06a_responses.ipynb #f904c16f
 class ResponsesError(Exception):
@@ -69,7 +70,9 @@ def response_input(inp):
             if isinstance(args, str):
                 try: args = json.loads(args)
                 except json.JSONDecodeError: pass
-            msgs.append(Msg('assistant', [ToolUse(id=item.get('call_id'), name=item.get('name'), arguments=args)]))
+            call = ToolUse(id=item.get('call_id'), name=item.get('name'), arguments=args)
+            if msgs and msgs[-1].role == 'assistant': msgs[-1].content.append(call)
+            else: msgs.append(Msg('assistant', [call]))
         elif typ == 'function_call_output':
             out = item.get('output', '')
             pending_tools.append(ToolResult(id=item.get('call_id'), name=item.get('name', ''),
@@ -145,15 +148,18 @@ class ResponseState(BasicRepr):
 # %% ../nbs/06a_responses.ipynb #c9ca3744
 class ResponseTurn(BasicRepr):
     "A prepared Responses request for one provider call."
-    def __init__(self, id, created_at, body, history, provider_messages, system='', previous=None): store_attr()
+    def __init__(self, id, created_at, body, history, provider_messages, system='', previous=None, server_tools=None):
+        store_attr()
+        if server_tools is None: self.server_tools = {}
 
     @property
     def provider_previous_id(self): return self.previous.provider_response_id if self.previous else None
 
+
 # %% ../nbs/06a_responses.ipynb #a648297f
 class AsyncResponses:
     "Run individual Responses turns over FastLLM."
-    def prepare(self, body, previous=None):
+    def prepare(self, body, previous=None, server_tools=None):
         if not isinstance(body, dict): raise ResponsesError('Request body must be an object')
         model = body.get('model')
         if not model: raise ResponsesError('model is required', param='model')
@@ -167,27 +173,57 @@ class AsyncResponses:
                 if isinstance(p, ToolResult) and not p.name: p.name = names.get(p.id, '')
         instructions = '\n\n'.join(filter(None, [body.get('instructions', ''), input_system]))
         provider_messages = new_msgs if previous and previous.provider_response_id else list(history)
-        return ResponseTurn(_new_id('resp'), int(time.time()), body, history, provider_messages, instructions, previous)
+        return ResponseTurn(_new_id('resp'), int(time.time()), body, history, provider_messages, instructions, previous,
+            {f.__name__: f for f in server_tools or []})
+
 
 # %% ../nbs/06a_responses.ipynb #373f7d5e
 @patch
 async def call(self:AsyncResponses, turn):
-    "Start the provider stream for a prepared turn."
+    "Start the provider stream for a prepared turn, having received its first chunk"
     body = turn.body
     reasoning = body.get('reasoning') or {}
-    kwargs = dict(previous_response_id=turn.provider_previous_id, system=turn.system or None, tools=body.get('tools'))
+    tools = list(body.get('tools') or []) + [dict(type='function', **get_schema(f, pname='parameters')) for f in turn.server_tools.values()]
+    kwargs = dict(previous_response_id=turn.provider_previous_id, system=turn.system or None, tools=tools or None)
     kwargs.update(tool_choice=body.get('tool_choice'), parallel_tool_calls=body.get('parallel_tool_calls', True),
         reasoning_effort=reasoning.get('effort'), max_tokens=body.get('max_output_tokens'), temperature=body.get('temperature'),
         cache_idxs=body.get('cache_idxs'), ttl=body.get('ttl'), web_search_options=body.get('web_search_options'))
-    return await acomplete(turn.provider_messages, model=body['model'], stream=True, **kwargs)
+    stream = await acomplete(turn.provider_messages, model=body['model'], stream=True, **kwargs)
+    first = await anext(stream)
+    async def _rest():
+        yield first
+        async for o in stream: yield o
+    return _rest()
+
 
 # %% ../nbs/06a_responses.ipynb #4f424285
 @patch
-def state(self:AsyncResponses, turn, comp):
-    "Build the next continuation state."
+def state(self:AsyncResponses, turn, comp, results=()):
+    "Build the next continuation state; `results` are server tool results answering `comp`'s calls."
     normalize_call_ids(comp)
-    return ResponseState(turn.id, turn.body['model'], (*turn.history, comp.message),
-        comp.response_id, comp.response_id_reusable)
+    history = (*turn.history, comp.message, *([Msg('tool', list(results))] if results else []))
+    return ResponseState(turn.id, turn.body['model'], history, comp.response_id, comp.response_id_reusable)
+
+
+# %% ../nbs/06a_responses.ipynb #7615b274
+@patch
+async def server_results(self:AsyncResponses, turn, comp):
+    "Run the server tool calls in `comp`, returning their results"
+    normalize_call_ids(comp)
+    res = []
+    for tc in comp.tool_calls:
+        if tc.name not in turn.server_tools: continue
+        out = await call_func_async(tc.name, tc.arguments, ns=turn.server_tools, raise_on_err=False)
+        res.append(ToolResult(id=tc.id, name=tc.name, arguments=tc.arguments, text=tool_text(out)))
+    return res
+
+@patch
+def server_turn(self:AsyncResponses, turn, comp, results):
+    "The follow-up provider turn answering server tool `results`, within the same public response"
+    outputs = [dict(type='function_call_output', call_id=r.id, output=r.text) for r in results]
+    nxt = self.prepare(turn.body | dict(input=outputs), self.state(turn, comp), turn.server_tools.values())
+    nxt.id = turn.id
+    return nxt
 
 # %% ../nbs/06a_responses.ipynb #25502099
 def response_event(event_type, sequence_number, **kwargs):
@@ -278,22 +314,31 @@ def done_events(self:_ResponseStream, comp):
 
 # %% ../nbs/06a_responses.ipynb #e10c928b
 @patch
-async def events(self:AsyncResponses, turn, finalize=None):
-    state = _ResponseStream(turn)
+async def events(self:AsyncResponses, turn, finalize=None, stream=None):
+    state,first = _ResponseStream(turn),turn
     yield state.event('response.created', response=pending_response(turn))
     try:
-        stream = await self.call(turn)
-        async for part in stream:
-            if isinstance(part, Status): continue
-            if isinstance(part, Completion): comp = part
-            else:
-                for event in state.part_events(part): yield event
+        texts,usage = [],None
+        while True:
+            async for part in (stream or await self.call(turn)):
+                if isinstance(part, Completion): comp = part
+                elif isinstance(part, Status) or (isinstance(part, ToolUse) and part.name in turn.server_tools): continue
+                else:
+                    for event in state.part_events(part): yield event
+            usage,stream = (comp.usage if usage is None else usage + comp.usage),None
+            results = await self.server_results(turn, comp)
+            if not results or len(results) < len(comp.tool_calls): break
+            texts += [p for p in comp.message.content if isinstance(p, Text)]
+            turn = self.server_turn(turn, comp, results)
+        next_state = self.state(turn, comp, results)
+        comp = copy.copy(comp)
+        comp.message,comp.usage = Msg('assistant', texts + comp.message.content),usage
         for event in state.done_events(comp): yield event
-        next_state = self.state(turn, comp)
-        response = response_object(turn.id, turn.body, comp, turn.previous.id if turn.previous else None, turn.created_at)
+        response = response_object(first.id, first.body, comp, first.previous.id if first.previous else None, first.created_at)
         if finalize: await finalize(next_state, comp)
         name = 'response.incomplete' if response['status'] == 'incomplete' else 'response.completed'
         yield state.event(name, response=response)
     except asyncio.CancelledError: raise
     except ResponsesError as exc: yield state.event('error', code=exc.code, message=str(exc), param=exc.param)
     except APIError as exc: yield state.event('error', code=exc.code or 'provider_error', message=str(exc), param=None)
+
