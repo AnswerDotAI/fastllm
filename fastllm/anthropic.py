@@ -2,20 +2,20 @@
 
 # %% auto #0
 __all__ = ['ant_tc_types', 'norm_tool_call', 'norm_tool_calls', 'norm_usage', 'finalize_usage', 'norm_finish', 'norm_parts',
-           'norm_tr_parts', 'norm_sse_event', 'delta_index_fn', 'acollect_stream', 'denorm_tool_use',
-           'denorm_assistant', 'denorm_tool', 'denorm_msgs', 'denorm_tool_schs', 'denorm_tool_choice',
-           'denorm_reasoning', 'denorm_web_search', 'denorm_system', 'denorm_user', 'denorm_image', 'denorm_file',
-           'denorm_tool_result', 'apply_cache_idxs', 'mk_payload', 'get_hdrs', 'cost']
+           'raw_msg', 'norm_tr_parts', 'norm_sse_event', 'delta_index_fn', 'collate_raw', 'acollect_stream',
+           'denorm_tool_use', 'denorm_assistant', 'denorm_tool', 'denorm_msgs', 'denorm_tool_schs',
+           'denorm_tool_choice', 'denorm_reasoning', 'denorm_web_search', 'denorm_system', 'denorm_user',
+           'denorm_image', 'denorm_file', 'denorm_tool_result', 'apply_cache_idxs', 'mk_payload', 'get_hdrs', 'cost']
 
 # %% ../nbs/04_anthropic.ipynb #02afd3d7
-import json
+import json, copy
 from collections import Counter
 from fastcore.utils import *
 from fastcore.meta import *
 from fasttransport.errors import api_error_from_event
 
 from .types import *
-from aidialog.msg_parts import (Part, PartType, mk_part, Msg, Text, Thinking, ToolUse, ToolResult, tool_text, ServerToolResult,
+from aidialog.msg_parts import (Part, PartType, mk_part, Msg, Text, Thinking, ToolUse, ToolResult, tool_text,
                                 InputImage, InputAudio, InputVideo, InputFile, data_url)
 from .streaming import *
 from .streaming import mk_acollect_stream
@@ -47,11 +47,11 @@ def norm_usage(resp):
                  cached_tokens=cached, cache_creation_tokens=cache_creation, reasoning_tokens=0, raw=usg)
 
 def finalize_usage(usg, parts):
-    "Adjust usage using finalized Anthropic content parts."
+    "Split reasoning tokens out of `output_tokens`: the reported `thinking_tokens`, else an estimate from the thinking text."
     if not usg: return usg
     rc = '\n'.join(p.text or '' for p in parts if isinstance(p, Thinking))
     ct = int(usg.raw.get('output_tokens', usg.completion_tokens) or 0)
-    rt = min(int(len(rc.split())*1.5), ct) if rc else 0
+    rt = int(nested_idx(usg.raw, 'output_tokens_details', 'thinking_tokens') or 0) or (min(int(len(rc.split())*1.5), ct) if rc else 0)
     return Usage(prompt_tokens=usg.prompt_tokens, completion_tokens=ct-rt, total_tokens=usg.prompt_tokens+ct,
         cached_tokens=usg.cached_tokens, cache_creation_tokens=usg.cache_creation_tokens, reasoning_tokens=rt, raw=usg.raw)
 
@@ -67,20 +67,23 @@ def norm_finish(resp, tcs=None):
 def _ant_part_type(typ):
     "Map Anthropic content block type to canonical PartType."
     ant_parts_mapping = dict(text=PartType.text, thinking=PartType.thinking, redacted_thinking=PartType.thinking, tool_use=PartType.tool_use, server_tool_use=PartType.tool_use, mcp_tool_use=PartType.tool_use)
-    if typ in ant_parts_mapping: return ant_parts_mapping[typ]
-    if typ.endswith('_tool_result'): return PartType.server_tool_result
-    return typ
+    return ant_parts_mapping.get(typ, typ)
 
 def norm_parts(resp):
+    "Canonical parts of a response; a server tool's result block lives only in the raw message"
     parts = []
     for b in resp.get("content", []):
         typ = _ant_part_type(b.get("type", "text"))
         if   typ == PartType.thinking: parts.append(Thinking(b.get("thinking", ""), raw=b))
         elif typ == PartType.tool_use:
             if tc := norm_tool_call(b): parts.append(tc)
-        elif typ == PartType.server_tool_result: parts.append(ServerToolResult(b.get("text", ""), raw=b))
-        else: parts.append(Text(b.get("text", ""), raw=b))
+        elif typ == PartType.text: parts.append(Text(b.get("text", ""), raw=b))
     return parts
+
+# %% ../nbs/04_anthropic.ipynb #f24e52db
+def raw_msg(resp):
+    "The assistant message as the API sent it"
+    return dict(role='assistant', content=resp['content'])
 
 # %% ../nbs/04_anthropic.ipynb #5d1440b7
 def norm_tr_parts(content):
@@ -103,7 +106,6 @@ def norm_sse_event(ev, **kwargs):
     text, thinking, tcs, citations = None, None, [], None
     if typ == "content_block_start":
         cb = ev.get("content_block", {})
-        if cb.get("type", "").endswith("_tool_result"): return Delta(server_tool_result=cb, raw=ev, **kwargs)
         if tc := norm_tool_call(cb):
             if not tc.arguments: tc.arguments = {'_delta': ''}
             tcs = [tc]
@@ -127,6 +129,23 @@ def delta_index_fn(d, typ, last_typ, last_idx):
     'Returns accumulation index for current delta and updated last idx'
     return nested_idx(d, 'raw', 'index'), None
 
+# %% ../nbs/04_anthropic.ipynb #de900e34
+def collate_raw(deltas):
+    "The assistant message rebuilt from a stream's events"
+    blocks = {}
+    for ev in L(deltas).attrgot('raw'):
+        typ,i = ev.get('type'),ev.get('index')
+        if typ == 'content_block_start': blocks[i] = copy.deepcopy(ev['content_block'])
+        elif typ == 'content_block_delta':
+            d,b = ev['delta'],blocks[i]
+            if   d['type'] == 'text_delta':       b['text'] += d['text']
+            elif d['type'] == 'thinking_delta':   b['thinking'] += d['thinking']
+            elif d['type'] == 'signature_delta':  b['signature'] = d['signature']
+            elif d['type'] == 'input_json_delta': b['_json'] = b.get('_json', '') + d['partial_json']
+            elif d['type'] == 'citations_delta':  b['citations'] = (b.get('citations') or []) + [d['citation']]
+        elif typ == 'content_block_stop' and '_json' in blocks[i]: blocks[i]['input'] = json.loads(blocks[i].pop('_json') or '{}')
+    return dict(role='assistant', content=list(blocks.values()))
+
 # %% ../nbs/04_anthropic.ipynb #c994adb1
 @delegates(mk_acollect_stream, but=['index_fn', 'api_name'])
 async def acollect_stream(resp, **kwargs):
@@ -145,44 +164,29 @@ def _sanid(id_str): return re.sub(r'[^a-zA-Z0-9_-]', '_', id_str or '')
 # %% ../nbs/04_anthropic.ipynb #6ec772cb
 def denorm_tool_use(p:ToolUse):
     "Convert canonical tool_use Part to Anthropic tool_use content block."
-    block = dict(type='tool_use', id=_sanid(p.id or ''), name=p.name or '', input=p.arguments or {})
-    if caller := (p.raw or {}).get('caller'): block['caller'] = caller
-    return _ant_cc(block, p)
+    return _ant_cc(dict(type='tool_use', id=_sanid(p.id or ''), name=p.name or '', input=p.arguments or {}), p)
 
 def denorm_assistant(m:Msg):
-    "Convert canonical assistant Msg to Anthropic assistant message + synthetic tool results for non-Anthropic server tools."
-    blocks, srv_results, srv_call_id = [], [], None
-    for p in m.content:
-        if isinstance(p, (Thinking, Text)):
-            if srv_call_id:
-                srv_results.append(dict(type='tool_result', tool_use_id=srv_call_id, content=p.text or ''))
-                srv_call_id = None
-            elif isinstance(p, Thinking) and (sig:=(p.raw or {}).get('signature','')):
-                blocks.append(dict(type='thinking', thinking=p.text or '', signature=sig))
-            else: blocks.append(_ant_cc(dict(type='text', text=p.text or ''), p))
-        elif isinstance(p, ToolUse):
-            if p.server and (p.id or '').startswith('srvtoolu_'):
-                blocks.append(dict(type='server_tool_use', id=p.id, name=p.name or '', input=p.arguments or {}))
-            else:
-                blocks.append(denorm_tool_use(p))
-                if p.server: srv_call_id = p.id or ''
-        elif isinstance(p, ServerToolResult): blocks.append(p.raw or dict(type='server_tool_result'))
-    res = [dict(role='assistant', content=blocks)]
-    if srv_results: res.append(dict(role='user', content=srv_results))
-    return res
+    "The message as the API sent it, else its text and tool calls; a cache mark on the last part is copied onto the last raw block"
+    if m.raw:
+        cc = [p.cache_control for p in m.content if p.cache_control]
+        if not cc: return m.raw
+        return m.raw | dict(content=m.raw['content'][:-1] + [m.raw['content'][-1] | dict(cache_control=cc[-1])])
+    blocks = [_ant_cc(dict(type='text', text=p.text or ''), p) if isinstance(p, Text) else denorm_tool_use(p) for p in m.content if isinstance(p, (Text, ToolUse))]
+    return dict(role='assistant', content=blocks)
 
 def denorm_tool(m:Msg):
     "Convert canonical tool Msg to Anthropic user message with tool_result blocks."
     blocks = [denorm_tool_result(p) for p in m.content if isinstance(p, ToolResult)]
-    return [dict(role='user', content=blocks)]
+    return dict(role='user', content=blocks)
 
 def denorm_msgs(msgs:list[Msg]):
     "Convert list of canonical Msgs to Anthropic messages."
     res = []
     for m in msgs:
         if   m.role == 'user':      res.append(denorm_user(m))
-        elif m.role == 'assistant': res.extend(denorm_assistant(m))
-        elif m.role == 'tool':      res.extend(denorm_tool(m))
+        elif m.role == 'assistant': res.append(denorm_assistant(m))
+        elif m.role == 'tool':      res.append(denorm_tool(m))
     return res
 
 # %% ../nbs/04_anthropic.ipynb #f762a6f2
@@ -346,5 +350,6 @@ def cost(usage, m):
 
 # %% ../nbs/04_anthropic.ipynb #f7c0b989
 api_registry.register('anthropic', norm_tool_calls=norm_tool_calls, norm_parts=norm_parts, norm_finish=norm_finish, norm_usage=norm_usage,
-    finalize_usage=finalize_usage, acollect_stream=acollect_stream, mk_payload=mk_payload, cost=cost, get_hdrs=get_hdrs,
+    finalize_usage=finalize_usage, raw_msg=raw_msg, collate_raw=collate_raw, acollect_stream=acollect_stream, mk_payload=mk_payload,
+    cost=cost, get_hdrs=get_hdrs,
     endpoint='/v1/messages')

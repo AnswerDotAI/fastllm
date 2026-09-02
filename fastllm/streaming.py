@@ -12,13 +12,12 @@ from fastcore.utils import *
 from fastcore.meta import delegates
 from fasttransport.errors import *
 from .types import *
-from aidialog.msg_parts import Part, PartType, Msg, Text, Thinking, ToolUse, ToolResult, ServerToolResult, mk_part, fence_call_re, Completion
+from aidialog.msg_parts import Part, PartType, Msg, Text, Thinking, ToolUse, ToolResult, mk_part, fence_call_re, Completion
 
 # %% ../nbs/01_streaming.ipynb #400d628a
 class Delta(BasicRepr):
     "Normalized streaming delta event."
-    def __init__(self, text='', thinking='', refusal='', tool_calls=None, citations=None,
-        server_tool_result=None, finish_reason=None, usage=None, raw=None):
+    def __init__(self, text='', thinking='', refusal='', tool_calls=None, citations=None, finish_reason=None, usage=None, raw=None):
         if tool_calls is None: tool_calls = []
         if citations is None: citations = []
         if raw is None: raw = {}
@@ -172,11 +171,7 @@ async def mk_acollect_stream(it, index_fn, model=None, api_name=None, vendor_nam
                     except json.JSONDecodeError: continue
                 acc.arguments = args
                 yield acc
-                # Server tool results for anthropic are yielded in d.server_tool_result by checking injected dummy `_delta`
                 if acc.server: yield ToolResult(id=acc.id, name=acc.name, arguments=args, server=True, text="Server tool call executed.")
-        if d.server_tool_result:
-            idx = _fidx(d, 'server_tool_result')
-            part_accum.parts[idx] = ServerToolResult(raw=d.server_tool_result)
         r = _proc(d, 'refusal')
         if r[0]: yield _mk_delta_part('refusal', r[0]['refusal'])
         if d.finish_reason: fin = d.finish_reason
@@ -190,6 +185,6 @@ async def mk_acollect_stream(it, index_fn, model=None, api_name=None, vendor_nam
     fin = FinishReason.tool_calls if fin==FinishReason.stop and any(~L(tcs).attrgot('server')) else fin # recheck tool calls post collation
     # tool calls and non-anthropic citations are yielded at the end
     yield Completion(model,
-            message=Msg(role="assistant", content=parts),
+            message=Msg(role="assistant", content=parts, raw=api_registry[api_name].collate_raw(deltas) if api_name else None),
             finish_reason=fin, usage=usg, api_name=api_name, vendor_name=vendor_name,
             raw={'deltas':deltas})
