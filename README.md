@@ -5,13 +5,14 @@
 
 ## Install
 
-Clone and install locally into your `aai-ws` env
+Run `pip install python-fastllm` or clone from github and install locally.
 
 ## Setup
 
 ``` python
 from aidialog.msg_parts import Msg, Part, Text, Thinking, ToolUse, InputImage, mk_tool_res_msg, Completion
 from fastllm.acomplete import acomplete
+from fastllm.types import sample_img_url
 import asyncio, json
 
 # Helpers
@@ -203,6 +204,7 @@ print("\nNo tools: ", end='')
 r = await stream([user("What's the weather?")], model='claude-sonnet-4-20250514', tools=tools, tool_choice='none', max_tokens=mtok)
 ```
 
+
     - ⏳ `get_weather(city="<UNKNOWN>")` ⏳
 
     Forced: [ToolUse(raw={'caller': {'type': 'direct'}}, cache_control=None, id='toolu_01U7tAXjXAtwjp6xNSMbsyPU', name='get_weather', arguments={'city': '<UNKNOWN>'}, server=False, text=None)]
@@ -365,9 +367,8 @@ print(f"Usage: {r2.usage}")
 Send images to any provider that supports them. The canonical `input_image` part works everywhere:
 
 ``` python
-img_url = "https://img.freepik.com/free-photo/mountain-range-body-water_53876-139760.jpg?semt=ais_hybrid&w=740&q=80"
 img_msg = Msg(role='user', content=[
-    InputImage(img_url),
+    InputImage(sample_img_url),
     Text("What do you see in this image?")
 ])
 
