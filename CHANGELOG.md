@@ -2,6 +2,13 @@
 
 <!-- do not remove -->
 
+## 0.0.47
+
+### New Features
+
+- Server tools, effort levels, and batched calls in the Responses facade ([#93](https://github.com/AnswerDotAI/fastllm/pull/93)), thanks to [@jph00](https://github.com/jph00)
+
+
 ## 0.0.46
 
 ### New Features
