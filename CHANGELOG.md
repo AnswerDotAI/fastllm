@@ -2,6 +2,13 @@
 
 <!-- do not remove -->
 
+## 0.0.51
+
+### New Features
+
+- Add `AsyncResponses.serve`, and carry search hits on Anthropic server calls ([#98](https://github.com/AnswerDotAI/fastllm/pull/98)), thanks to [@jph00](https://github.com/jph00)
+
+
 ## 0.0.50
 
 ### New Features
