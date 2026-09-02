@@ -2,6 +2,13 @@
 
 <!-- do not remove -->
 
+## 0.0.48
+
+### New Features
+
+- Rewrite Codex backend with async token refresh, device-code login and fastllm-auth CLI; thread per-call kwargs through Responses turns ([#94](https://github.com/AnswerDotAI/fastllm/issues/94))
+
+
 ## 0.0.47
 
 ### New Features

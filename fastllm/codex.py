@@ -39,6 +39,7 @@ def token_expired(token, skew=SKEW_SECS):
 # %% ../nbs/05_codex.ipynb #099399d5
 def codex_tokens(auth):
     "The `tokens` block of an `auth.json` dict (or an already-unwrapped block), checked for the keys a refresh needs"
+    if not isinstance(auth, dict): raise ValueError('Codex auth must be a JSON object')
     tokens = auth.get('tokens', auth)
     missing = [k for k in ('access_token', 'refresh_token') if not tokens.get(k)]
     if missing: raise ValueError(f"Codex auth is missing {', '.join(missing)}")

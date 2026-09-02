@@ -163,7 +163,9 @@ async def acomplete(msgs, model, api_name=None, vendor_name=None, api_key=None, 
         if v in vendor_mapping: vendor_name, model = v, m
         elif v: api_name, model = v, m  # a registered transport api (e.g. claude_code): not an HTTP vendor
     own = api_name in api_registry and not hasattr(api_registry[api_name], 'endpoint') if api_name else False
-    if own: vendor_name = ifnone(vendor_name, api_name)  # an own-transport api: no HTTP client to build
+    if own:
+        vendor_name = ifnone(vendor_name, api_name)  # an own-transport api: no HTTP client to build
+        if api_key: kwargs['api_key'] = api_key  # its `mk_payload` applies a per-user credential itself
     else: cli, api_name, vendor_name = mk_client(model=model, vendor_name=vendor_name, api_name=api_name, api_key=api_key, base_url=base_url, xtra_hdrs=xtra_hdrs)
     api = api_registry[api_name]
     if previous_response_id is not None:
