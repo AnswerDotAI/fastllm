@@ -160,6 +160,7 @@ class ResponseTurn(BasicRepr):
 # %% ../nbs/06a_responses.ipynb #a648297f
 class AsyncResponses:
     "Run individual Responses turns over FastLLM."
+    def __init__(self): self.tasks = set()   # served turns still running
     def prepare(self, body, previous=None, server_tools=None, **kwargs):
         if not isinstance(body, dict): raise ResponsesError('Request body must be an object')
         model = body.get('model')
@@ -343,3 +344,21 @@ async def events(self:AsyncResponses, turn, finalize=None, stream=None):
     except ResponsesError as exc: yield state.event('error', code=exc.code, message=str(exc), param=exc.param)
     except APIError as exc: yield state.event('error', code=exc.code or 'provider_error', message=str(exc), param=None)
 
+
+# %% ../nbs/06a_responses.ipynb #cc32ce40
+@patch
+def serve(self:AsyncResponses, turn, finalize=None, stream=None, timeout=None):
+    "The frames of `events`, from a task that outlives its reader, so a disconnected client still gets its turn finalized"
+    q = asyncio.Queue()
+    async def _run():
+        try:
+            async with asyncio.timeout(timeout):
+                async for frame in self.events(turn, finalize=finalize, stream=stream): q.put_nowait(frame)
+        except TimeoutError: q.put_nowait(response_event('error', 0, code='timeout', message=f'turn exceeded {timeout}s', param=None))
+        finally: q.put_nowait(None)
+    t = asyncio.create_task(_run())
+    self.tasks.add(t)
+    t.add_done_callback(self.tasks.discard)
+    async def _frames():
+        while (frame := await q.get()) is not None: yield frame
+    return _frames()

@@ -12,7 +12,7 @@ Run `pip install python-fastllm` or clone from github and install locally.
 ``` python
 from aidialog.msg_parts import Msg, Part, Text, Thinking, ToolUse, InputImage, mk_tool_res_msg, Completion
 from fastllm.acomplete import acomplete
-from fastllm.types import sample_img_url
+from fastllm.types import sample_img_url, sample_doms
 import asyncio, json
 
 # Helpers
@@ -41,7 +41,7 @@ The same `acomplete` call works with Claude, GPT, Gemini, and Kimi. Just change 
 
 ``` python
 models = [
-    ('claude-sonnet-4-20250514', {}),
+    ('claude-sonnet-5', {}),
     ('gpt-4o-mini', {}),
     ('models/gemini-3-flash-preview', {}),
     ('accounts/fireworks/models/kimi-k2p5', dict(vendor_name='fireworks_ai'))
@@ -65,46 +65,6 @@ for name, kw in models:
 
     The response should be simple and direct.
 
-## Multi-Turn — Swap Providers Mid-Conversation
-
-Build a conversation with one provider, then seamlessly continue it with another. `fastllm` translates between every provider’s native format automatically:
-
-``` python
-# Turn 1: Claude starts the conversation
-msgs = [user("Name the 3 largest planets in our solar system. One sentence.")]
-print("Claude: ", end='')
-r1 = await stream(msgs, model='claude-sonnet-4-20250514', max_tokens=mtok)
-```
-
-    Claude: The three largest planets in our solar system are Jupiter, Saturn, and Neptune.
-
-``` python
-# Turn 2: Switch to GPT — just change the model string
-msgs += [r1.message, user("Which one has the most moons?")]
-print("GPT: ", end='')
-r2 = await stream(msgs, model='gpt-4o-mini', max_tokens=mtok)
-```
-
-    GPT: As of now, Saturn has the most moons, with over 80 confirmed moons.
-
-``` python
-# Turn 3: Switch to Gemini — same msgs, different provider
-msgs += [r2.message, user("Summarize our conversation in one sentence.")]
-print("Gemini: ", end='')
-r3 = await stream(msgs, model='models/gemini-3-flash-preview', max_tokens=mtok)
-```
-
-    Gemini: The conversation identified the three largest planets in the solar system and noted that Saturn currently has the most moons.
-
-``` python
-# Turn 4: Switch to Kimi — works the same way
-msgs += [r3.message, user("Thanks! What's one surprising fact about Saturn?")]
-print("Kimi: ", end='')
-r4 = await stream(msgs, model='accounts/fireworks/models/kimi-k2p5', vendor_name='fireworks_ai', max_tokens=mtok)
-```
-
-    Kimi: 🧠🧠🧠🧠🧠🧠🧠🧠🧠🧠Saturn is less dense than water, meaning it would theoretically float if you could find a bathtub large enough to hold it.
-
 ## System Prompts
 
 Pass a system prompt to any provider — `fastllm` maps it to each API’s native mechanism (Anthropic `system`, OpenAI `instructions`, Gemini `system_instruction`):
@@ -113,7 +73,7 @@ Pass a system prompt to any provider — `fastllm` maps it to each API’s nativ
 sys = "You are a pirate chef. Always respond in pirate speak and mention food."
 
 print("Claude: ", end='')
-r = await stream([user("What should I do today?")], model='claude-sonnet-4-20250514', system=sys, max_tokens=mtok)
+r = await stream([user("What should I do today?")], model='claude-sonnet-5', system=sys, max_tokens=mtok)
 
 print("Gemini: ", end='')
 r = await stream([user("What should I do today?")], model='models/gemini-3-flash-preview', system=sys, max_tokens=mtok)
@@ -146,7 +106,7 @@ r = await stream([user("What should I do today?")], model='models/gemini-3-flash
 
 ## Tool Calling — Define Once, Use Anywhere
 
-Define tools in a single canonical format. `fastllm` translates to each provider’s native tool schema automatically. Here we start a tool-use conversation with Claude, provide the result, then switch to GPT and Gemini to continue:
+Define tools in a single canonical format. `fastllm` translates to each provider’s native tool schema automatically. Here Claude requests the tool, receives the result, and answers:
 
 ``` python
 tools = [{"type": "function", "function": {
@@ -157,7 +117,7 @@ tools = [{"type": "function", "function": {
 
 # Turn 1: Claude requests the tool
 msgs = [user("What's the weather in Paris?")]
-r1 = await stream(msgs, model='claude-sonnet-4-20250514', tools=tools, max_tokens=mtok)
+r1 = await stream(msgs, model='claude-sonnet-5', tools=tools, max_tokens=mtok)
 print("Tool calls:", r1.tool_calls)
 ```
 
@@ -167,28 +127,13 @@ print("Tool calls:", r1.tool_calls)
     Tool calls: [ToolUse(raw={'caller': {'type': 'direct'}}, cache_control=None, id='toolu_01RMN1WM7vPBT3ovv5Ex6VzC', name='get_weather', arguments={'city': 'Paris'}, server=False, text=None)]
 
 ``` python
-# Provide the tool result
-msgs += [r1.message, mk_tool_res_msg(r1.tool_calls, ['22°C, sunny with light clouds'])]
-
-# Turn 2: Switch to GPT to interpret the result
-msgs.append(user("Should I bring a jacket?"))
-print("GPT: ", end='')
-r2 = await stream(msgs, model='gpt-4o-mini', tools=tools, max_tokens=mtok)
+# Provide the tool result, then continue the same conversation
+msgs += [r1.message, mk_tool_res_msg(r1.tool_calls, ['22°C, sunny with light clouds']), user("Should I bring a jacket?")]
+print("Claude: ", end='')
+r2 = await stream(msgs, model='claude-sonnet-5', tools=tools, max_tokens=mtok)
 ```
 
     GPT: With the temperature at 22°C and sunny with light clouds, a jacket isn't necessary for most people. However, if you tend to feel cold easily or if you plan to be out in the evening when it might cool down a bit, it could be a good idea to bring a light jacket.
-
-``` python
-# Turn 3: Gemini sees the full cross-provider tool history
-msgs += [r2.message, user("How about tomorrow — will it rain?")]
-r3 = await stream(msgs, model='models/gemini-3-flash-preview', tools=tools, max_tokens=mtok, web_search_options={})
-```
-
-    Tomorrow in Paris (Saturday, June 13), the weather is expected to be mostly pleasant and sunny. 
-
-    While there is a small chance of light, passing showers (around a 20-25% chance), most forecasts indicate a dry day with mostly clear or scattered clouds. Temperatures will likely reach a comfortable high of around 22°C to 27°C (72°F to 80°F), making it a great day for being outdoors. 
-
-    So, while you might see a stray shower, you likely won't need to worry about heavy rain!
 
 ## Tool Choice
 
@@ -196,14 +141,13 @@ Control whether the model must use tools, can’t use tools, or decides on its o
 
 ``` python
 # Force the model to call a tool (even for a greeting)
-r = await stream([user("Hello there!")], model='claude-sonnet-4-20250514', tools=tools, tool_choice='required', max_tokens=mtok)
+r = await stream([user("Hello there!")], model='claude-sonnet-5', tools=tools, tool_choice='required', max_tokens=mtok)
 print("Forced:", r.tool_calls)
 
 # Prevent tool use (model must answer directly)
 print("\nNo tools: ", end='')
-r = await stream([user("What's the weather?")], model='claude-sonnet-4-20250514', tools=tools, tool_choice='none', max_tokens=mtok)
+r = await stream([user("What's the weather?")], model='claude-sonnet-5', tools=tools, tool_choice='none', max_tokens=mtok)
 ```
-
 
     - ⏳ `get_weather(city="<UNKNOWN>")` ⏳
 
@@ -313,11 +257,11 @@ long_ctx = "You are an expert on the solar system. " * 200
 system = Text(long_ctx, cache_control={'type': 'ephemeral'})
 
 print("Call 1: ", end='')
-r1 = await stream([user("What is Jupiter's mass?")], model='claude-sonnet-4-20250514', system=system, max_tokens=mtok)
+r1 = await stream([user("What is Jupiter's mass?")], model='claude-sonnet-5', system=system, max_tokens=mtok)
 print(f"Usage: {r1.usage}")
 
 print("Call 2: ", end='')
-r2 = await stream([user("How about Saturn?")], model='claude-sonnet-4-20250514', system=system, max_tokens=mtok)
+r2 = await stream([user("How about Saturn?")], model='claude-sonnet-5', system=system, max_tokens=mtok)
 print(f"Usage: {r2.usage}")
 ```
 
@@ -372,7 +316,7 @@ img_msg = Msg(role='user', content=[
     Text("What do you see in this image?")
 ])
 
-for name, kw in [('claude-sonnet-4-20250514', {}), ('gpt-4o-mini', {}), ('models/gemini-3-flash-preview', {})]:
+for name, kw in [('claude-sonnet-5', {}), ('gpt-4o-mini', {}), ('models/gemini-3-flash-preview', {})]:
     print(f"{name:>30s}: ", end='')
     r = await stream([img_msg], model=name, max_tokens=mtok, **kw)
 ```
