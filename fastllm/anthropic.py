@@ -322,8 +322,12 @@ def mk_payload(msgs, model, **kwargs):
     return payload
 
 # %% ../nbs/04_anthropic.ipynb #60d52c1f
-def get_hdrs(api_key=None):
-    return {"x-api-key": get_api_key(api_key, 'ANTHROPIC_API_KEY'), "anthropic-version": "2023-06-01"}
+def get_hdrs(api_key=None, oauth_token=None):
+    "An OAuth token travels as a bearer under Anthropic's OAuth beta; an API key as `x-api-key`"
+    hdrs = {"anthropic-version": "2023-06-01"}
+    if oauth_token: return hdrs | {"Authorization": f"Bearer {oauth_token}", "anthropic-beta": "oauth-2025-04-20"}
+    return hdrs | {"x-api-key": get_api_key(api_key, 'ANTHROPIC_API_KEY')}
+
 
 # %% ../nbs/04_anthropic.ipynb #0d03643a
 def cost(usage, m):

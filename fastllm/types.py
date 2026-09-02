@@ -300,14 +300,14 @@ register_model_info('muse-spark-1.1', vendor_name='meta_ai', **modern_llm, max_i
 codex_pricing = dict(input_cost_per_token = 0.10/1_000_000, output_cost_per_token = 0.50/1_000_000,
     cache_creation_input_token_cost = 0.10/1_000_000, cache_read_input_token_cost = 0.10/1_000_000)
 
-def _rm_ctx_tiers(vendor_name, model):
-    "Drop upstream context-tier rates, which would otherwise override flat subscription pricing"
+def _flat_rates(vendor_name, model):
+    "Keep only the flat subscription rates: drop the upstream context, cache-TTL and service-tier variants that would otherwise apply"
     info = model_info_registry[vendor_name, model]
-    for k in [k for k in info if re.search(r'_above_\d+k_tokens', k)]: del info[k]
+    for k in [k for k in info if 'cost' in k and k not in codex_pricing and k != 'search_context_cost_per_query']: del info[k]
 
 for model in (codex54, codex54m, codex55):
     register_model_info(model, 'codex', base=model, base_vendor_name='chatgpt', supports_web_search=True, max_input_tokens=256000, **codex_pricing)
-    _rm_ctx_tiers('codex', model)
+    _flat_rates('codex', model)
 
 register_model_info(codex53spark, 'codex', **codex_pricing,
     supports_vision=False, supports_image_input=False, supports_web_search=True, supports_reasoning=True, supports_function_calling=True,
@@ -318,6 +318,7 @@ register_model_info(codex53spark, 'codex', **codex_pricing,
 register_model_info(fable51, 'anthropic', base=fable5)
 for model in (haik45, sonn45, sonn46, sonn5, opus46, opus48, opus5, fable5, fable51):
     register_model_info(model, 'claude_code', base=model, base_vendor_name='anthropic', **codex_pricing)
+    _flat_rates('claude_code', model)
 
 # %% ../nbs/00_types.ipynb #bb0c4c2a
 sol,terra,luna = gpt56s = 'gpt-5.6-sol gpt-5.6-terra gpt-5.6-luna'.split()
@@ -325,7 +326,7 @@ sol,terra,luna = gpt56s = 'gpt-5.6-sol gpt-5.6-terra gpt-5.6-luna'.split()
 # Its window is smaller than the API's: 371,331 input tokens is accepted and 371,981 is not, on all three.
 for model in gpt56s:
     register_model_info(model, 'codex', base=model, base_vendor_name='openai', max_input_tokens=371_000, **codex_pricing)
-    _rm_ctx_tiers('codex', model)
+    _flat_rates('codex', model)
 
 # %% ../nbs/00_types.ipynb #24cc47ec
 def get_model_pricing(mn, vendor_name, million=True):

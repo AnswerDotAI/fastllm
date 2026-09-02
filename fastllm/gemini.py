@@ -267,8 +267,11 @@ def mk_payload(msgs, model, **kwargs):
     return payload
 
 # %% ../nbs/05_gemini.ipynb #60d52c1f
-def get_hdrs(api_key=None):
+def get_hdrs(api_key=None, oauth_token=None):
+    "Bearer auth for an OAuth token; otherwise the API key header"
+    if oauth_token: return {"Authorization": f"Bearer {oauth_token}"}
     return {"x-goog-api-key": get_api_key(api_key, 'GEMINI_API_KEY')}
+
 
 # %% ../nbs/05_gemini.ipynb #4ee3891f
 def cost(usage, m):

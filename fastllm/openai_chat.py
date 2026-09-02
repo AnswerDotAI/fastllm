@@ -198,7 +198,10 @@ def mk_payload(msgs, model, **kwargs):
     return payload
 
 # %% ../nbs/03_oai_chat.ipynb #16e813d2
-def get_hdrs(api_key=None): return {"Authorization": f"Bearer {get_api_key(api_key, 'OPENAI_API_KEY')}"}
+def get_hdrs(api_key=None, oauth_token=None):
+    "Bearer auth: an OAuth access token, or else an API key from the argument or the environment"
+    return {"Authorization": f"Bearer {oauth_token or get_api_key(api_key, 'OPENAI_API_KEY')}"}
+
 
 # %% ../nbs/03_oai_chat.ipynb #f89e2bf6
 def cost(usage, m):

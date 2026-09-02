@@ -67,10 +67,10 @@ def _codex_mtime_policy():
 
 # %% ../nbs/06_acomplete.ipynb #79075d95
 @flexicache(_codex_mtime_policy())
-def mk_client(model=None, vendor_name=None, api_name=None, api_key=None, base_url=None, xtra_hdrs=None,
+def mk_client(model=None, vendor_name=None, api_name=None, api_key=None, oauth_token=None, base_url=None, xtra_hdrs=None,
     timeout=httpx2.Timeout(connect=30, read=300, write=30, pool=10)):
     err_msg = f"please pass a valid one vendor: {', '.join(list(vendor_mapping))} or pass `api_name`,`base_url` and `api_key`"
-    if not vendor_name and not api_name and not (base_url and api_key):
+    if not vendor_name and not api_name and not (base_url and (api_key or oauth_token)):
         v, m = split_vendor(model)
         if v in vendor_mapping: vendor_name, model = v, m
     if vendor_name:
@@ -78,17 +78,17 @@ def mk_client(model=None, vendor_name=None, api_name=None, api_key=None, base_ur
         try:
             api_name, base_url, env_api_nm, *auth_json = vendor_mapping[vendor_name]
             base_url = override_base_url or base_url
-            if auth_json and not api_key and not os.getenv(env_api_nm):
+            if auth_json and not api_key and not oauth_token and not os.getenv(env_api_nm):
                 fn,keys = auth_json[0]  # pyright: ignore[reportAssignmentType]
                 auth_fn = Path(fn).expanduser()
                 if auth_fn.exists(): api_key = nested_idx(json.loads(auth_fn.read_text()), *keys)
-            api_key = get_api_key(api_key, env_api_nm)
+            if not oauth_token: api_key = get_api_key(api_key, env_api_nm)
         except KeyError: raise ValueError(f"Unknown vendor '{vendor_name}', {err_msg}")
-    elif base_url and api_key: vendor_name, api_name = ifnone(vendor_name, 'custom'), ifnone(api_name, 'openai_chat')
+    elif base_url and (api_key or oauth_token): vendor_name, api_name = ifnone(vendor_name, 'custom'), ifnone(api_name, 'openai_chat')
     elif (api_name:=infer_api_name(model)):  base_url, vendor_name = vendor_mapping[api_name][1], api_name
     else: raise ValueError(f"Model {model} can't be auto resolved, {err_msg}")
     api = api_registry[api_name]
-    hdrs = merge(api.get_hdrs(api_key), ifnone(xtra_hdrs, {}))
+    hdrs = merge(api.get_hdrs(api_key, oauth_token), ifnone(xtra_hdrs, {}))
     cli = AsyncHttpCli(base_url, base_headers=hdrs, timeout=timeout)
     return cli, api_name, vendor_name
 
@@ -155,18 +155,19 @@ async def _retry_stream(mk_gen, retries=2, retry_delay=0.5):
 
 # %% ../nbs/06_acomplete.ipynb #2379ec94
 @delegates(payload_kwargs)
-async def acomplete(msgs, model, api_name=None, vendor_name=None, api_key=None, base_url=None, endpoint=None, xtra_body=None, xtra_hdrs=None,
+async def acomplete(msgs, model, api_name=None, vendor_name=None, api_key=None, oauth_token=None, base_url=None, endpoint=None, xtra_body=None, xtra_hdrs=None,
     stream=False, previous_response_id=None, stop_callables=None, retries=2, retry_delay=0.5, **kwargs):
     "Unified completion across different APIs."
-    if not vendor_name and not api_name and not (base_url and api_key):
+    if api_key and oauth_token: raise ValueError('Pass `api_key` or `oauth_token`, not both: a request has one identity')
+    if not vendor_name and not api_name and not (base_url and (api_key or oauth_token)):
         v, m = split_vendor(model)
         if v in vendor_mapping: vendor_name, model = v, m
         elif v: api_name, model = v, m  # a registered transport api (e.g. claude_code): not an HTTP vendor
     own = api_name in api_registry and not hasattr(api_registry[api_name], 'endpoint') if api_name else False
     if own:
         vendor_name = ifnone(vendor_name, api_name)  # an own-transport api: no HTTP client to build
-        if api_key: kwargs['api_key'] = api_key  # its `mk_payload` applies a per-user credential itself
-    else: cli, api_name, vendor_name = mk_client(model=model, vendor_name=vendor_name, api_name=api_name, api_key=api_key, base_url=base_url, xtra_hdrs=xtra_hdrs)
+        if oauth_token: kwargs['oauth_token'] = oauth_token  # its `mk_payload` applies the user's token itself
+    else: cli, api_name, vendor_name = mk_client(model=model, vendor_name=vendor_name, api_name=api_name, api_key=api_key, oauth_token=oauth_token, base_url=base_url, xtra_hdrs=xtra_hdrs)
     api = api_registry[api_name]
     if previous_response_id is not None:
         if not getattr(api, 'supports_previous_response_id', False):

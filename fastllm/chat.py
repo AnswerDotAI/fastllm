@@ -168,6 +168,7 @@ class AsyncChat:
         api_name=None,            # API to use, one of ApiName: openai (responses), openai_chat, anthropic, gemini
         vendor_name=None,         # Vendor name, one of vendor_mapping which resolves api_base/api_key automatically
         api_key=None,             # API key when model can't be resolved or vendor_name is not known or codex
+        oauth_token=None,         # A subscription's OAuth token (Codex, Claude Code) in place of an API key
         base_url=None,            # API base url when model can't be resolved or vendor_name is not known
         endpoint=None,            # Override the transport's request path, for a server mounting Responses at a custom location
         extra_headers=None,       # Extra HTTP headers for custom providers
@@ -178,7 +179,7 @@ class AsyncChat:
         default_cbs=True          # Whether to include default callbacks
     ):
         "LiteLLM chat client."
-        if not vendor_name and not api_name and not (base_url and api_key):
+        if not vendor_name and not api_name and not (base_url and (api_key or oauth_token)):
             v, model = split_vendor(model)
             if v in vendor_mapping: vendor_name = v
             elif v: api_name = v  # a registered transport api (e.g. claude_code)
@@ -248,6 +249,7 @@ def _prep_call(self:AsyncChat, search, max_tokens, kwargs, stream=False, think=N
     if self.api_name:      kwargs['api_name'] = self.api_name
     if self.vendor_name:   kwargs['vendor_name'] = self.vendor_name
     if self.api_key:       kwargs['api_key'] = self.api_key
+    if self.oauth_token:   kwargs['oauth_token'] = self.oauth_token
     if self.base_url:      kwargs['base_url'] = self.base_url
     if self.endpoint:      kwargs['endpoint'] = self.endpoint
     if self.extra_headers: kwargs['xtra_hdrs'] = self.extra_headers
