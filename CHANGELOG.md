@@ -2,6 +2,13 @@
 
 <!-- do not remove -->
 
+## 0.0.50
+
+### New Features
+
+- Replay each provider's own message inside the tool loop, and drop the server-tool special cases ([#97](https://github.com/AnswerDotAI/fastllm/pull/97)), thanks to [@jph00](https://github.com/jph00)
+
+
 ## 0.0.49
 
 ### New Features
