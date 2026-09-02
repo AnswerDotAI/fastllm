@@ -13,6 +13,7 @@ from fasttransport.core import AsyncHttpCli
 from fasttransport.errors import APIError
 
 from .types import *
+from .codex import codex_auth_path
 from aidialog.msg_parts import (Part, PartType, Msg, Text, Thinking, ToolUse, ToolResult, InputImage, InputAudio, InputVideo,
     InputFile, mk_tool_res_msg, Completion)
 from .streaming import *
@@ -22,7 +23,7 @@ from .anthropic import *
 from .gemini import *
 
 # %% ../nbs/06_acomplete.ipynb #32ee2546
-_codex_path = os.getenv('CODEX_AUTH_PATH', '~/.codex/auth.json')
+_codex_path = codex_auth_path()
 _codex_json = _codex_path, ('tokens','access_token')
 vendor_mapping = {
     "openai":       ('openai', 'https://api.openai.com/v1', 'OPENAI_API_KEY'),

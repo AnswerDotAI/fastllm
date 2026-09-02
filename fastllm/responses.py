@@ -148,9 +148,10 @@ class ResponseState(BasicRepr):
 # %% ../nbs/06a_responses.ipynb #c9ca3744
 class ResponseTurn(BasicRepr):
     "A prepared Responses request for one provider call."
-    def __init__(self, id, created_at, body, history, provider_messages, system='', previous=None, server_tools=None):
+    def __init__(self, id, created_at, body, history, provider_messages, system='', previous=None, server_tools=None, call_kwargs=None):
         store_attr()
         if server_tools is None: self.server_tools = {}
+        if call_kwargs is None: self.call_kwargs = {}
 
     @property
     def provider_previous_id(self): return self.previous.provider_response_id if self.previous else None
@@ -159,7 +160,7 @@ class ResponseTurn(BasicRepr):
 # %% ../nbs/06a_responses.ipynb #a648297f
 class AsyncResponses:
     "Run individual Responses turns over FastLLM."
-    def prepare(self, body, previous=None, server_tools=None):
+    def prepare(self, body, previous=None, server_tools=None, **kwargs):
         if not isinstance(body, dict): raise ResponsesError('Request body must be an object')
         model = body.get('model')
         if not model: raise ResponsesError('model is required', param='model')
@@ -174,13 +175,13 @@ class AsyncResponses:
         instructions = '\n\n'.join(filter(None, [body.get('instructions', ''), input_system]))
         provider_messages = new_msgs if previous and previous.provider_response_id else list(history)
         return ResponseTurn(_new_id('resp'), int(time.time()), body, history, provider_messages, instructions, previous,
-            {f.__name__: f for f in server_tools or []})
+            {f.__name__: f for f in server_tools or []}, kwargs)
 
 
 # %% ../nbs/06a_responses.ipynb #373f7d5e
 @patch
 async def call(self:AsyncResponses, turn):
-    "Start the provider stream for a prepared turn, having received its first chunk"
+    "Start the provider stream for a prepared turn, having received its first chunk; the turn's `call_kwargs` reach `acomplete`"
     body = turn.body
     reasoning = body.get('reasoning') or {}
     tools = list(body.get('tools') or []) + [dict(type='function', **get_schema(f, pname='parameters')) for f in turn.server_tools.values()]
@@ -188,7 +189,7 @@ async def call(self:AsyncResponses, turn):
     kwargs.update(tool_choice=body.get('tool_choice'), parallel_tool_calls=body.get('parallel_tool_calls', True),
         reasoning_effort=reasoning.get('effort'), max_tokens=body.get('max_output_tokens'), temperature=body.get('temperature'),
         cache_idxs=body.get('cache_idxs'), ttl=body.get('ttl'), web_search_options=body.get('web_search_options'))
-    stream = await acomplete(turn.provider_messages, model=body['model'], stream=True, **kwargs)
+    stream = await acomplete(turn.provider_messages, model=body['model'], stream=True, **kwargs, **turn.call_kwargs)
     first = await anext(stream)
     async def _rest():
         yield first
@@ -221,7 +222,7 @@ async def server_results(self:AsyncResponses, turn, comp):
 def server_turn(self:AsyncResponses, turn, comp, results):
     "The follow-up provider turn answering server tool `results`, within the same public response"
     outputs = [dict(type='function_call_output', call_id=r.id, output=r.text) for r in results]
-    nxt = self.prepare(turn.body | dict(input=outputs), self.state(turn, comp), turn.server_tools.values())
+    nxt = self.prepare(turn.body | dict(input=outputs), self.state(turn, comp), turn.server_tools.values(), **turn.call_kwargs)
     nxt.id = turn.id
     return nxt
 

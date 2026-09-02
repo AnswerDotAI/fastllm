@@ -17,6 +17,9 @@ classifiers = [
 ]
 dependencies = ['fastcore>=2.1.18', 'aidialog>=0.0.10', 'fasttransport>=0.0.2', 'pillow']
 
+[project.scripts]
+fastllm-auth = "fastllm.codex:main"
+
 [project.urls]
 Repository = "https://github.com/AnswerDotAI/fastllm"
 
