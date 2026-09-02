@@ -225,20 +225,14 @@ class AsyncChat:
 def _usrtools(tcs): return L(tcs).filter(lambda o: not o.server) if tcs else None
 
 # %% ../nbs/07_chat.ipynb #19b87f53
-_effort_names = dict(none='n', low='l', medium='m', high='h', xhigh='x', max='x')
-
 def _think_kw(model, think, vendor_name):
-    think = _effort_names.get(think, think)
-    if not think: return {}
-    if 'opus-4-7' in model:
-        e = 'xhigh' if think=='h' else effort.get(think)
-        eff = dict(thinking={"type":"adaptive", "display":"summarized"}, output_config={"effort":e})
-        return dict(reasoning_effort=eff)
-    try: xhigh = get_model_info(model, vendor_name).get('supports_xhigh_reasoning_effort')
-    except: xhigh = False
-    eff = effort.get(think) if think!='x' else 'xhigh' if xhigh else 'high'
+    if think is None or think == '': return {}
+    eff = resolve_effort(effort_levels(get_model_info(model, vendor_name)), think)
+    if eff is None: return {}
+    if 'opus-4-7' in model: return dict(reasoning_effort=dict(thinking={"type":"adaptive", "display":"summarized"}, output_config={"effort":eff}))
     if vendor_name == 'codex': return dict(reasoning_effort={'effort':eff, 'summary':'auto'})
     return dict(reasoning_effort=eff)
+
 
 # %% ../nbs/07_chat.ipynb #06e898fd
 @patch

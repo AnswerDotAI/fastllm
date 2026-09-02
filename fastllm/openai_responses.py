@@ -186,6 +186,7 @@ def denorm_tool_choice(v):
 def denorm_reasoning(v):
     "Map canonical reasoning_effort to OpenAI Responses reasoning param."
     if v is None: return None
+    if isinstance(v, int): return {'level': v}  # a 0-3 level, for a Responses server that resolves it per model
     return {'effort': v} if isinstance(v, str) else v
 
 # %% ../nbs/02_oai_responses.ipynb #e11c15c0
