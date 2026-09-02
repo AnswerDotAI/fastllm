@@ -2,6 +2,13 @@
 
 <!-- do not remove -->
 
+## 0.0.49
+
+### New Features
+
+- Add `oauth_token` support across vendors for per-user subscription auth, and apply flat subscription pricing to Claude Code models ([#95](https://github.com/AnswerDotAI/fastllm/issues/95))
+
+
 ## 0.0.48
 
 ### New Features
