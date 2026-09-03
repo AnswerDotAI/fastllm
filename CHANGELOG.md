@@ -2,6 +2,13 @@
 
 <!-- do not remove -->
 
+## 0.0.53
+
+### New Features
+
+- Merge a `finalize` result into the terminal frame's usage, and honour a server-priced `cost` ([#100](https://github.com/AnswerDotAI/fastllm/pull/100)), thanks to [@jph00](https://github.com/jph00)
+
+
 ## 0.0.52
 
 ### New Features
