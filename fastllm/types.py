@@ -365,6 +365,7 @@ def tier_rate(meta, key, tier):
 # %% ../nbs/00_types.ipynb #8bfca02d
 @patch(as_prop=True)
 def cost(self:Completion):
+    if self.usage and 'cost' in self.usage.raw: return self.usage.raw['cost']
     meta = dict2obj(get_model_info(self.model, self.vendor_name))
     if not meta: return 0.0  # unregistered model (e.g. a custom base_url server): no pricing metadata
     api = api_registry[self.api_name]
