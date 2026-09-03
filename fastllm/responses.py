@@ -12,7 +12,7 @@ Every request is streamed. `_ResponseStream` only tracks the standard event gram
 
 # %% auto #0
 __all__ = ['ResponsesError', 'response_input', 'normalize_call_ids', 'response_output', 'response_usage', 'response_object',
-           'ResponseState', 'ResponseTurn', 'AsyncResponses', 'response_event', 'pending_response']
+           'ResponseState', 'ResponseStore', 'ResponseTurn', 'AsyncResponses', 'response_event', 'pending_response']
 
 # %% ../nbs/06a_responses.ipynb #e16fc24e
 import asyncio, copy, json, secrets, time
@@ -22,7 +22,7 @@ from fasttransport.errors import APIError
 
 from .acomplete import acomplete
 from .streaming import Status
-from aidialog.msg_parts import Msg, Text, ToolUse, ToolResult, InputImage, InputFile, Completion, tool_text
+from aidialog.msg_parts import Msg, Text, ToolUse, ToolResult, InputImage, InputFile, Completion, tool_text, msg2dict, dict2msg
 
 # %% ../nbs/06a_responses.ipynb #f904c16f
 class ResponsesError(Exception):
@@ -144,6 +144,43 @@ def response_object(rid, body, comp, previous_response_id=None, created_at=None)
 class ResponseState(BasicRepr):
     "Canonical history and optional provider continuation metadata."
     def __init__(self, id, model, history, provider_response_id=None): store_attr()
+
+# %% ../nbs/06a_responses.ipynb #b28fa30d
+@patch
+def to_dict(self:ResponseState):
+    "This state as a JSON-ready dict"
+    return dict(id=self.id, model=self.model, history=[msg2dict(m) for m in self.history], provider_response_id=self.provider_response_id)
+
+@patch(cls_method=True)
+def from_dict(cls:ResponseState, d):
+    "The state `to_dict` produced `d` from"
+    return cls(d['id'], d['model'], tuple(dict2msg(m) for m in d['history']), d['provider_response_id'])
+
+# %% ../nbs/06a_responses.ipynb #74e09d18
+class ResponseStore:
+    "Continuation states kept for `ttl` seconds; override `dump` and `load` to keep them outside this process"
+    def __init__(self, ttl=3600): self.ttl,self.items = ttl,{}
+
+    async def dump(self, rid, data):
+        "Keep JSON-ready `data` under `rid` for `ttl` seconds"
+        now = time.time()
+        self.items = {k:v for k,v in self.items.items() if v[0] > now}
+        self.items[rid] = (now+self.ttl, data)
+
+    async def load(self, rid):
+        "The data kept under `rid`, or `None` once it has expired"
+        exp,data = self.items.get(rid, (0, None))
+        return data if exp > time.time() else None
+
+    async def put(self, state, **meta):
+        "Store `state` with the host's `meta` about it"
+        await self.dump(state.id, dict(state=state.to_dict(), **meta))
+
+    async def get(self, rid):
+        "The `(state, meta)` stored under `rid`, or `None`"
+        data = await self.load(rid)
+        if data is None: return None
+        return ResponseState.from_dict(data['state']),{k:v for k,v in data.items() if k != 'state'}
 
 # %% ../nbs/06a_responses.ipynb #c9ca3744
 class ResponseTurn(BasicRepr):
