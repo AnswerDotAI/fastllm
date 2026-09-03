@@ -374,7 +374,7 @@ async def events(self:AsyncResponses, turn, finalize=None, stream=None):
         comp.message,comp.usage = Msg('assistant', texts + comp.message.content),usage
         for event in state.done_events(comp): yield event
         response = response_object(first.id, first.body, comp, first.previous.id if first.previous else None, first.created_at)
-        if finalize: await finalize(next_state, comp)
+        if finalize and (extra := await finalize(next_state, comp)): response['usage'].update(extra)
         name = 'response.incomplete' if response['status'] == 'incomplete' else 'response.completed'
         yield state.event(name, response=response)
     except asyncio.CancelledError: raise
