@@ -26,16 +26,15 @@ from aidialog.msg_parts import Msg, Thinking, ToolUse, Completion, StopResponse,
 class Usage(BasicRepr):
     "Normalized usage."
     def __init__(self, prompt_tokens=0, completion_tokens=0, total_tokens=0, cached_tokens=0,
-        cache_creation_tokens=0, reasoning_tokens=0, raw=None):
+        cache_creation_tokens=0, reasoning_tokens=0, search_queries=0, raw=None):
         if raw is None: raw = {}
         store_attr()
     def __eq__(self, o): return type(o) is type(self) and self.__dict__ == o.__dict__
 
-
 # %% ../nbs/00_types.ipynb #bae1c130
 @patch
 def __add__(self:Usage, o):
-    fields = 'prompt_tokens completion_tokens total_tokens cached_tokens cache_creation_tokens reasoning_tokens'.split()
+    fields = 'prompt_tokens completion_tokens total_tokens cached_tokens cache_creation_tokens reasoning_tokens search_queries'.split()
     return Usage(**{k: getattr(self, k)+getattr(o, k) for k in fields}, raw=o.raw)
 
 # %% ../nbs/00_types.ipynb #4901e693
@@ -366,4 +365,5 @@ def cost(self:Completion):
     api = api_registry[self.api_name]
     if not hasattr(api, 'cost'): raise NotImplementedError(f"API: {self.api_name} doesn't have a registered `cost` function in ns")
     res = api.cost(self.usage, meta)
+    if (n := self.usage.search_queries) and (rates := meta.get('search_context_cost_per_query')): res += n * rates['search_context_size_medium']
     return res*2 if self.vendor_name=='deepseek' and self.model.startswith('deepseek-v4') and is_deepseek_peak_hour() else res

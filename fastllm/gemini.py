@@ -67,7 +67,7 @@ def norm_usage(resp):
     if call := grounding(cand)[1]: stu['google_search'] = len(call.arguments['queries'] or [1])
     if stu: usg['server_tool_use'] = stu
     return Usage(prompt_tokens=pt, completion_tokens=ct, total_tokens=tt,
-                 cached_tokens=cached, reasoning_tokens=reasoning, raw=usg)
+                 cached_tokens=cached, reasoning_tokens=reasoning, search_queries=stu.get('google_search', 0), raw=usg)
 
 # %% ../nbs/05_gemini.ipynb #7a8b1f8f
 def norm_finish(resp, tcs=None):

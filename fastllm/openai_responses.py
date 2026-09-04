@@ -53,8 +53,7 @@ def norm_usage(resp):
     server_tool_use = dict(Counter(o['type'] for o in resp.get('output', []) if o.get('type') != 'function_call' and o.get('type', '').endswith('_call')))
     if server_tool_use: usg['server_tool_use'] = server_tool_use
     return Usage(prompt_tokens=pt, completion_tokens=ct, total_tokens=tt,
-        cached_tokens=cached, reasoning_tokens=reasoning, raw=usg)
-
+        cached_tokens=cached, reasoning_tokens=reasoning, search_queries=server_tool_use.get('web_search_call', 0), raw=usg)
 
 # %% ../nbs/02_oai_responses.ipynb #95102df4
 def norm_finish(resp, tcs=None):
