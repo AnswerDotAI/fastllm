@@ -76,6 +76,7 @@ class PartAccum(BasicRepr):
                 if isinstance(p.arguments, str): p.arguments = json.loads(p.arguments) if p.arguments else {}
             elif merged and type(merged[-1]) is type(p) and isinstance(p, (Text, Thinking)):
                 merged[-1].text += p.text
+                if isinstance(p, Text): merged[-1].citations.extend(p.citations)
                 continue
             merged.append(p)
         return merged
@@ -163,7 +164,7 @@ async def mk_acollect_stream(it, index_fn, model=None, api_name=None, vendor_nam
         # Rest incl. tools, finish reason, usage is processed independently
         for tc in d.tool_calls:
             args = tc.arguments.get('_delta', tc.arguments)
-            _, idx = _proc(d, 'tool_use', ret=dict(id=tc.id, name=tc.name, arguments=args, server=tc.server, raw=tc.raw))
+            _, idx = _proc(d, 'tool_use', ret=dict(id=tc.id, name=tc.name, arguments=args, server=tc.server, text=tc.text, raw=tc.raw))
             if (isinstance(args, str) and args.endswith('}')) or (isinstance(args, dict) and '_delta' not in tc.arguments): # tool call ready
                 acc = part_accum.parts[idx]
                 if isinstance(args, str):
@@ -171,7 +172,6 @@ async def mk_acollect_stream(it, index_fn, model=None, api_name=None, vendor_nam
                     except json.JSONDecodeError: continue
                 acc.arguments = args
                 yield acc
-                if acc.server: yield ToolResult(id=acc.id, name=acc.name, arguments=args, server=True, text="Server tool call executed.")
         r = _proc(d, 'refusal')
         if r[0]: yield _mk_delta_part('refusal', r[0]['refusal'])
         if d.finish_reason: fin = d.finish_reason
