@@ -292,11 +292,6 @@ register_model_info('mimo-v2.5-pro-ultraspeed', vendor_name='mimo', **mimo_v25_c
 register_model_info('MiniMax-M3', vendor_name='minimax', **modern_llm, max_input_tokens=512_000, max_output_tokens=512_000, max_tokens=512_000,
     input_cost_per_token=0.3e-6, output_cost_per_token=1.2e-6, cache_read_input_token_cost=0.06e-6, supports_vision=True, supports_video_input=True)
 
-# %% ../nbs/00_types.ipynb #4e1b40b3
-register_model_info('muse-spark-1.1', vendor_name='meta_ai', **modern_llm, max_input_tokens=1_048_576, max_output_tokens=128000, max_tokens=128000,
-    supports_vision=True, supports_image_input=True, supports_video_input=True, supports_pdf_input=True, supports_web_search=True,
-    search_context_cost_per_query=0.0025, input_cost_per_token=1.25e-6, output_cost_per_token=4.25e-6, cache_read_input_token_cost=0.15e-6)
-
 # %% ../nbs/00_types.ipynb #2c23d11e
 codex_pricing = dict(input_cost_per_token = 0.10/1_000_000, output_cost_per_token = 0.50/1_000_000,
     cache_creation_input_token_cost = 0.10/1_000_000, cache_read_input_token_cost = 0.10/1_000_000)
@@ -331,8 +326,9 @@ for model in gpt56s:
 
 # %% ../nbs/00_types.ipynb #24cc47ec
 def get_model_pricing(mn, vendor_name, million=True):
+    "Token rates for a model, per million tokens by default; per-query and per-image prices are left out"
     return {k:round(v * (1e6 if million else 1), 6) for k,v in get_model_info(mn, vendor_name).items()
-        if 'cost' in k and isinstance(v,float) and 'priority' not in k}
+        if 'cost' in k and 'token' in k and isinstance(v,float) and 'priority' not in k}
 
 # %% ../nbs/00_types.ipynb #79304cd9
 def approx_pricing(nm, vendor_name, out=10, cache=80, inp=10, markup=0):
