@@ -32,6 +32,9 @@ version = {attr = "fastllm.__version__"}
 [tool.setuptools.packages.find]
 include = ["fastllm*"]
 
+[tool.setuptools.package-data]
+fastllm = ["model_prices.json"]
+
 [project.entry-points.fastaudit_import_allow]
 fastllm = "fastllm"
 
