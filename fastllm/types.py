@@ -22,7 +22,6 @@ from fastcore.utils import *
 from PIL import Image as PImg
 from aidialog.msg_parts import Msg, Thinking, ToolUse, Completion, StopResponse, FullResponse
 
-
 # %% ../nbs/00_types.ipynb #802ad832
 class Usage(BasicRepr):
     "Normalized usage."
