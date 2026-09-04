@@ -44,7 +44,8 @@ def norm_usage(resp):
     pt = int(usg.get("input_tokens", 0) or 0) + cached + cache_creation
     ct = int(usg.get("output_tokens", 0) or 0)
     return Usage(prompt_tokens=pt, completion_tokens=ct, total_tokens=pt + ct,
-                 cached_tokens=cached, cache_creation_tokens=cache_creation, reasoning_tokens=0, raw=usg)
+                 cached_tokens=cached, cache_creation_tokens=cache_creation, reasoning_tokens=0, raw=usg,
+                 search_queries=int(nested_idx(usg, 'server_tool_use', 'web_search_requests') or 0))
 
 def finalize_usage(usg, parts):
     "Split reasoning tokens out of `output_tokens`: the reported `thinking_tokens`, else an estimate from the thinking text."
@@ -53,7 +54,7 @@ def finalize_usage(usg, parts):
     ct = int(usg.raw.get('output_tokens', usg.completion_tokens) or 0)
     rt = int(nested_idx(usg.raw, 'output_tokens_details', 'thinking_tokens') or 0) or (min(int(len(rc.split())*1.5), ct) if rc else 0)
     return Usage(prompt_tokens=usg.prompt_tokens, completion_tokens=ct-rt, total_tokens=usg.prompt_tokens+ct,
-        cached_tokens=usg.cached_tokens, cache_creation_tokens=usg.cache_creation_tokens, reasoning_tokens=rt, raw=usg.raw)
+        cached_tokens=usg.cached_tokens, cache_creation_tokens=usg.cache_creation_tokens, reasoning_tokens=rt, search_queries=usg.search_queries, raw=usg.raw)
 
 # %% ../nbs/04_anthropic.ipynb #7a8b1f8f
 def norm_finish(resp, tcs=None):
