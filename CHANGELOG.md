@@ -2,6 +2,13 @@
 
 <!-- do not remove -->
 
+## 0.0.57
+
+### New Features
+
+- Charge provider-run web searches per query ([#103](https://github.com/AnswerDotAI/fastllm/pull/103)), thanks to [@jph00](https://github.com/jph00)
+
+
 
 ## 0.0.55
 
