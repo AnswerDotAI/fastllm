@@ -2,6 +2,13 @@
 
 <!-- do not remove -->
 
+## 0.0.54
+
+### New Features
+
+- Every server-run call reaches the client as one server_tool_call ([#101](https://github.com/AnswerDotAI/fastllm/pull/101)), thanks to [@jph00](https://github.com/jph00)
+
+
 ## 0.0.53
 
 ### New Features
