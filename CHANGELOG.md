@@ -2,6 +2,13 @@
 
 <!-- do not remove -->
 
+## 0.0.58
+
+### Bugs Squashed
+
+- Use stateless Chat Completions for Meta models ([#105](https://github.com/AnswerDotAI/fastllm/pull/105)), thanks to [@jph00](https://github.com/jph00)
+
+
 ## 0.0.57
 
 ### New Features
