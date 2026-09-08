@@ -282,6 +282,7 @@ def cost(usage, m):
 # %% ../nbs/02_oai_responses.ipynb #2efda2a1
 def fix_payload(payload, model, vendor_name):
     "Apply vendor request quirks to a built payload."
+    if model == 'gpt-6-astra': payload.pop('temperature', None)
     if vendor_name == 'codex':
         for k in 'temperature max_tokens max_output_tokens max_completion_tokens metadata'.split(): payload.pop(k, None)
         payload['store'] = False

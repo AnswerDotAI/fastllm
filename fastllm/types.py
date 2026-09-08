@@ -7,7 +7,7 @@ __all__ = ['FinishReason', 'api_registry', 'model_prices_url', 'sample_img_url',
            'sonn', 'sonn5', 'opus46', 'opus48', 'opus', 'opus5', 'fable', 'fable5', 'fable51', 'gpt54', 'gpt54m',
            'gpt55', 'codex54', 'codex54m', 'codex55', 'codex53spark', 'model_info_registry', 'modern_llm',
            'effort_codes', 'deepseek_v4_common', 'deepseek_v4_flash_prices', 'mimo_v25_common', 'codex_pricing', 'sol',
-           'terra', 'luna', 'gpt56s', 'Usage', 'APIRegistry', 'mk_completion', 'fn_schema', 'payload_kwargs',
+           'terra', 'luna', 'gpt56s', 'astra', 'Usage', 'APIRegistry', 'mk_completion', 'fn_schema', 'payload_kwargs',
            'provider_req', 'get_api_key', 'wrap_typed', 'unwrap_typed', 'resize_b64', 'model_prices_meta',
            'infer_api_name', 'get_model_meta', 'register_model_info', 'get_model_info', 'effort_code', 'effort_levels',
            'resolve_effort', 'get_model_pricing', 'approx_pricing', 'is_deepseek_peak_hour', 'price_tier', 'tier_rate']
@@ -317,11 +317,16 @@ for model in (haik45, sonn45, sonn46, sonn5, opus46, opus48, opus5, fable5, fabl
 
 # %% ../nbs/00_types.ipynb #bb0c4c2a
 sol,terra,luna = gpt56s = 'gpt-5.6-sol gpt-5.6-terra gpt-5.6-luna'.split()
+astra = 'gpt-6-astra'
+for model in (*gpt56s, astra): register_model_info(model, 'openai', base=model, max_input_tokens=272_000)
+
 # Codex serves only the suffixed names; bare `gpt-5.6` is rejected with a ChatGPT account.
-# Its window is smaller than the API's: 371,331 input tokens is accepted and 371,981 is not, on all three.
+# Its window accepts 371,331 input tokens and rejects 371,981, on all three.
 for model in gpt56s:
     register_model_info(model, 'codex', base=model, base_vendor_name='openai', max_input_tokens=371_000, **codex_pricing)
     _flat_rates('codex', model)
+register_model_info(astra, 'codex', base=astra, base_vendor_name='openai', **codex_pricing)
+_flat_rates('codex', astra)
 
 # %% ../nbs/00_types.ipynb #24cc47ec
 def get_model_pricing(mn, vendor_name, million=True):
