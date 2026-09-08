@@ -2,6 +2,13 @@
 
 <!-- do not remove -->
 
+## 0.0.59
+
+### New Features
+
+- add astra ([#106](https://github.com/AnswerDotAI/fastllm/issues/106))
+
+
 ## 0.0.58
 
 ### Bugs Squashed
