@@ -2,6 +2,13 @@
 
 <!-- do not remove -->
 
+## 0.0.60
+
+### Bugs Squashed
+
+- Fix Gemini nested schema filtering, Anthropic image URL results, cache clearing, and search count fallbacks ([#107](https://github.com/AnswerDotAI/fastllm/issues/107))
+
+
 ## 0.0.59
 
 ### New Features
