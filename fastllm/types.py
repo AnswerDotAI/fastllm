@@ -136,11 +136,11 @@ _typed_re = re.compile(r'^𝍁(\w+)𝍁(.+)$', re.S)
 _typed_strs = {c.__name__: c for c in (StopResponse, FullResponse)}
 
 def wrap_typed(s):
-    "Mark `s` with a `𝍁TypeName𝍁` prefix when it is a `str` subclass, so the type survives a plain-string wire"
+    "Prefix a `str` subclass with `𝍁TypeName𝍁` for transmission as plain text"
     return s if type(s) is str else f'𝍁{type(s).__name__}𝍁{s}'
 
 def unwrap_typed(s):
-    "Rebuild the named `str` subclass from a `𝍁`-marked string; unknown names get a minted ephemeral type"
+    "Decode a `𝍁TypeName𝍁` prefix, creating a `str` subclass for an unknown name"
     if not (m := _typed_re.match(s)): return s
     nm,body = m.groups()
     return _typed_strs.setdefault(nm, type(nm, (str,), {}))(body)
