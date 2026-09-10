@@ -234,6 +234,13 @@ register_model_info('accounts/fireworks/models/deepseek-v4-flash-vision-exp', ve
 register_model_info('glm-5.3-flash', vendor_name='zai', base='glm-5.3-flash', reasoning_effort_levels=['low', 'high', 'max'])
 register_model_info('accounts/fireworks/models/glm-5p3-flash', vendor_name='fireworks_ai', base='glm-5.3-flash', base_vendor_name='zai')
 
+# %% ../nbs/00_types.ipynb #0a2d3bff
+register_model_info(
+    'mercury-2.5', vendor_name='inception', **modern_llm,
+    max_input_tokens=260_000, max_output_tokens=65_536,
+    input_cost_per_token=0.04e-6, cache_read_input_token_cost=0.004e-6,
+    output_cost_per_token=0.15e-6)
+
 # %% ../nbs/00_types.ipynb #b6279e07
 effort_codes = dict(n='none', l='low', m='medium', h='high', x='xhigh')
 
