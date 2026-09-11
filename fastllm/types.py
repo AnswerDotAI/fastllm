@@ -6,11 +6,11 @@
 __all__ = ['FinishReason', 'api_registry', 'model_prices_url', 'sample_img_url', 'sample_doms', 'haik45', 'sonn45', 'sonn46',
            'sonn', 'sonn5', 'opus46', 'opus48', 'opus', 'opus5', 'fable', 'fable5', 'fable51', 'gpt54', 'gpt54m',
            'gpt55', 'codex54', 'codex54m', 'codex55', 'codex53spark', 'model_info_registry', 'modern_llm',
-           'effort_codes', 'deepseek_v4_common', 'deepseek_v4_flash_prices', 'mimo_v25_common', 'codex_pricing', 'sol',
-           'terra', 'luna', 'gpt56s', 'astra', 'Usage', 'APIRegistry', 'mk_completion', 'fn_schema', 'payload_kwargs',
-           'provider_req', 'get_api_key', 'wrap_typed', 'unwrap_typed', 'resize_b64', 'model_prices_meta',
-           'infer_api_name', 'get_model_meta', 'register_model_info', 'get_model_info', 'effort_code', 'effort_levels',
-           'resolve_effort', 'get_model_pricing', 'approx_pricing', 'is_deepseek_peak_hour', 'price_tier', 'tier_rate']
+           'effort_codes', 'mimo_v25_common', 'codex_pricing', 'sol', 'terra', 'luna', 'gpt56s', 'astra', 'Usage',
+           'APIRegistry', 'mk_completion', 'fn_schema', 'payload_kwargs', 'provider_req', 'get_api_key', 'wrap_typed',
+           'unwrap_typed', 'resize_b64', 'model_prices_meta', 'infer_api_name', 'get_model_meta', 'register_model_info',
+           'get_model_info', 'effort_code', 'effort_levels', 'resolve_effort', 'get_model_pricing', 'approx_pricing',
+           'is_deepseek_peak_hour', 'price_tier', 'tier_rate']
 
 # %% ../nbs/00_types.ipynb #b4d047fd
 import httpx2, base64, io
@@ -229,8 +229,8 @@ modern_llm = dict(supports_function_calling=True, supports_tool_choice=True, sup
 # %% ../nbs/00_types.ipynb #8261dcd0
 register_model_info('gpt-5.4', vendor_name='openai', base='gpt-5.4', supports_web_search=True)
 
-register_model_info('accounts/fireworks/models/deepseek-v4-flash-vision-exp', vendor_name='fireworks_ai',
-    base='accounts/fireworks/models/deepseek-v4-flash-0731', supports_vision=True)
+register_model_info('accounts/fireworks/models/deepseek-v4p1-flash', vendor_name='fireworks_ai',
+    base='accounts/fireworks/models/deepseek-v4-flash-0731', supports_vision=True, supports_image_input=True)
 register_model_info('glm-5.3-flash', vendor_name='zai', base='glm-5.3-flash', reasoning_effort_levels=['low', 'high', 'max'])
 register_model_info('accounts/fireworks/models/glm-5p3-flash', vendor_name='fireworks_ai', base='glm-5.3-flash', base_vendor_name='zai')
 
@@ -271,18 +271,10 @@ def resolve_effort(levels, effort):
 
 
 # %% ../nbs/00_types.ipynb #948d55d0
-# The price map carries DeepSeek's peak rates, and `Completion.cost` doubles at peak, so register the off-peak rates
-deepseek_v4_common = dict(supports_native_structured_output=True)
-deepseek_v4_flash_prices = dict(input_cost_per_token=0.22e-6, input_cost_per_token_cache_hit=0.007e-6,
-    cache_read_input_token_cost=0.007e-6, output_cost_per_token=0.66e-6)
-
-register_model_info('deepseek-v4-flash', vendor_name='deepseek', base='deepseek-v4-flash',
-    **deepseek_v4_common, **deepseek_v4_flash_prices)
-register_model_info('deepseek-v4-flash-vision-exp', vendor_name='deepseek', base='deepseek-v4-flash-vision-exp',
-    **deepseek_v4_common, **deepseek_v4_flash_prices, supports_image_input=True)
-register_model_info('deepseek-v4-pro', vendor_name='deepseek', base='deepseek-v4-pro', **deepseek_v4_common,
-    input_cost_per_token=0.66e-6, input_cost_per_token_cache_hit=0.022e-6,
-    cache_read_input_token_cost=0.022e-6, output_cost_per_token=1.98e-6)
+register_model_info('deepseek-flash', vendor_name='deepseek', base='deepseek-v4-flash',
+    supports_native_structured_output=True, supports_vision=True, supports_image_input=True,
+    reasoning_effort_levels=['low', 'high', 'max'], input_cost_per_token=0.15e-6,
+    input_cost_per_token_cache_hit=0.003e-6, cache_read_input_token_cost=0.003e-6, output_cost_per_token=0.6e-6)
 
 mimo_v25_common = dict(**modern_llm, supports_web_search=True, max_input_tokens=1048576, max_output_tokens=131072, max_tokens=131072)
 
@@ -355,7 +347,7 @@ def is_deepseek_peak_hour(dt=None):
     "Check whether current UTC time is in DeepSeek peak pricing hours."
     dt = dt or datetime.now(timezone.utc)
     h = dt.hour + dt.minute/60
-    return 1 <= h < 4 or 6 <= h < 10
+    return dt.weekday() < 5 and (1 <= h < 4 or 6 <= h < 10)
 
 # %% ../nbs/00_types.ipynb #4c701619
 def price_tier(meta, n):
@@ -378,4 +370,4 @@ def cost(self:Completion):
     if not hasattr(api, 'cost'): raise NotImplementedError(f"API: {self.api_name} doesn't have a registered `cost` function in ns")
     res = api.cost(self.usage, meta)
     if (n := self.usage.search_queries) and (rates := meta.get('search_context_cost_per_query')): res += n * rates['search_context_size_medium']
-    return res*2 if self.vendor_name=='deepseek' and self.model.startswith('deepseek-v4') and is_deepseek_peak_hour() else res
+    return res*2 if self.vendor_name=='deepseek' and self.model=='deepseek-flash' and is_deepseek_peak_hour() else res

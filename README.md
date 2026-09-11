@@ -45,15 +45,11 @@ mtok = 1024
 Use the same `acomplete` interface with Claude, GPT, Gemini, or Kimi. Set `model` and any provider-specific routing arguments:
 
 ``` python
-models = [
-    ('claude-sonnet-5', {}),
-    ('gpt-4o-mini', {}),
-    ('models/gemini-3-flash-preview', {}),
-    ('accounts/fireworks/models/kimi-k3', dict(vendor_name='fireworks_ai'))
-]
+models = [('claude-sonnet-5', {}), ('gpt-4o-mini', {}), ('models/gemini-3-flash-preview', {}),
+    ('accounts/fireworks/models/kimi-k3', dict(vendor_name='fireworks_ai'))]
 for name, kw in models:
     r = await acomplete([user("Translate 'hello' into French. Return only the translation.")],
-                       model=name, max_tokens=mtok, **kw)
+        model=name, max_tokens=mtok, **kw)
     text = ''.join(p.text for p in r.message.content if isinstance(p, Text))
     print(f"{name}: {text.strip()}")
 ```
@@ -85,11 +81,8 @@ r = await stream([user("What should I do today?")], model='models/gemini-3-flash
 Define tools in the shared schema. `fastllm` translates it to the provider’s tool format. This example handles a tool request, adds the result to the history, and continues the conversation:
 
 ``` python
-tools = [{"type": "function", "function": {
-    "name": "get_weather",
-    "description": "Get current weather for a city",
-    "parameters": {"type": "object", "properties": {"city": {"type": "string"}}, "required": ["city"]}
-}}]
+tools = [{"type": "function", "function": dict(name="get_weather", description="Get current weather for a city",
+    parameters=dict(type="object", properties={"city": {"type": "string"}}, required=["city"]))}]
 
 msgs = [user("What's the weather in Paris?")]
 r1 = await stream(msgs, model='claude-sonnet-5', tools=tools, max_tokens=mtok)
@@ -102,7 +95,7 @@ print("Tool calls:", r1.tool_calls)
 
 ``` python
 msgs += [r1.message, mk_tool_res_msg(r1.tool_calls, ['22°C, sunny with light clouds']),
-         user("Should I bring a jacket? Answer in one short sentence.")]
+    user("Should I bring a jacket? Answer in one short sentence.")]
 r2 = await stream(msgs, model='claude-sonnet-5', tools=tools, max_tokens=mtok)
 ```
 
@@ -113,12 +106,10 @@ r2 = await stream(msgs, model='claude-sonnet-5', tools=tools, max_tokens=mtok)
 Control whether the model must use tools, can’t use tools, or decides on its own:
 
 ``` python
-r = await acomplete([user("Hello there!")], model='claude-sonnet-5',
-                    tools=tools, tool_choice='required', max_tokens=mtok)
+r = await acomplete([user('Hello there!')], model='claude-sonnet-5', tools=tools, tool_choice='required', max_tokens=mtok)
 print("Required:", [tc.name for tc in r.tool_calls])
 
-r = await acomplete([user("What's the weather?")], model='claude-sonnet-5',
-                    tools=tools, tool_choice='none', max_tokens=mtok)
+r = await acomplete([user("What's the weather?")], model='claude-sonnet-5', tools=tools, tool_choice='none', max_tokens=mtok)
 print("None:", r.tool_calls)
 ```
 
@@ -132,14 +123,13 @@ Set `reasoning_effort` to `low`, `medium`, or `high` for supported models. The a
 ``` python
 print("Claude: ", end='')
 r = await stream([user("What is 127 × 849? Return just the number.")], model='claude-sonnet-4-6',
-                 reasoning_effort='low', max_tokens=8192)
+    reasoning_effort='low', max_tokens=8192)
 for p in r.message.content:
     if isinstance(p, Thinking): print(f"Thinking excerpt: {p.text[:150]}...")
 
 print("Kimi: ", end='')
-r = await stream([user("What is 127 × 849? Return just the number.")],
-                 model='accounts/fireworks/models/kimi-k3', vendor_name='fireworks_ai',
-                 reasoning_effort='low', max_tokens=8192)
+r = await stream([user('What is 127 × 849? Return just the number.')], model='accounts/fireworks/models/kimi-k3',
+    vendor_name='fireworks_ai', reasoning_effort='low', max_tokens=8192)
 for p in r.message.content:
     if isinstance(p, Thinking): print(f"Thinking excerpt: {p.text[:150]}...")
 ```
@@ -156,7 +146,7 @@ OpenAI’s Responses API supports server-side web search. Server tool calls are 
 ``` python
 ws_tools = [{"type": "web_search_preview"}]
 r = await acomplete([user("What is the latest Python release? Reply with the version number only.")],
-                    model='gpt-4o-mini', tools=ws_tools, max_tokens=512)
+    model='gpt-4o-mini', tools=ws_tools, max_tokens=512)
 print("Server tools used:", [tc.name for tc in r.tool_calls if tc.server])
 ```
 
@@ -171,11 +161,11 @@ long_ctx = "You are an expert on the solar system. " * 200
 system = Text(long_ctx, cache_control={'type': 'ephemeral'})
 
 r1 = await acomplete([user("What is Jupiter's mass? Answer in one sentence.")],
-                     model='claude-sonnet-5', system=system, max_tokens=mtok)
+    model='claude-sonnet-5', system=system, max_tokens=mtok)
 print("First call: cache creation tokens", r1.usage.cache_creation_tokens)
 
 r2 = await acomplete([user("What is Saturn's mass? Answer in one sentence.")],
-                     model='claude-sonnet-5', system=system, max_tokens=mtok)
+    model='claude-sonnet-5', system=system, max_tokens=mtok)
 print("Second call: cache read tokens", r2.usage.cached_tokens)
 ```
 
@@ -187,10 +177,7 @@ print("Second call: cache read tokens", r2.usage.cached_tokens)
 Use `InputImage` with a model that supports images. The example sends the same image message to three providers:
 
 ``` python
-img_msg = Msg(role='user', content=[
-    InputImage(sample_img_url),
-    Text("List three visible objects, using nouns only.")
-])
+img_msg = Msg(role='user', content=[InputImage(sample_img_url), Text('List three visible objects, using nouns only.')])
 
 for name, kw in [('claude-sonnet-5', {}), ('gpt-4o-mini', {}), ('models/gemini-3-flash-preview', {})]:
     print(f"{name}: ", end='')

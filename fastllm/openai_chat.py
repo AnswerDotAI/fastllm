@@ -236,7 +236,7 @@ def cost(usage, m):
 def fix_payload(payload, model, vendor_name):
     "Apply vendor request quirks to a built payload."
     if nested_idx(payload, 'messages', -1, 'role') == 'assistant':
-        if vendor_name == 'deepseek' and 'v4' in model:   payload['messages'][-1]['prefix'] = True
+        if vendor_name == 'deepseek' and model == 'deepseek-flash':   payload['messages'][-1]['prefix'] = True
         if vendor_name == 'moonshot' and 'kimi' in model: payload['messages'][-1]['partial'] = True
 
 # %% ../nbs/03_oai_chat.ipynb #e2b0908e
