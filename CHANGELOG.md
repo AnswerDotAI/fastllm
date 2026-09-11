@@ -2,6 +2,14 @@
 
 <!-- do not remove -->
 
+## 0.0.61
+
+### New Features
+
+- Replace DeepSeek v4 model registrations with 4.1, update model prices, and refine peak-hour pricing logic ([#110](https://github.com/AnswerDotAI/fastllm/issues/110))
+- add mercury support ([#109](https://github.com/AnswerDotAI/fastllm/pull/109)), thanks to [@comhar](https://github.com/comhar)
+
+
 ## 0.0.60
 
 ### Bugs Squashed
