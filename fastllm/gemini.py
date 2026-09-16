@@ -256,9 +256,14 @@ def denorm_audio(p):
     return {"fileData": {"mimeType": url_mime(p.text, "audio/*"), "fileUri": p.text}}
 
 # %% ../nbs/05_gemini.ipynb #6b1720e0
+def _secs(v): return v if v is None else f'{v}s'
+
 def denorm_video(p):
-    if (b64:=data_url(p.text)): return {"inlineData": {"mimeType": b64[0], "data": b64[1]}}
-    return {"fileData": {"mimeType": url_mime(p.text, "video/mp4"), "fileUri": p.text}}
+    if (b64:=data_url(p.text)): res = {"inlineData": {"mimeType": b64[0], "data": b64[1]}}
+    else: res = {"fileData": {"mimeType": url_mime(p.text, "video/mp4"), "fileUri": p.text}}
+    md = filter_values(dict(startOffset=_secs(p.start), endOffset=_secs(p.end), fps=p.fps), is_not(None))
+    if md: res["videoMetadata"] = md
+    return res
 
 # %% ../nbs/05_gemini.ipynb #fc6bbdfc
 def denorm_file(p):
