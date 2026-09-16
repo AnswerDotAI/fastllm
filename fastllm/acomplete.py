@@ -168,20 +168,23 @@ async def acomplete(msgs, model, api_name=None, vendor_name=None, api_key=None, 
     if own:
         vendor_name = ifnone(vendor_name, api_name)  # an own-transport api: no HTTP client to build
         if oauth_token: kwargs['oauth_token'] = oauth_token  # its `mk_payload` applies the user's token itself
-    else: cli, api_name, vendor_name = mk_client(model=model, vendor_name=vendor_name, api_name=api_name, api_key=api_key, oauth_token=oauth_token, base_url=base_url, xtra_hdrs=xtra_hdrs)
+    else: cli, api_name, vendor_name = mk_client(model=model, vendor_name=vendor_name, api_name=api_name, api_key=api_key, oauth_token=oauth_token, base_url=base_url)
     api = api_registry[api_name]
     if previous_response_id is not None:
         if not getattr(api, 'supports_previous_response_id', False):
             raise ValueError('previous_response_id is not supported by this transport')
         kwargs['previous_response_id'] = previous_response_id
     payload = api.mk_payload(msgs, model, stream=stream, **kwargs)
-    xtra_body = ifnone(xtra_body, {})
     if fix := getattr(api, 'fix_payload', None): fix(payload, model, vendor_name)
+    body = payload | ifnone(xtra_body, {})
     if not own:
+        headers = xtra_hdrs or {}
+        if vendor_name == 'codex' and (key := body.get('prompt_cache_key')):
+            if not any(k.lower() == 'session-id' for k in headers): headers = {**headers, 'session-id':key}
         ep = endpoint or api.endpoint
         path,params = ep(model, stream) if callable(ep) else (ep, None)
-    if defaults.debug_mode: _debug_print(model, api_name, vendor_name, payload | xtra_body, None if own else cli._url(path))
-    async def _call(): return await provider_req(cli, path, payload | xtra_body, params=params, stream=stream)
+    if defaults.debug_mode: _debug_print(model, api_name, vendor_name, body, None if own else cli._url(path))
+    async def _call(): return await provider_req(cli, path, body, params=params, stream=stream, headers=headers)
     async def _mk_gen():
         resp = payload if own else await _call()  # an own-transport api's `acollect_stream` makes the request itself, from the payload
         async for o in api.acollect_stream(resp, model=model, vendor_name=vendor_name, stop_callables=stop_callables): yield o

@@ -4,12 +4,12 @@
 
 # %% auto #0
 __all__ = ['FinishReason', 'api_registry', 'model_prices_url', 'sample_img_url', 'sample_doms', 'haik45', 'sonn45', 'sonn46',
-           'sonn', 'sonn5', 'opus46', 'opus48', 'opus', 'opus5', 'fable', 'fable5', 'fable51', 'gpt54', 'gpt54m',
-           'gpt55', 'codex54', 'codex54m', 'codex55', 'codex53spark', 'model_info_registry', 'modern_llm',
-           'effort_codes', 'mimo_v25_common', 'codex_pricing', 'sol', 'terra', 'luna', 'gpt56s', 'astra', 'Usage',
-           'APIRegistry', 'mk_completion', 'fn_schema', 'payload_kwargs', 'provider_req', 'get_api_key', 'wrap_typed',
-           'unwrap_typed', 'resize_b64', 'model_prices_meta', 'infer_api_name', 'get_model_meta', 'register_model_info',
-           'get_model_info', 'effort_code', 'effort_levels', 'resolve_effort', 'get_model_pricing', 'approx_pricing',
+           'sonn', 'sonn5', 'opus46', 'opus48', 'opus', 'opus5', 'fable', 'fable5', 'fable51', 'gpt55', 'codex55',
+           'codex53spark', 'model_info_registry', 'modern_llm', 'effort_codes', 'mimo_v25_common', 'codex_pricing',
+           'sol', 'terra', 'luna', 'gpt56s', 'astra', 'Usage', 'APIRegistry', 'mk_completion', 'fn_schema',
+           'payload_kwargs', 'provider_req', 'get_api_key', 'wrap_typed', 'unwrap_typed', 'resize_b64',
+           'model_prices_meta', 'infer_api_name', 'get_model_meta', 'register_model_info', 'get_model_info',
+           'effort_code', 'effort_levels', 'resolve_effort', 'get_model_pricing', 'approx_pricing',
            'is_deepseek_peak_hour', 'price_tier', 'tier_rate']
 
 # %% ../nbs/00_types.ipynb #b4d047fd
@@ -104,7 +104,8 @@ def fn_schema(t):
 
 # %% ../nbs/00_types.ipynb #28c698fe
 def payload_kwargs(msgs, model, stream=False, system=None, max_tokens=None, temperature=None, tools=None, tool_choice=None,
-    parallel_tool_calls=None, previous_response_id=None, reasoning_effort=None, web_search_options=None, cache_idxs=None, ttl=None, stop_callables=None): pass
+    parallel_tool_calls=None, previous_response_id=None, prompt_cache_key=None, reasoning_effort=None, web_search_options=None,
+    cache_idxs=None, ttl=None, stop_callables=None): pass
 
 # %% ../nbs/00_types.ipynb #0c582256
 async def provider_req(
@@ -113,15 +114,16 @@ async def provider_req(
     body, # JSON request body
     params=None, # Query parameters
     stream=False, # Return an async generator of SSE events instead of the decoded response?
+    headers=None, # Extra headers for this request
 ):
     "POST `body` to `path` on `cli`: the decoded response, or SSE events when `stream`"
     url = cli._url(path)
     if not stream:
-        try: return dict2obj(await cli.transport.request('POST', url, params=params, json=body))
+        try: return dict2obj(await cli.transport.request('POST', url, params=params, json=body, headers=headers))
         except (httpx2.HTTPStatusError, httpx2.RequestError) as e: raise e.api_error() from e
     async def _events():
         try:
-            async for ev in cli.transport.stream('POST', url, params=params, json=body): yield dict2obj(ev)
+            async for ev in cli.transport.stream('POST', url, params=params, json=body, headers=headers): yield dict2obj(ev)
         except (httpx2.HTTPStatusError, httpx2.RequestError) as e: raise e.api_error() from e
     return _events()
 
@@ -197,11 +199,7 @@ opus48 = "claude-opus-4-8"
 opus = opus5 = "claude-opus-5"
 fable = fable5 = 'claude-fable-5'
 fable51 = 'claude-fable-5-1'
-gpt54 = "gpt-5.4"
-gpt54m = "gpt-5.4-mini"
 gpt55 = "gpt-5.5"
-codex54 = "gpt-5.4"
-codex54m = "gpt-5.4-mini"
 codex55 = "gpt-5.5"
 codex53spark = "gpt-5.3-codex-spark"
 
@@ -299,7 +297,7 @@ def _flat_rates(vendor_name, model):
     info = model_info_registry[vendor_name, model]
     for k in [k for k in info if 'cost' in k and k not in codex_pricing and k != 'search_context_cost_per_query']: del info[k]
 
-for model in (codex54, codex54m, codex55):
+for model in (codex55,):
     register_model_info(model, 'codex', base=model, base_vendor_name='chatgpt', supports_web_search=True, max_input_tokens=256000, **codex_pricing)
     _flat_rates('codex', model)
 

@@ -257,6 +257,7 @@ def mk_payload(msgs, model, **kwargs):
     if tools:=kwargs.get('tools'):          payload['tools'] = denorm_tool_schs(tools)
     if tchc:=kwargs.get('tool_choice'):     payload['tool_choice'] = denorm_tool_choice(tchc)
     if rid:=kwargs.get('previous_response_id'): payload['previous_response_id'] = rid
+    if key:=kwargs.get('prompt_cache_key'): payload['prompt_cache_key'] = key
     if (ptc:=kwargs.get('parallel_tool_calls')) is not None: payload['parallel_tool_calls'] = ptc
     if thk:=kwargs.get('reasoning_effort'): payload['reasoning'] = denorm_reasoning(thk)
     if (wopts:=kwargs.get('web_search_options')) is not None:  payload.setdefault('tools', []).append(denorm_web_search(wopts))

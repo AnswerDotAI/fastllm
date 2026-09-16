@@ -9,6 +9,7 @@ __all__ = ['effort', 'contents', 'stop_reason', 'cite_footnote', 'postproc', 'Re
            'StopSequencesCallback', 'StreamAccum', 'adisplay_stream']
 
 # %% ../nbs/07_chat.ipynb #d5a3bc1f
+import secrets
 from typing import Optional,Callable
 from fastcore.funccall import mk_ns, call_func, call_func_async, get_schema
 from fastcore.utils import *
@@ -168,6 +169,7 @@ class AsyncChat:
         cache=False,              # Anthropic prompt caching
         cache_idxs:list=[-1],     # Anthropic cache breakpoint idxs, use `0` for sys prompt if provided
         ttl=None,                 # Anthropic prompt caching ttl
+        prompt_cache_key=None,     # Stable conversation key for OpenAI Responses; generated once if omitted
         api_name=None,            # API to use, one of ApiName: openai (responses), openai_chat, anthropic, gemini
         vendor_name=None,         # Vendor name, one of vendor_mapping which resolves api_base/api_key automatically
         api_key=None,             # API key when model can't be resolved or vendor_name is not known or codex
@@ -195,6 +197,7 @@ class AsyncChat:
         self.response_id,self._response_hist_idx = None,0
         self._turn_start = 0    # index into `hist` where the current turn began, for `full`
         self.last_req_use = None  # usage of the latest request only; `use` accumulates across a turn's tool-call steps
+        if prompt_cache_key is None: prompt_cache_key = secrets.token_hex(16)
         store_attr(but='cbs')
         self.cbs = L()
         if default_cbs: self.add_cbs(defaults.chat_callbacks)
@@ -256,6 +259,7 @@ def _prep_call(self:AsyncChat, search, max_tokens, kwargs, stream=False, think=N
     if self.base_url:      kwargs['base_url'] = self.base_url
     if self.endpoint:      kwargs['endpoint'] = self.endpoint
     if self.extra_headers: kwargs['xtra_hdrs'] = self.extra_headers
+    kwargs.setdefault('prompt_cache_key', self.prompt_cache_key)
     kwargs.update(_think_kw(self.model, think, self.vendor_name))
     return max_tokens
 
