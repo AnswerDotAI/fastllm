@@ -2,6 +2,13 @@
 
 <!-- do not remove -->
 
+## 0.0.62
+
+### New Features
+
+- Add `prompt_cache_key` support for OpenAI Responses and Codex session-id header, threaded through acomplete, AsyncChat, and ResponseState ([#111](https://github.com/AnswerDotAI/fastllm/issues/111))
+
+
 ## 0.0.61
 
 ### New Features
