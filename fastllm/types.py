@@ -228,7 +228,8 @@ modern_llm = dict(supports_function_calling=True, supports_tool_choice=True, sup
 register_model_info('gpt-5.4', vendor_name='openai', base='gpt-5.4', supports_web_search=True)
 
 register_model_info('accounts/fireworks/models/deepseek-v4p1-flash', vendor_name='fireworks_ai',
-    base='accounts/fireworks/models/deepseek-v4-flash-0731', supports_vision=True, supports_image_input=True)
+    base='accounts/fireworks/models/deepseek-v4-flash-0731', supports_vision=True, supports_image_input=True,
+    input_cost_per_token=0.30e-6, cache_read_input_token_cost=0.006e-6, output_cost_per_token=1.20e-6)
 register_model_info('glm-5.3-flash', vendor_name='zai', base='glm-5.3-flash', reasoning_effort_levels=['low', 'high', 'max'])
 register_model_info('accounts/fireworks/models/glm-5p3-flash', vendor_name='fireworks_ai', base='glm-5.3-flash', base_vendor_name='zai')
 
