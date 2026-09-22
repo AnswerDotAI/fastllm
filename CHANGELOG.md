@@ -2,6 +2,13 @@
 
 <!-- do not remove -->
 
+## 0.0.63
+
+### New Features
+
+- new deepseek pricing for fireworks ([#113](https://github.com/AnswerDotAI/fastllm/issues/113))
+
+
 ## 0.0.62
 
 ### New Features
