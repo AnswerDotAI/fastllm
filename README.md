@@ -16,7 +16,7 @@ Run `pip install python-fastllm` or clone from github and install locally.
 ``` python
 from aidialog.msg_parts import Msg, Part, Text, Thinking, ToolUse, InputImage, mk_tool_res_msg, Completion
 from fastllm.acomplete import acomplete
-from fastllm.types import sample_img_url, sample_doms
+from fastllm.types import sample_img_url, sample_doms, sonn, sonn46
 import asyncio, json
 ```
 
@@ -45,7 +45,7 @@ mtok = 1024
 Use the same `acomplete` interface with Claude, GPT, Gemini, or Kimi. Set `model` and any provider-specific routing arguments:
 
 ``` python
-models = [('claude-sonnet-5', {}), ('gpt-4o-mini', {}), ('models/gemini-3-flash-preview', {}),
+models = [(sonn, {}), ('gpt-4o-mini', {}), ('models/gemini-3-flash-preview', {}),
     ('accounts/fireworks/models/kimi-k3', dict(vendor_name='fireworks_ai'))]
 for name, kw in models:
     r = await acomplete([user("Translate 'hello' into French. Return only the translation.")],
@@ -67,7 +67,7 @@ Pass `system` to supply a system prompt. `fastllm` translates it to the provider
 sys = "You are a pirate chef. Always respond in pirate speak and mention food. Use one short sentence."
 
 print("Claude: ", end='')
-r = await stream([user("What should I do today?")], model='claude-sonnet-5', system=sys, max_tokens=mtok)
+r = await stream([user("What should I do today?")], model=sonn, system=sys, max_tokens=mtok)
 
 print("Gemini: ", end='')
 r = await stream([user("What should I do today?")], model='models/gemini-3-flash-preview', system=sys, max_tokens=mtok)
@@ -85,7 +85,7 @@ tools = [{"type": "function", "function": dict(name="get_weather", description="
     parameters=dict(type="object", properties={"city": {"type": "string"}}, required=["city"]))}]
 
 msgs = [user("What's the weather in Paris?")]
-r1 = await stream(msgs, model='claude-sonnet-5', tools=tools, max_tokens=mtok)
+r1 = await stream(msgs, model=sonn, tools=tools, max_tokens=mtok)
 print("Tool calls:", r1.tool_calls)
 ```
 
@@ -96,7 +96,7 @@ print("Tool calls:", r1.tool_calls)
 ``` python
 msgs += [r1.message, mk_tool_res_msg(r1.tool_calls, ['22°C, sunny with light clouds']),
     user("Should I bring a jacket? Answer in one short sentence.")]
-r2 = await stream(msgs, model='claude-sonnet-5', tools=tools, max_tokens=mtok)
+r2 = await stream(msgs, model=sonn, tools=tools, max_tokens=mtok)
 ```
 
     No, a jacket isn't necessary — it's a mild, sunny 22°C day.
@@ -106,10 +106,10 @@ r2 = await stream(msgs, model='claude-sonnet-5', tools=tools, max_tokens=mtok)
 Control whether the model must use tools, can’t use tools, or decides on its own:
 
 ``` python
-r = await acomplete([user('Hello there!')], model='claude-sonnet-5', tools=tools, tool_choice='required', max_tokens=mtok)
+r = await acomplete([user('Hello there!')], model=sonn, tools=tools, tool_choice='required', max_tokens=mtok)
 print("Required:", [tc.name for tc in r.tool_calls])
 
-r = await acomplete([user("What's the weather?")], model='claude-sonnet-5', tools=tools, tool_choice='none', max_tokens=mtok)
+r = await acomplete([user("What's the weather?")], model=sonn, tools=tools, tool_choice='none', max_tokens=mtok)
 print("None:", r.tool_calls)
 ```
 
@@ -122,7 +122,7 @@ Set `reasoning_effort` to `low`, `medium`, or `high` for supported models. The a
 
 ``` python
 print("Claude: ", end='')
-r = await stream([user("What is 127 × 849? Return just the number.")], model='claude-sonnet-4-6',
+r = await stream([user("What is 127 × 849? Return just the number.")], model=sonn46,
     reasoning_effort='low', max_tokens=8192)
 for p in r.message.content:
     if isinstance(p, Thinking): print(f"Thinking excerpt: {p.text[:150]}...")
@@ -161,11 +161,11 @@ long_ctx = "You are an expert on the solar system. " * 200
 system = Text(long_ctx, cache_control={'type': 'ephemeral'})
 
 r1 = await acomplete([user("What is Jupiter's mass? Answer in one sentence.")],
-    model='claude-sonnet-5', system=system, max_tokens=mtok)
+    model=sonn, system=system, max_tokens=mtok)
 print("First call: cache creation tokens", r1.usage.cache_creation_tokens)
 
 r2 = await acomplete([user("What is Saturn's mass? Answer in one sentence.")],
-    model='claude-sonnet-5', system=system, max_tokens=mtok)
+    model=sonn, system=system, max_tokens=mtok)
 print("Second call: cache read tokens", r2.usage.cached_tokens)
 ```
 
@@ -179,7 +179,7 @@ Use `InputImage` with a model that supports images. The example sends the same i
 ``` python
 img_msg = Msg(role='user', content=[InputImage(sample_img_url), Text('List three visible objects, using nouns only.')])
 
-for name, kw in [('claude-sonnet-5', {}), ('gpt-4o-mini', {}), ('models/gemini-3-flash-preview', {})]:
+for name, kw in [(sonn, {}), ('gpt-4o-mini', {}), ('models/gemini-3-flash-preview', {})]:
     print(f"{name}: ", end='')
     r = await stream([img_msg], model=name, max_tokens=mtok, **kw)
 ```

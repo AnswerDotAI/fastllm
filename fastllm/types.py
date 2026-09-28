@@ -4,13 +4,13 @@
 
 # %% auto #0
 __all__ = ['FinishReason', 'api_registry', 'model_prices_url', 'sample_img_url', 'sample_doms', 'haik45', 'sonn45', 'sonn46',
-           'sonn', 'sonn5', 'opus46', 'opus48', 'opus', 'opus5', 'fable', 'fable5', 'fable51', 'gpt55', 'codex55',
-           'codex53spark', 'model_info_registry', 'modern_llm', 'effort_codes', 'mimo_v25_common', 'codex_pricing',
-           'sol', 'terra', 'luna', 'gpt56s', 'astra', 'Usage', 'APIRegistry', 'mk_completion', 'fn_schema',
+           'sonn5', 'sonn', 'sonn55', 'opus46', 'opus48', 'opus5', 'opus', 'opus55', 'fable', 'claude_models', 'gpt55',
+           'codex53spark', 'sol', 'luna', 'astra', 'gpt6s', 'terra', 'gpt56s', 'model_info_registry', 'modern_llm',
+           'effort_codes', 'mimo_v25_common', 'codex_pricing', 'Usage', 'APIRegistry', 'mk_completion', 'fn_schema',
            'payload_kwargs', 'provider_req', 'get_api_key', 'wrap_typed', 'unwrap_typed', 'resize_b64',
            'model_prices_meta', 'infer_api_name', 'get_model_meta', 'register_model_info', 'get_model_info',
-           'effort_code', 'effort_levels', 'resolve_effort', 'get_model_pricing', 'approx_pricing',
-           'is_deepseek_peak_hour', 'price_tier', 'tier_rate']
+           'effort_code', 'effort_levels', 'resolve_effort', 'register_sub_model', 'find_models', 'get_model_pricing',
+           'approx_pricing', 'is_deepseek_peak_hour', 'price_tier', 'tier_rate']
 
 # %% ../nbs/00_types.ipynb #b4d047fd
 import httpx2, base64, io
@@ -193,15 +193,19 @@ def get_model_meta(model, vendor_name=None, tfm=noop):
 haik45 = "claude-haiku-4-5"
 sonn45 = "claude-sonnet-4-5"
 sonn46 = "claude-sonnet-4-6"
-sonn = sonn5 = "claude-sonnet-5"
+sonn5 = "claude-sonnet-5"
+sonn = sonn55 = "claude-sonnet-5-5"
 opus46 = "claude-opus-4-6"
 opus48 = "claude-opus-4-8"
-opus = opus5 = "claude-opus-5"
-fable = fable5 = 'claude-fable-5'
-fable51 = 'claude-fable-5-1'
+opus5 = "claude-opus-5"
+opus = opus55 = "claude-opus-5-5"
+fable = 'claude-fable-5-1'
+claude_models = haik45, sonn45, sonn46, sonn5, sonn55, opus46, opus48, opus5, opus55, fable
 gpt55 = "gpt-5.5"
-codex55 = "gpt-5.5"
 codex53spark = "gpt-5.3-codex-spark"
+sol,luna,astra = gpt6s = 'gpt-6-sol gpt-6-luna gpt-6-astra'.split()
+terra = 'gpt-5.6-terra'
+gpt56s = 'gpt-5.6-sol', terra, 'gpt-5.6-luna'
 
 # %% ../nbs/00_types.ipynb #583e017b
 model_info_registry = {}
@@ -293,38 +297,33 @@ register_model_info('MiniMax-M3', vendor_name='minimax', **modern_llm, max_input
 codex_pricing = dict(input_cost_per_token = 0.10/1_000_000, output_cost_per_token = 0.50/1_000_000,
     cache_creation_input_token_cost = 0.10/1_000_000, cache_read_input_token_cost = 0.10/1_000_000)
 
-def _flat_rates(vendor_name, model):
-    "Keep only the flat subscription rates: drop the upstream context, cache-TTL and service-tier variants that would otherwise apply"
+def register_sub_model(model, vendor_name, base_vendor_name, **overrides):
+    "Register `model` on subscription vendor `vendor_name` from its `base_vendor_name` metadata, keeping only the flat `codex_pricing` rates"
+    register_model_info(model, vendor_name, base=model, base_vendor_name=base_vendor_name, **codex_pricing, **overrides)
     info = model_info_registry[vendor_name, model]
     for k in [k for k in info if 'cost' in k and k not in codex_pricing and k != 'search_context_cost_per_query']: del info[k]
 
-for model in (codex55,):
-    register_model_info(model, 'codex', base=model, base_vendor_name='chatgpt', supports_web_search=True, max_input_tokens=256000, **codex_pricing)
-    _flat_rates('codex', model)
+register_sub_model(gpt55, 'codex', 'chatgpt', supports_web_search=True, max_input_tokens=256000)
 
 register_model_info(codex53spark, 'codex', **codex_pricing,
     supports_vision=False, supports_image_input=False, supports_web_search=True, supports_reasoning=True, supports_function_calling=True,
     max_tokens=128000, max_input_tokens=128000, max_output_tokens=128000)
 
 # %% ../nbs/00_types.ipynb #5d3e4720
-# Fable 5.1 isn't in the price map yet; it prices and behaves like Fable 5
-register_model_info(fable51, 'anthropic', base=fable5)
-for model in (haik45, sonn45, sonn46, sonn5, opus46, opus48, opus5, fable5, fable51):
-    register_model_info(model, 'claude_code', base=model, base_vendor_name='anthropic', **codex_pricing)
-    _flat_rates('claude_code', model)
+for model in claude_models: register_sub_model(model, 'claude_code', 'anthropic')
 
 # %% ../nbs/00_types.ipynb #bb0c4c2a
-sol,terra,luna = gpt56s = 'gpt-5.6-sol gpt-5.6-terra gpt-5.6-luna'.split()
-astra = 'gpt-6-astra'
-for model in (*gpt56s, astra): register_model_info(model, 'openai', base=model, max_input_tokens=272_000)
+for model in (*gpt56s, *gpt6s): register_model_info(model, 'openai', base=model, max_input_tokens=272_000)
 
 # Codex serves only the suffixed names; bare `gpt-5.6` is rejected with a ChatGPT account.
-# Its window accepts 371,331 input tokens and rejects 371,981, on all three.
-for model in gpt56s:
-    register_model_info(model, 'codex', base=model, base_vendor_name='openai', max_input_tokens=371_000, **codex_pricing)
-    _flat_rates('codex', model)
-register_model_info(astra, 'codex', base=astra, base_vendor_name='openai', **codex_pricing)
-_flat_rates('codex', astra)
+# Its window accepts 371,331 input tokens and rejects 371,981, on all three. GPT-6 Sol and Luna are assumed to match.
+for model in (*gpt56s, sol, luna): register_sub_model(model, 'codex', 'openai', max_input_tokens=371_000)
+register_sub_model(astra, 'codex', 'openai')
+
+# %% ../nbs/00_types.ipynb #004c0b30
+def find_models(substr:str):
+    "Find model names containing `substr`"
+    return [k for k in model_prices_meta() if substr in k]
 
 # %% ../nbs/00_types.ipynb #24cc47ec
 def get_model_pricing(mn, vendor_name, million=True):
