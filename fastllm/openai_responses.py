@@ -61,7 +61,9 @@ def norm_usage(resp):
 def norm_finish(resp, tcs=None):
     "Canonicalize finish_reason to OpenAI Chat values: stop, tool_calls, length, content_filter."
     reason = resp.get("status")
-    mp = dict(completed=FinishReason.stop, incomplete=FinishReason.length, failed=FinishReason.content_filter)
+    if reason == 'incomplete': reason = nested_idx(resp, 'incomplete_details', 'reason') or reason
+    mp = dict(completed=FinishReason.stop, incomplete=FinishReason.length, max_output_tokens=FinishReason.length,
+              content_filter=FinishReason.content_filter, failed=FinishReason.content_filter)
     r =  mp.get(reason, reason)
     return FinishReason.tool_calls if r==FinishReason.stop and any(~L(tcs).attrgot('server')) else r 
 
