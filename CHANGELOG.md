@@ -2,6 +2,14 @@
 
 <!-- do not remove -->
 
+## 0.0.64
+
+### New Features
+
+- Add vendor auth/header hooks with Codex integration, default `reasoning_effort`, `effort_kwargs` helper, and newer model defaults ([#116](https://github.com/AnswerDotAI/fastllm/issues/116))
+- Add `register_sub_model` helper, latest-model aliases (sonn, opus, fable), and GPT-6 Sol/Luna/Astra plus GPT-5.6 model registrations ([#115](https://github.com/AnswerDotAI/fastllm/issues/115))
+
+
 ## 0.0.63
 
 ### New Features
