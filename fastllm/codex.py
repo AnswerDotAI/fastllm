@@ -10,6 +10,7 @@ __all__ = ['SKEW_SECS', 'jwt_claims', 'mk_jwt', 'token_expired', 'codex_tokens',
 import asyncio, base64, json, sys, time, httpx2
 from fastcore.aio import wait_until
 from fastcore.utils import *
+from .types import vendor_auth, vendor_hdrs
 
 
 # %% ../nbs/05_codex.ipynb #aa7f9d4f
@@ -86,6 +87,18 @@ async def codex_auth(force_refresh=False):
     token,new = await codex_token(codex_tokens(data), force_refresh)
     if new: path.write_text(json.dumps({**data, 'tokens':new}, indent=2))
     return token
+
+# %% ../nbs/05_codex.ipynb #c6c07182
+async def _codex_vendor_auth():
+    "The local Codex login's access token, or `None` without an auth file"
+    return await codex_auth() if codex_auth_path().exists() else None
+
+def _codex_hdrs(body, headers):
+    "Add `prompt_cache_key` as the `session-id` header, unless `headers` already has one"
+    if not (key := body.get('prompt_cache_key')) or any(k.lower() == 'session-id' for k in headers): return headers
+    return {**headers, 'session-id':key}
+
+vendor_auth['codex'],vendor_hdrs['codex'] = _codex_vendor_auth,_codex_hdrs
 
 # %% ../nbs/05_codex.ipynb #216c81ae
 _DEVICE = '/api/accounts/deviceauth'
