@@ -337,7 +337,9 @@ def apply_cache_idxs(
 def mk_payload(msgs, model, **kwargs):
     sp = kwargs.get('system')
     if (ci:=kwargs.get('cache_idxs')) is not None: sp = apply_cache_idxs(msgs, ci, sp, kwargs.get('ttl'))
-    payload = dict(model=model, messages=denorm_msgs(msgs), max_tokens=kwargs.get('max_tokens') or 1024)
+    max_tokens = kwargs.get('max_tokens')
+    if max_tokens is None: max_tokens = get_model_info(model, 'anthropic').get('max_output_tokens') or 1024
+    payload = dict(model=model, messages=denorm_msgs(msgs), max_tokens=max_tokens)
     if kwargs.get('stream'):                payload['stream'] = True
     if sp:                              payload['system'] = denorm_system(sp)
     if tools:=kwargs.get('tools'):          payload['tools'] = denorm_tool_schs(tools)
