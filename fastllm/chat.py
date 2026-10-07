@@ -293,10 +293,11 @@ async def _call(self:AsyncChat, msg=None, step=1, search=None, tool_choice=None,
     async for o in self._call_cbs('before_acomplete'): yield o
     kw = self.turn_kwargs
     if initial_body: kw = merge(kw, dict(xtra_body=merge(kw.get('xtra_body'), initial_body)))
-    res = await acomplete(self.turn_msgs, self.model, system=self.turn_sysp, stream=t.stream, tools=self.tool_schemas,
+    call_kw = merge(dict(msgs=self.turn_msgs, model=self.model, system=self.turn_sysp, stream=t.stream, tools=self.tool_schemas,
         tool_choice=tool_choice, max_tokens=int(max_tokens), temperature=None if t.think else ifnone(t.temp,self.temp),
         previous_response_id=self.response_id if self.use_previous_response_id else None,
-        cache_idxs=self.cache_idxs if self.cache else [], ttl=self.ttl, **kw)
+        cache_idxs=self.cache_idxs if self.cache else [], ttl=self.ttl), kw)
+    res = await acomplete(**call_kw)
     if t.stream:
         res = astream_with_complete(res, postproc=postproc)
         async for chunk in res:
