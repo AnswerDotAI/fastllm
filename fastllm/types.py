@@ -314,6 +314,7 @@ register_model_info('mimo-v2.5-pro-ultraspeed', vendor_name='mimo', **mimo_v25_c
 
 register_model_info('mimo-v2.6-pro', vendor_name='mimo', **mimo_v25_common, base='mimo-v2.6-pro', base_vendor_name='xiaomi_mimo',
     search_context_cost_per_query=0.005)
+register_model_info('primalabs-ai/MiMo-V2.6-Pro', vendor_name='primalabs', base='mimo-v2.6-pro', base_vendor_name='mimo')
 
 # %% ../nbs/00_types.ipynb #defb1c5c
 register_model_info('MiniMax-M3', vendor_name='minimax', **modern_llm, max_input_tokens=512_000, max_output_tokens=512_000, max_tokens=512_000,
