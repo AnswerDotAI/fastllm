@@ -11,7 +11,6 @@ __all__ = ['ant_tc_types', 'norm_tool_call', 'norm_tool_calls', 'norm_usage', 'f
 
 # %% ../nbs/06_anthropic.ipynb #02afd3d7
 import json, copy
-from collections import Counter
 from fastcore.utils import *
 from fastcore.meta import *
 from fasttransport.errors import api_error_from_event
@@ -360,17 +359,13 @@ def get_hdrs(api_key=None, oauth_token=None):
 # %% ../nbs/06_anthropic.ipynb #0d03643a
 def cost(usage, m):
     raw = usage.raw
-    in_tok = raw['input_tokens']
-    cache_read = raw.get('cache_read_input_tokens', 0)
     cc = raw.get('cache_creation', {}) or {}
-    cache_5m  = cc.get('ephemeral_5m_input_tokens', raw.get('cache_creation_input_tokens', 0))
-    cache_1h  = cc.get('ephemeral_1h_input_tokens', 0)
-    cost  = in_tok     * m.input_cost_per_token
-    cost += raw['output_tokens'] * m.output_cost_per_token
-    cost += cache_read * m.get('cache_read_input_token_cost', 0)
-    cost += cache_5m   * m.get('cache_creation_input_token_cost', 0)
-    cost += cache_1h   * m.get('cache_creation_input_token_cost_above_1hr', 0)
-    return cost
+    prompt = dict(input_cost_per_token=raw['input_tokens'], cache_read_input_token_cost=raw.get('cache_read_input_tokens', 0),
+        cache_creation_input_token_cost=cc.get('ephemeral_5m_input_tokens', raw.get('cache_creation_input_tokens', 0)),
+        cache_creation_input_token_cost_above_1hr=cc.get('ephemeral_1h_input_tokens', 0))
+    tier = price_tier(m, sum(prompt.values()))
+    toks = prompt | dict(output_cost_per_token=raw['output_tokens'])
+    return sum(n * tier_rate(m, k, tier) for k,n in toks.items())
 
 # %% ../nbs/06_anthropic.ipynb #f7c0b989
 api_registry.register('anthropic', norm_tool_calls=norm_tool_calls, norm_parts=norm_parts, norm_finish=norm_finish, norm_usage=norm_usage,

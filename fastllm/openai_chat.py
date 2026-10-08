@@ -11,7 +11,6 @@ __all__ = ['api_ns', 'norm_tool_calls', 'norm_finish', 'norm_parts', 'raw_msg', 
 
 # %% ../nbs/02_oai_chat.ipynb #493e3606
 import json
-from collections import Counter
 from fastcore.utils import *
 from fastcore.meta import *
 from fasttransport.errors import api_error_from_event
@@ -224,13 +223,10 @@ def cost(usage, m):
     pd,cd = raw.get('prompt_tokens_details') or {},raw.get('completion_tokens_details') or {}
     cached = pd.get('cached_tokens', 0)
     in_audio, out_audio = pd.get('audio_tokens', 0), cd.get('audio_tokens', 0)
-    in_txt  = raw['prompt_tokens']     - cached - in_audio
-    out_txt = raw['completion_tokens'] - out_audio
-    cost  = in_txt  * m.input_cost_per_token  + out_txt * m.output_cost_per_token
-    cost += cached  * m.get('cache_read_input_token_cost', 0)
-    cost += in_audio  * m.get('input_cost_per_audio_token', 0)
-    cost += out_audio * m.get('output_cost_per_audio_token', 0)
-    return cost
+    toks = dict(input_cost_per_token=raw['prompt_tokens'] - cached - in_audio, output_cost_per_token=raw['completion_tokens'] - out_audio,
+        cache_read_input_token_cost=cached, input_cost_per_audio_token=in_audio, output_cost_per_audio_token=out_audio)
+    tier = price_tier(m, raw['prompt_tokens'])
+    return sum(n * tier_rate(m, k, tier) for k,n in toks.items())
 
 # %% ../nbs/02_oai_chat.ipynb #8aae2ed5
 def fix_payload(payload, model, vendor_name):

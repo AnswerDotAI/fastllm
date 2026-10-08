@@ -4,13 +4,14 @@
 
 # %% auto #0
 __all__ = ['FinishReason', 'api_registry', 'vendor_auth', 'vendor_hdrs', 'model_prices_url', 'sample_img_url', 'sample_doms',
-           'haik45', 'sonn45', 'sonn46', 'sonn5', 'sonn', 'sonn55', 'opus46', 'opus48', 'opus5', 'opus', 'opus55',
-           'fable', 'claude_models', 'gpt55', 'codex53spark', 'sol', 'luna', 'astra', 'gpt6s', 'terra', 'gpt56s',
-           'flash', 'model_info_registry', 'modern_llm', 'effort_codes', 'mimo_v25_common', 'codex_pricing', 'Usage',
-           'APIRegistry', 'mk_completion', 'fn_schema', 'payload_kwargs', 'provider_req', 'get_api_key', 'wrap_typed',
-           'unwrap_typed', 'resize_b64', 'model_prices_meta', 'infer_api_name', 'get_model_meta', 'register_model_info',
-           'get_model_info', 'effort_code', 'effort_levels', 'resolve_effort', 'effort_kwargs', 'register_sub_model',
-           'find_models', 'get_model_pricing', 'approx_pricing', 'is_deepseek_peak_hour', 'price_tier', 'tier_rate']
+           'haik45', 'haik', 'haik55', 'sonn45', 'sonn46', 'sonn5', 'sonn', 'sonn55', 'opus46', 'opus48', 'opus5',
+           'opus', 'opus55', 'fable', 'claude_models', 'gpt55', 'codex53spark', 'sol', 'luna', 'astra', 'gpt6s',
+           'terra', 'gpt56s', 'flash', 'model_info_registry', 'modern_llm', 'effort_codes', 'mimo_v25_common',
+           'codex_pricing', 'Usage', 'APIRegistry', 'mk_completion', 'fn_schema', 'payload_kwargs', 'provider_req',
+           'get_api_key', 'wrap_typed', 'unwrap_typed', 'resize_b64', 'model_prices_meta', 'infer_api_name',
+           'get_model_meta', 'register_model_info', 'get_model_info', 'effort_code', 'effort_levels', 'resolve_effort',
+           'effort_kwargs', 'register_sub_model', 'find_models', 'get_model_pricing', 'approx_pricing',
+           'is_deepseek_peak_hour', 'price_tier', 'tier_rate']
 
 # %% ../nbs/00_types.ipynb #b4d047fd
 import httpx2, base64, io
@@ -195,6 +196,7 @@ def get_model_meta(model, vendor_name=None, tfm=noop):
 
 # %% ../nbs/00_types.ipynb #60607e23
 haik45 = "claude-haiku-4-5"
+haik = haik55 = "claude-haiku-5-5"
 sonn45 = "claude-sonnet-4-5"
 sonn46 = "claude-sonnet-4-6"
 sonn5 = "claude-sonnet-5"
@@ -204,7 +206,7 @@ opus48 = "claude-opus-4-8"
 opus5 = "claude-opus-5"
 opus = opus55 = "claude-opus-5-5"
 fable = 'claude-fable-5-1'
-claude_models = haik45, sonn45, sonn46, sonn5, sonn55, opus46, opus48, opus5, opus55, fable
+claude_models = haik45, haik55, sonn45, sonn46, sonn5, sonn55, opus46, opus48, opus5, opus55, fable
 gpt55 = "gpt-5.5"
 codex53spark = "gpt-5.3-codex-spark"
 sol,luna,astra = gpt6s = 'gpt-6-sol gpt-6-luna gpt-6-astra'.split()
@@ -224,6 +226,8 @@ def register_model_info(model, vendor_name=None, base=None, base_vendor_name=Non
     model_info_registry[vendor_name, model] = info
 
 def get_model_info(mn, vendor_name=None):
+    "Metadata for `mn`: its local registration, else LiteLLM's entry; `vendor_name` defaults to `infer_api_name(mn)`"
+    vendor_name = ifnone(vendor_name, infer_api_name(mn))
     info = model_info_registry.get((vendor_name, mn)) or get_model_meta(mn, vendor_name)
     if 'search_context_cost_per_query' in info: info['supports_web_search'] = True
     return dict2obj(info)
@@ -241,6 +245,9 @@ register_model_info('accounts/fireworks/models/deepseek-v4p1-flash', vendor_name
     input_cost_per_token=0.30e-6, cache_read_input_token_cost=0.006e-6, output_cost_per_token=1.20e-6)
 register_model_info('glm-5.3-flash', vendor_name='zai', base='glm-5.3-flash', reasoning_effort_levels=['low', 'high', 'max'])
 register_model_info('accounts/fireworks/models/glm-5p3-flash', vendor_name='fireworks_ai', base='glm-5.3-flash', base_vendor_name='zai')
+
+# LiteLLM's entry says Haiku 5.5 can't be forced to call a tool, but Anthropic's migration guide says it accepts a forced `tool_choice`
+register_model_info(haik55, 'anthropic', base=haik55, supports_forced_tool_use=True)
 
 # %% ../nbs/00_types.ipynb #0a2d3bff
 register_model_info(
@@ -329,12 +336,9 @@ register_model_info(codex53spark, 'codex', **codex_pricing,
 for model in claude_models: register_sub_model(model, 'claude_code', 'anthropic')
 
 # %% ../nbs/00_types.ipynb #bb0c4c2a
-for model in (*gpt56s, *gpt6s): register_model_info(model, 'openai', base=model, max_input_tokens=272_000)
-
 # Codex serves only the suffixed names; bare `gpt-5.6` is rejected with a ChatGPT account.
-# Its window accepts 371,331 input tokens and rejects 371,981, on all three. GPT-6 Sol and Luna are assumed to match.
-for model in (*gpt56s, sol, luna): register_sub_model(model, 'codex', 'openai', max_input_tokens=371_000)
-register_sub_model(astra, 'codex', 'openai')
+# Its window accepts 371,331 input tokens and rejects 371,981 on all three GPT-5.6 models.
+for model in (*gpt56s, *gpt6s, 'gpt-6.1-sol'): register_sub_model(model, 'codex', 'openai', max_input_tokens=371_000)
 
 # %% ../nbs/00_types.ipynb #004c0b30
 def find_models(substr:str):
@@ -371,8 +375,8 @@ def price_tier(meta, n):
 
 # %% ../nbs/00_types.ipynb #956d2495
 def tier_rate(meta, key, tier):
-    "Rate for `key` at `tier`, falling back to the base key."
-    return meta.get(f'{key}{tier}') or meta[key]
+    "Rate for `key` at `tier`, falling back to the base key, then to 0."
+    return meta.get(f'{key}{tier}') or meta.get(key, 0)
 
 # %% ../nbs/00_types.ipynb #8bfca02d
 @patch(as_prop=True)
