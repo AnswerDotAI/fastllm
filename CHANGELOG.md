@@ -2,6 +2,17 @@
 
 <!-- do not remove -->
 
+## 0.0.65
+
+### New Features
+
+- Add Haiku 5.5 with forced tool use, apply long-prompt pricing tiers in OpenAI and Anthropic cost, and raise Codex GPT-6 input limits ([#118](https://github.com/AnswerDotAI/fastllm/issues/118))
+
+### Bugs Squashed
+
+- Default `max_tokens` to the model `max_output_tokens` when not specified, falling back to 1024 ([#117](https://github.com/AnswerDotAI/fastllm/issues/117))
+
+
 ## 0.0.64
 
 ### New Features
