@@ -9,6 +9,7 @@ __all__ = ['vendor_mapping', 'defaults', 'split_vendor', 'mk_client', 'ContextWi
 import asyncio,json,httpx2
 from fastcore.utils import *
 from fastcore.meta import *
+from fastcore.nbio import deep_merge
 from fasttransport.core import AsyncHttpCli
 from fasttransport.errors import APIError
 
@@ -160,7 +161,7 @@ async def acomplete(msgs, model, api_name=None, vendor_name=None, api_key=None, 
         kwargs['previous_response_id'] = previous_response_id
     payload = api.mk_payload(msgs, model, stream=stream, **kwargs)
     if fix := getattr(api, 'fix_payload', None): fix(payload, model, vendor_name)
-    body = payload | ifnone(xtra_body, {})
+    body = deep_merge(payload, ifnone(xtra_body, {}))
     if not own:
         headers = xtra_hdrs or {}
         if hk := vendor_hdrs.get(vendor_name): headers = hk(body, headers)
