@@ -4,9 +4,9 @@
 
 # %% auto #0
 __all__ = ['FinishReason', 'api_registry', 'vendor_auth', 'vendor_hdrs', 'model_prices_url', 'sample_img_url', 'sample_doms',
-           'haik45', 'haik', 'haik55', 'sonn45', 'sonn46', 'sonn5', 'sonn', 'sonn55', 'opus46', 'opus48', 'opus5',
-           'opus', 'opus55', 'fable', 'claude_models', 'gpt55', 'codex53spark', 'sol', 'luna', 'astra', 'gpt6s',
-           'terra', 'gpt56s', 'flash', 'model_info_registry', 'modern_llm', 'effort_codes', 'mimo_v25_common',
+           'haik45', 'haik', 'haik55', 'haik55s', 'sonn45', 'sonn46', 'sonn5', 'sonn', 'sonn55', 'opus46', 'opus48',
+           'opus5', 'opus', 'opus55', 'fable', 'claude_models', 'gpt55', 'codex53spark', 'sol', 'luna', 'astra',
+           'gpt6s', 'terra', 'gpt56s', 'flash', 'model_info_registry', 'modern_llm', 'effort_codes', 'mimo_v25_common',
            'codex_pricing', 'Usage', 'APIRegistry', 'mk_completion', 'fn_schema', 'payload_kwargs', 'provider_req',
            'get_api_key', 'wrap_typed', 'unwrap_typed', 'resize_b64', 'model_prices_meta', 'infer_api_name',
            'get_model_meta', 'register_model_info', 'get_model_info', 'effort_code', 'effort_levels', 'resolve_effort',
@@ -197,6 +197,7 @@ def get_model_meta(model, vendor_name=None, tfm=noop):
 # %% ../nbs/00_types.ipynb #60607e23
 haik45 = "claude-haiku-4-5"
 haik = haik55 = "claude-haiku-5-5"
+haik55s = "claude-haiku-5-5-short"
 sonn45 = "claude-sonnet-4-5"
 sonn46 = "claude-sonnet-4-6"
 sonn5 = "claude-sonnet-5"
@@ -248,6 +249,8 @@ register_model_info('accounts/fireworks/models/glm-5p3-flash', vendor_name='fire
 
 # LiteLLM's entry says Haiku 5.5 can't be forced to call a tool, but Anthropic's migration guide says it accepts a forced `tool_choice`
 register_model_info(haik55, 'anthropic', base=haik55, supports_forced_tool_use=True)
+# Override a registered model by setting `provider_model` name
+register_model_info(haik55s, 'anthropic', base=haik55, supports_forced_tool_use=True, max_input_tokens=100_000, provider_model=haik55)
 
 # %% ../nbs/00_types.ipynb #0a2d3bff
 register_model_info(

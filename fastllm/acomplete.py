@@ -151,7 +151,9 @@ async def acomplete(msgs, model, api_name=None, vendor_name=None, api_key=None, 
         auth = vendor_auth.get(vendor_name)
         if auth and not (api_key or oauth_token or os.getenv(vendor_mapping[vendor_name][2])): api_key = await auth()
         cli, api_name, vendor_name = mk_client(model=model, vendor_name=vendor_name, api_name=api_name, api_key=api_key, oauth_token=oauth_token, base_url=base_url)
-    if (eff := defaults.reasoning_effort) and 'reasoning_effort' not in kwargs and effort_levels(get_model_info(model, vendor_name)):
+    info = get_model_info(model, vendor_name)
+    model = info.get('provider_model', model)
+    if (eff := defaults.reasoning_effort) and 'reasoning_effort' not in kwargs and effort_levels(info):
         kwargs |= effort_kwargs(model, eff, vendor_name)
     api = api_registry[api_name]
     if previous_response_id is not None:
