@@ -60,7 +60,8 @@ class PartAccum(BasicRepr):
             else:                      p = mk_part(typ, text=txt)
             self.parts[index] = p
         elif isinstance(p, ToolUse):
-            new_args = tc_kwargs.get('arguments', '')
+            new_args = tc_kwargs.get('arguments')
+            if new_args in (None, ''): return  # a chunk with no argument text keeps the arguments gathered so far
             if isinstance(new_args, str) and isinstance(p.arguments, str): p.arguments += new_args
             else: p.arguments = new_args
         else:
