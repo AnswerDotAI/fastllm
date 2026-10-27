@@ -2,6 +2,13 @@
 
 <!-- do not remove -->
 
+## 0.0.66
+
+### New Features
+
+- Add terra 6.1; Tag Msg.raw with `raw_api` so replay only reuses same-API raw, add AsyncChat.dumps, Chat tool media, reasoning items, tool text cap ([#122](https://github.com/AnswerDotAI/fastllm/issues/122))
+
+
 ## 0.0.65
 
 ### New Features
