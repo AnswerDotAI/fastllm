@@ -152,15 +152,15 @@ async def acollect_stream(resp, **kwargs):
 
 # %% ../nbs/07_gemini.ipynb #58d0cb74
 def denorm_tool_use(p:ToolUse):
-    "Convert canonical tool_use Part to Gemini functionCall part."
+    "Convert canonical tool_use Part to a Gemini functionCall part, signed with Gemini's validator bypass."
     fc = dict(name=p.name or '', args=p.arguments or {})
     if p.id: fc['id'] = p.id
-    return dict(functionCall=fc)
+    return dict(functionCall=fc, thoughtSignature='skip_thought_signature_validator')
 
 def denorm_assistant(m:Msg):
-    "The content as the API sent it, else its text and tool calls"
-    if m.raw: return m.raw
-    parts = [dict(text=p.text or '') if isinstance(p, Text) else denorm_tool_use(p) for p in m.content if isinstance(p, (Text, ToolUse))]
+    "The content as the API sent it, else its text and client tool calls"
+    if m.raw and m.raw_api == 'gemini': return m.raw
+    parts = [dict(text=p.text or '') if isinstance(p, Text) else denorm_tool_use(p) for p in rebuild_parts(m)]
     return dict(role='model', parts=parts)
 
 def denorm_tool(m:Msg):

@@ -18,7 +18,7 @@ from fasttransport.errors import api_error_from_event
 
 from .types import *
 from aidialog.msg_parts import (Completion, Part, PartType, Msg, Text, Thinking, Refusal, ToolUse, ToolResult, tool_text, MdStr,
-    InputImage, InputAudio, InputVideo, InputFile, mk_tool_res_msg, sys_text, part_txt, data_url)
+    InputImage, InputAudio, InputVideo, InputFile, mk_tool_res_msg, sys_text, part_txt, resp_part)
 from .streaming import *
 from .streaming import mk_acollect_stream
 
@@ -155,10 +155,10 @@ def denorm_tool(m:Msg): return [denorm_tool_result(p) for p in m.content if isin
 
 # %% ../nbs/04_oai_responses.ipynb #67c8de13
 def denorm_assistant(m:Msg):
-    "The output items as the API sent them, else the message's text and tool calls as items"
-    if m.raw: return m.raw
+    "The output items as the API sent them, else the message's text and client tool calls as items"
+    if m.raw and m.raw_api == 'openai': return m.raw
     items = []
-    for p in m.content:
+    for p in rebuild_parts(m):
         if isinstance(p, ToolUse): items.append(denorm_tool_use(p))
         elif isinstance(p, Text): items.append(dict(type="message", role="assistant", content=[dict(type="output_text", text=p.text or '')]))
     return items
@@ -224,15 +224,13 @@ def denorm_user(m:Msg):
     return dict(type='message', role='user', content=parts)
 
 # %% ../nbs/04_oai_responses.ipynb #4ced282f
-def denorm_image(p): return {"type": "input_image", "image_url": p.text}
+def denorm_image(p): return resp_part(p)
 
 # %% ../nbs/04_oai_responses.ipynb #e0ca62d6
-def denorm_video(p): return {"type": "input_video", "video_url": p.text}
+def denorm_video(p): return resp_part(p)
 
 # %% ../nbs/04_oai_responses.ipynb #6e79a133
-def denorm_file(p):
-    if (b64:=data_url(p.text)): return dict(type="input_file", file_data=p.text, filename=f"upload.{b64[0].split('/')[-1]}")
-    return {"type": "input_file", "file_url": p.text}
+def denorm_file(p): return resp_part(p)
 
 # %% ../nbs/04_oai_responses.ipynb #145b1c79
 def denorm_tool_result(m:ToolResult):

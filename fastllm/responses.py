@@ -23,7 +23,7 @@ from fasttransport.errors import APIError
 
 from .acomplete import acomplete
 from .streaming import Status
-from aidialog.msg_parts import Msg, Text, ToolUse, ToolResult, InputImage, InputFile, Completion, MdStr, tool_text, msg2dict, dict2msg
+from aidialog.msg_parts import Msg, Text, Thinking, ToolUse, ToolResult, InputImage, InputVideo, InputFile, Completion, MdStr, tool_text, msg2dict, dict2msg, mk_part
 
 # %% ../nbs/08_responses.ipynb #f904c16f
 class ResponsesError(Exception):
@@ -37,10 +37,12 @@ def _msg_parts(content):
     if isinstance(content, str): return [Text(content)]
     parts = []
     for o in content:
-        typ = o.get('type')
-        if typ in ('input_text', 'output_text', 'text'): parts.append(Text(o.get('text', '')))
-        elif typ == 'input_image': parts.append(InputImage(o.get('image_url')))
-        elif typ == 'input_file': parts.append(InputFile(o.get('file_url') or o.get('file_data')))
+        typ,cc = o.get('type'),o.get('cache_control')
+        if typ in ('input_text', 'output_text', 'text'): parts.append(Text(o.get('text', ''), cache_control=cc))
+        elif typ == 'input_image': parts.append(InputImage(o.get('image_url'), cache_control=cc))
+        elif typ == 'input_video': parts.append(InputVideo(o.get('video_url'), cache_control=cc))
+        elif typ == 'input_file': parts.append(InputFile(o.get('file_url') or o.get('file_data'), cache_control=cc))
+        elif typ == 'input_audio': parts.append(mk_part(**o))
         else: raise ResponsesError(f'Unsupported message content type: {typ}', param='input')
     return parts
 
@@ -78,6 +80,7 @@ def response_input(inp):
             out = item.get('output', '')
             pending_tools.append(ToolResult(id=item.get('call_id'), name=item.get('name', ''),
                 text=out if isinstance(out, str) else _msg_parts(out)))
+        elif typ == 'reasoning': continue
         else: raise ResponsesError(f'Unsupported input item type: {typ}', param='input')
     flush_tools()
     return msgs,'\n\n'.join(filter(None, systems))
@@ -93,6 +96,7 @@ def normalize_call_ids(comp):
 
 # %% ../nbs/08_responses.ipynb #ab1a57d7
 def _arguments(args): return args if isinstance(args, str) else json.dumps(args or {}, separators=(',', ':'))
+def _is_srv(part): return isinstance(part, ToolUse) and part.server
 
 def server_call_item(part):
     "The output item for a call the server ran, whether a host tool or the provider's own: a `server_tool_call` carrying its `arguments` and result `output`, marked `md` when that output is markdown"
@@ -101,8 +105,12 @@ def server_call_item(part):
     part._response_item_id = getattr(part, '_response_item_id', None) or _new_id('srv')
     return dict(id=part._response_item_id, status='completed', **item)
 
+def _reasoning_item(rid, text=None):
+    "A `reasoning` output item, with `text` as its one summary part"
+    return dict(id=rid, type='reasoning', summary=[] if text is None else [dict(type='summary_text', text=text)])
+
 def response_output(comp):
-    "Convert a Completion to Responses output items."
+    "Convert a Completion to Responses output items, with one message item per run of text between tool calls."
     output,msg = [],None
     for part in comp.message.content:
         if isinstance(part, Text):
@@ -114,7 +122,10 @@ def response_output(comp):
             else:
                 msg['content'][0]['text'] += part.text or ''
                 msg['content'][0]['annotations'].extend(part.citations or [])
+        elif isinstance(part, Thinking):
+            output.append(_reasoning_item(getattr(part, '_response_item_id', None) or _new_id('rs'), part.text or ''))
         elif isinstance(part, ToolUse):
+            msg = None
             if part.server: output.append(server_call_item(part))
             else: output.append(dict(id=getattr(part, '_response_item_id', None) or _new_id('fc'), type='function_call', status='completed',
                 call_id=part.id, name=part.name, arguments=_arguments(part.arguments)))
@@ -139,13 +150,15 @@ def _response_base(rid, body, previous_response_id=None, created_at=None):
     return result
 
 # %% ../nbs/08_responses.ipynb #688ebc7c
+_incomplete = dict(length='max_output_tokens', content_filter='content_filter')
+
 def response_object(rid, body, comp, previous_response_id=None, created_at=None):
     "Build a completed Responses resource from a Completion."
-    incomplete = comp.finish_reason == 'length'
+    reason = _incomplete.get(comp.finish_reason)
     output = response_output(comp)
     result = _response_base(rid, body, previous_response_id, created_at)
-    result.update(completed_at=int(time.time()), status='incomplete' if incomplete else 'completed', error=None,
-        incomplete_details={'reason':'max_output_tokens'} if incomplete else None, output=output, usage=response_usage(comp.usage))
+    result.update(completed_at=int(time.time()), status='incomplete' if reason else 'completed', error=None,
+        incomplete_details={'reason':reason} if reason else None, output=output, usage=response_usage(comp.usage))
     result['output_text'] = ''.join(c['text'] for o in output if o['type']=='message' for c in o['content'] if c['type']=='output_text')
     return result
 
@@ -295,6 +308,7 @@ class _ResponseStream(BasicRepr):
     def __init__(self, turn):
         self.turn,self.seq,self.next_index = turn,0,0
         self.message_id,self.message_index,self.text = None,None,''
+        self.reasoning_id,self.reasoning_index,self.reasoning_text,self.reasoning_ids = None,None,'',[]
         self.tool_item_ids,self.streamed_call_ids = {},[]
 
     def event(self, event_type, **kwargs):
@@ -337,39 +351,73 @@ def tool_events(self:_ResponseStream, part):
     events.append(self.event('response.output_item.done', output_index=index, item=item))
     return events
 
+# %% ../nbs/08_responses.ipynb #b39bd07d
+@patch
+def thinking_events(self:_ResponseStream, part):
+    events = []
+    if self.reasoning_id is None:
+        self.reasoning_id,self.reasoning_index,self.reasoning_text = _new_id('rs'),self.next_index,''
+        self.next_index += 1
+        self.reasoning_ids.append(self.reasoning_id)
+        events.append(self.event('response.output_item.added', output_index=self.reasoning_index, item=_reasoning_item(self.reasoning_id)))
+        events.append(self.event('response.reasoning_summary_part.added', item_id=self.reasoning_id,
+            output_index=self.reasoning_index, summary_index=0, part=dict(type='summary_text', text='')))
+    self.reasoning_text += part.text or ''
+    if part.text:
+        events.append(self.event('response.reasoning_summary_text.delta', item_id=self.reasoning_id,
+            output_index=self.reasoning_index, summary_index=0, delta=part.text))
+    return events
+
+@patch
+def close_thinking(self:_ResponseStream):
+    "Events closing the open reasoning item, if any"
+    if self.reasoning_id is None: return []
+    rid,text,kw = self.reasoning_id,self.reasoning_text,dict(item_id=self.reasoning_id, output_index=self.reasoning_index, summary_index=0)
+    self.reasoning_id = None
+    return [self.event('response.reasoning_summary_text.done', text=text, **kw),
+        self.event('response.reasoning_summary_part.done', part=dict(type='summary_text', text=text), **kw),
+        self.event('response.output_item.done', output_index=kw['output_index'], item=_reasoning_item(rid, text))]
+
 # %% ../nbs/08_responses.ipynb #7086fbeb
 @patch
 def part_events(self:_ResponseStream, part):
-    if isinstance(part, Text): return self.text_events(part)
-    if isinstance(part, ToolUse) and not part.server: return self.tool_events(part)
-    return []
+    if isinstance(part, Thinking): return self.thinking_events(part)
+    events = self.close_thinking()
+    if isinstance(part, Text): events += self.text_events(part)
+    elif isinstance(part, ToolUse) and not part.server: events += self.tool_events(part)
+    return events
 
 # %% ../nbs/08_responses.ipynb #c96550ce
 @patch
-def done_events(self:_ResponseStream, comp):
+def end_step(self:_ResponseStream, parts):
+    "Events ending a step: close the open message item, made from the Text parts among `parts`, then send each server call among them"
     events = []
     if self.message_id is not None:
-        cites = [c for p in comp.message.content if isinstance(p, Text) for c in p.citations or []]
-        content = dict(type='output_text', text=self.text, annotations=cites)
+        texts = [p for p in parts if isinstance(p, Text)]
+        for p in texts: p._response_item_id = self.message_id
+        content = dict(type='output_text', text=self.text, annotations=[c for p in texts for c in p.citations or []])
         item = dict(id=self.message_id, type='message', status='completed', role='assistant', content=[content])
-        events.append(self.event('response.output_text.done', item_id=self.message_id, output_index=self.message_index,
-            content_index=0, text=self.text))
-        events.append(self.event('response.content_part.done', item_id=self.message_id, output_index=self.message_index,
-            content_index=0, part=content))
-        for i,c in enumerate(content['annotations']):
-            events.append(self.event('response.output_text.annotation.added', item_id=self.message_id, output_index=self.message_index,
-                content_index=0, annotation_index=i, annotation=c))
+        kw = dict(item_id=self.message_id, output_index=self.message_index, content_index=0)
+        events += [self.event('response.output_text.done', text=self.text, **kw), self.event('response.content_part.done', part=content, **kw)]
+        events += [self.event('response.output_text.annotation.added', annotation_index=i, annotation=c, **kw) for i,c in enumerate(content['annotations'])]
         events.append(self.event('response.output_item.done', output_index=self.message_index, item=item))
-    for part in comp.message.content:
-        if isinstance(part, ToolUse) and part.server:
-            events.append(self.event('response.output_item.done', output_index=self.next_index, item=server_call_item(part)))
-            self.next_index += 1
+        self.message_id,self.text = None,''
+    for c in parts:
+        if not _is_srv(c): continue
+        events.append(self.event('response.output_item.done', output_index=self.next_index, item=server_call_item(c)))
+        self.next_index += 1
+    return events
+
+@patch
+def done_events(self:_ResponseStream, comp):
+    events = self.end_step([p for p in comp.message.content if getattr(p, '_response_item_id', None) is None])
     client_calls = [tc for tc in comp.tool_calls if not tc.server]
     for i,tc in enumerate(client_calls):
         if not tc.id and i < len(self.streamed_call_ids): tc.id = self.streamed_call_ids[i]
         tc._response_item_id = self.tool_item_ids.get(tc.id)
+    rids = iter(self.reasoning_ids)
     for part in comp.message.content:
-        if isinstance(part, Text): part._response_item_id = self.message_id
+        if isinstance(part, Thinking): part._response_item_id = next(rids, None)
     return events
 
 # %% ../nbs/08_responses.ipynb #04a20345
@@ -378,9 +426,10 @@ def _server_call(result):
     return ToolUse(id=result.id, name=result.name, arguments=result.arguments, server=True, text=result.text)
 
 def _visible_parts(parts, results):
-    "Replace completed host calls without changing the provider's parts."
+    "A step's parts as the stream sends them: completed host calls become server calls, and server calls go last"
     completed = {r.id:r for r in results}
-    return [_server_call(completed[p.id]) if isinstance(p, ToolUse) and p.id in completed else p for p in parts]
+    parts = [_server_call(completed[p.id]) if isinstance(p, ToolUse) and p.id in completed else p for p in parts]
+    return [p for p in parts if not _is_srv(p)] + [p for p in parts if _is_srv(p)]
 
 
 # %% ../nbs/08_responses.ipynb #e10c928b
@@ -389,22 +438,24 @@ async def events(self:AsyncResponses, turn, finalize=None, stream=None):
     state,first = _ResponseStream(turn),turn
     yield state.event('response.created', response=pending_response(turn))
     try:
-        texts,usage = [],None
+        prior,usage = [],None
         while True:
             async for part in (stream or await self.call(turn)):
                 if isinstance(part, Completion): comp = part
                 elif isinstance(part, Status) or (isinstance(part, ToolUse) and part.name in turn.server_tools): continue
                 else:
                     for event in state.part_events(part): yield event
+            for event in state.close_thinking(): yield event
             usage,stream = (comp.usage if usage is None else usage + comp.usage),None
             results = await self.server_results(turn, comp)
             if not results or len(results) < len(comp.tool_calls): break
-            texts += [p for p in comp.message.content if isinstance(p, Text) or (isinstance(p, ToolUse) and p.server)]
-            texts += [_server_call(r) for r in results]
+            step = _visible_parts(comp.message.content, results)
+            for event in state.end_step(step): yield event
+            prior += step
             turn = self.server_turn(turn, comp, results)
         next_state = self.state(turn, comp, results)
         comp = copy.copy(comp)
-        comp.message,comp.usage = Msg('assistant', texts + _visible_parts(comp.message.content, results)),usage
+        comp.message,comp.usage = Msg('assistant', prior + _visible_parts(comp.message.content, results)),usage
         for event in state.done_events(comp): yield event
         response = response_object(first.id, first.body, comp, first.previous.id if first.previous else None, first.created_at)
         if finalize and (extra := await finalize(next_state, comp)): response['usage'].update(extra)

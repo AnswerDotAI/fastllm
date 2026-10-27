@@ -13,11 +13,12 @@ __all__ = ['api_ns', 'norm_tool_calls', 'norm_finish', 'norm_parts', 'raw_msg', 
 import json
 from fastcore.utils import *
 from fastcore.meta import *
+from itertools import groupby as iter_groupby
 from fasttransport.errors import api_error_from_event
 
 from .types import *
 from aidialog.msg_parts import (Part, PartType, Msg, Text, Thinking, Refusal, ToolUse, ToolResult, tool_text,
-    InputImage, InputAudio, InputVideo, InputFile, sys_text, part_txt, data_url)
+    InputImage, InputAudio, InputVideo, InputFile, sys_text, part_txt, data_url, resp_part)
 from .streaming import *
 from .streaming import mk_acollect_stream
 from .openai_responses import norm_usage
@@ -108,11 +109,12 @@ def denorm_tool_use(p:ToolUse):
     return dict(id=p.id, type='function', function=dict(name=p.name, arguments=json.dumps(p.arguments)))
 
 def denorm_assistant(m:Msg):
-    "The message as the API sent it, else its text and tool calls"
-    if m.raw: return m.raw
-    msg, texts = dict(role='assistant'), [p for p in m.content if isinstance(p, Text)]
+    "The message as the API sent it, else its text and client tool calls"
+    if m.raw and m.raw_api == 'openai_chat': return m.raw
+    ps = rebuild_parts(m)
+    msg, texts = dict(role='assistant'), [p for p in ps if isinstance(p, Text)]
     if texts: msg['content'] = texts[0].text if len(texts)==1 else [dict(type='text', text=p.text or '') for p in texts]
-    if tcs := [denorm_tool_use(p) for p in m.content if isinstance(p, ToolUse)]: msg['tool_calls'] = tcs
+    if tcs := [denorm_tool_use(p) for p in ps if isinstance(p, ToolUse)]: msg['tool_calls'] = tcs
     return msg
 
 def denorm_tool(m:Msg):
@@ -122,10 +124,21 @@ def denorm_tool(m:Msg):
 def denorm_msgs(msgs:list[Msg]):
     "Convert list of canonical Msgs to OpenAI Chat messages."
     res = []
-    for m in msgs:
-        if   m.role == 'user':      res.append(denorm_user(m))
-        elif m.role == 'assistant': res.append(denorm_assistant(m))
-        elif m.role == 'tool':      res.extend(denorm_tool(m))
+    for role, batch in iter_groupby(msgs, lambda m: m.role):
+        if role == 'tool':
+            parts = [p for m in batch for p in m.content if isinstance(p, ToolResult)]
+            tools = [denorm_tool_result(p) for p in parts]
+            res.extend(tools)
+            media = []
+            for p, t in zip(parts, tools):
+                if isinstance(p.text, list) and all(isinstance(q, Part) for q in p.text):
+                    ps = [q for q in p.text if not isinstance(q, Text)]
+                    if ps: media += [Text(f"Tool output {t['tool_call_id']}:")] + ps
+            if media: res.append(denorm_user(Msg('user', media)))
+        else:
+            for m in batch:
+                if role == 'user': res.append(denorm_user(m))
+                elif role == 'assistant': res.append(denorm_assistant(m))
     return res
 
 # %% ../nbs/02_oai_chat.ipynb #76f84455
@@ -173,6 +186,7 @@ def denorm_user(m:Msg):
         elif isinstance(p, InputAudio): parts.append(denorm_audio(p))
         elif isinstance(p, InputVideo): raise ValueError("OpenAI Chat API does not support video input")
         elif isinstance(p, InputFile):  parts.append(denorm_file(p))
+        else: raise ValueError(f"OpenAI Chat user input does not support {p.type}")
     if len(parts) == 1 and parts[0].get('type') == 'text': return dict(role='user', content=parts[0]['text'])
     return dict(role='user', content=parts)
 
@@ -181,19 +195,20 @@ def denorm_image(p): return {"type": "image_url", "image_url": {"url": p.text}}
 
 # %% ../nbs/02_oai_chat.ipynb #ab69ef9a
 def denorm_audio(p):
-    _mime_audio_fmt = {'audio/wav':'wav', 'audio/mpeg':'mp3', 'audio/mp3':'mp3'}
+    _mime_audio_fmt = {'audio/x-wav':'wav', 'audio/wav':'wav', 'audio/mpeg':'mp3', 'audio/mp3':'mp3'}
     if not (b64:=data_url(p.text)): raise ValueError("OpenAI Chat audio input requires base64 data URL")
-    return {"type": "input_audio", "input_audio": {"data": b64[1], "format": _mime_audio_fmt.get(b64[0], 'wav')}}
+    if b64[0] not in _mime_audio_fmt: raise ValueError(f"OpenAI Chat audio input does not support {b64[0]}")
+    return {"type": "input_audio", "input_audio": {"data": b64[1], "format": _mime_audio_fmt[b64[0]]}}
 
 # %% ../nbs/02_oai_chat.ipynb #e2cd77ad
 def denorm_file(p):
-    if (b64:=data_url(p.text)): return {"type": "file", "file": {"file_data": p.text, "filename": f"upload.{b64[0].split('/')[-1]}"}}
-    raise ValueError("OpenAI Chat file input requires base64 data URL or file_id, not URLs")
+    if not data_url(p.text): raise ValueError("OpenAI Chat file input requires a base64 data URL, not URLs")
+    part = resp_part(p)
+    return dict(type='file', file={k:part[k] for k in ('file_data', 'filename')})
 
 # %% ../nbs/02_oai_chat.ipynb #0e9751c8
 def denorm_tool_result(p:ToolResult):
     "Convert canonical tool_result Part to OpenAI Chat tool message."
-    if isinstance(p.text, list): raise ValueError("OpenAI Chat does not support media in tool results")
     return dict(role='tool', tool_call_id=p.id or (p.raw or {}).get('call_id', ''), content=tool_text(p.text))
 
 # %% ../nbs/02_oai_chat.ipynb #d2f55686

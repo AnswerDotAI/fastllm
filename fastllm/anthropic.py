@@ -186,12 +186,12 @@ def denorm_tool_use(p:ToolUse):
     return _ant_cc(dict(type='tool_use', id=_sanid(p.id or ''), name=p.name or '', input=p.arguments or {}), p)
 
 def denorm_assistant(m:Msg):
-    "The message as the API sent it, else its text and tool calls; a cache mark on the last part is copied onto the last raw block"
-    if m.raw:
+    "The message as the API sent it, else its text and client tool calls; a cache mark on the last part is copied onto the last raw block"
+    if m.raw and m.raw_api == 'anthropic':
         cc = [p.cache_control for p in m.content if p.cache_control]
         if not cc: return m.raw
         return m.raw | dict(content=m.raw['content'][:-1] + [m.raw['content'][-1] | dict(cache_control=cc[-1])])
-    blocks = [_ant_cc(dict(type='text', text=p.text or ''), p) if isinstance(p, Text) else denorm_tool_use(p) for p in m.content if isinstance(p, (Text, ToolUse))]
+    blocks = [_ant_cc(dict(type='text', text=p.text or ''), p) if isinstance(p, Text) else denorm_tool_use(p) for p in rebuild_parts(m)]
     return dict(role='assistant', content=blocks)
 
 def denorm_tool(m:Msg):
@@ -304,11 +304,11 @@ def _add_cache_control(
     return msg
 
 # %% ../nbs/06_anthropic.ipynb #6bc52ef5
-def _clear_cache_control(obj):
-    "Clear canonical cache marks from a message or part."
-    if isinstance(obj, Msg):
-        for p in obj.content: _clear_cache_control(p)
-    elif isinstance(obj, Part): obj.cache_control = None
+def _copy_msg(m):
+    "A copy of `m` with copied parts, to mark without changing `m`"
+    m = copy.copy(m)
+    m.content = [copy.copy(p) for p in m.content]
+    return m
 
 def apply_cache_idxs(
     msgs,            # Canonical Msgs to mark
@@ -316,26 +316,25 @@ def apply_cache_idxs(
     sp=None,         # System prompt: str, Msg, or Part
     ttl=None         # Cache TTL: '5m' (default) or '1h'
 ):
-    "Replace cache breakpoints in `msgs` and `sp`, then return the system prompt."
-    for m in msgs: _clear_cache_control(m)
-    _clear_cache_control(sp)
+    "`msgs` and `sp` with breakpoints added at `cache_idxs`, marking copies"
+    msgs = list(msgs)
     if sp:
         if 0 in cache_idxs:
             if isinstance(sp, str): sp = Text(sp)
-            if isinstance(sp, Part): sp = Msg('', [sp])
-            _add_cache_control(sp, ttl)
+            sp = _add_cache_control(_copy_msg(sp if isinstance(sp, Msg) else Msg('', [sp])), ttl)
         cache_idxs = [o-1 if o>0 else o for o in cache_idxs if o]
     ms = [j for j,m in enumerate(msgs) if m.role != 'tool']
     for i in cache_idxs:
-        try: _add_cache_control(msgs[ms[i]], ttl)
+        try: j = ms[i]
         except IndexError: continue
-    return sp
+        msgs[j] = _add_cache_control(_copy_msg(msgs[j]), ttl)
+    return msgs,sp
 
 # %% ../nbs/06_anthropic.ipynb #587d4fe5
 @delegates(payload_kwargs)
 def mk_payload(msgs, model, **kwargs):
     sp = kwargs.get('system')
-    if (ci:=kwargs.get('cache_idxs')) is not None: sp = apply_cache_idxs(msgs, ci, sp, kwargs.get('ttl'))
+    if ci := kwargs.get('cache_idxs'): msgs,sp = apply_cache_idxs(msgs, ci, sp, kwargs.get('ttl'))
     max_tokens = kwargs.get('max_tokens')
     if max_tokens is None: max_tokens = get_model_info(model, 'anthropic').get('max_output_tokens') or 1024
     payload = dict(model=model, messages=denorm_msgs(msgs), max_tokens=max_tokens)

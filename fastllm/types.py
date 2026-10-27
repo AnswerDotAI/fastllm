@@ -7,11 +7,11 @@ __all__ = ['FinishReason', 'api_registry', 'vendor_auth', 'vendor_hdrs', 'model_
            'haik45', 'haik', 'haik55', 'sonn45', 'sonn46', 'sonn5', 'sonn', 'sonn55', 'opus46', 'opus48', 'opus5',
            'opus', 'opus55', 'fable', 'claude_models', 'gpt55', 'codex53spark', 'sol', 'luna', 'astra', 'gpt6s',
            'terra', 'gpt56s', 'flash', 'model_info_registry', 'modern_llm', 'effort_codes', 'mimo_v25_common',
-           'codex_pricing', 'Usage', 'APIRegistry', 'mk_completion', 'fn_schema', 'payload_kwargs', 'provider_req',
-           'get_api_key', 'wrap_typed', 'unwrap_typed', 'resize_b64', 'model_prices_meta', 'infer_api_name',
-           'get_model_meta', 'register_model_info', 'get_model_info', 'effort_code', 'effort_levels', 'resolve_effort',
-           'effort_kwargs', 'register_sub_model', 'find_models', 'get_model_pricing', 'approx_pricing',
-           'is_deepseek_peak_hour', 'price_tier', 'tier_rate']
+           'codex_pricing', 'Usage', 'APIRegistry', 'mk_completion', 'rebuild_parts', 'fn_schema', 'payload_kwargs',
+           'provider_req', 'get_api_key', 'wrap_typed', 'unwrap_typed', 'resize_b64', 'model_prices_meta',
+           'infer_api_name', 'get_model_meta', 'register_model_info', 'get_model_info', 'effort_code', 'effort_levels',
+           'resolve_effort', 'effort_kwargs', 'register_sub_model', 'find_models', 'get_model_pricing',
+           'approx_pricing', 'is_deepseek_peak_hour', 'price_tier', 'tier_rate']
 
 # %% ../nbs/00_types.ipynb #b4d047fd
 import httpx2, base64, io
@@ -21,7 +21,7 @@ from importlib.metadata import entry_points
 from datetime import datetime, timezone
 from fastcore.utils import *
 from PIL import Image as PImg
-from aidialog.msg_parts import Msg, Thinking, ToolUse, Completion, StopResponse, FullResponse
+from aidialog.msg_parts import Msg, Text, Thinking, ToolUse, Completion, StopResponse, FullResponse
 
 # %% ../nbs/00_types.ipynb #802ad832
 class Usage(BasicRepr):
@@ -67,8 +67,17 @@ FinishReason = str_enum('finish_reason', 'stop', 'tool_calls', 'length', 'conten
 # %% ../nbs/00_types.ipynb #fc681c52
 class APIRegistry(dict):
     _eps = None
-    def register(self, name, finalize_usage=noop, raw_msg=noop, collate_raw=noop, **kwargs):
-        self[name] = SimpleNamespace(finalize_usage=finalize_usage, raw_msg=raw_msg, collate_raw=collate_raw, **kwargs)
+    def register(
+        self,
+        name, # API name, as completions record it in `api_name`
+        finalize_usage=noop, # Adjusts the normalized usage, given the response's parts
+        raw_msg=noop, # The provider message to keep as `Msg.raw`, from a whole response
+        collate_raw=noop, # The provider message to keep as `Msg.raw`, from streamed deltas
+        raw_api=None, # API whose wire format `raw_msg` and `collate_raw` produce; default `name`
+        **kwargs # The API's other functions, such as `norm_parts` and `mk_payload`
+    ):
+        "Register API `name` with the functions that build its requests and normalize its responses"
+        self[name] = SimpleNamespace(finalize_usage=finalize_usage, raw_msg=raw_msg, collate_raw=collate_raw, raw_api=raw_api or name, **kwargs)
     def _load(self, name):
         "Import the plugin providing api `name` from the `fastllm.apis` entry-point group; its import registers the api."
         if self._eps is None: self._eps = {o.name:o for o in entry_points(group='fastllm.apis')}
@@ -94,8 +103,13 @@ def mk_completion(resp, model, api_name, vendor_name):
     tcs = api.norm_tool_calls(resp)
     parts = api.norm_parts(resp)
     usg = api.finalize_usage(api.norm_usage(resp), parts)
-    return Completion(model=model, message=Msg(role="assistant", content=parts, raw=api.raw_msg(resp)), finish_reason=api.norm_finish(resp, tcs),
+    return Completion(model=model, message=Msg(role="assistant", content=parts, raw=api.raw_msg(resp), raw_api=api.raw_api), finish_reason=api.norm_finish(resp, tcs),
         usage=usg, api_name=api_name, vendor_name=vendor_name, raw=resp)
+
+# %% ../nbs/00_types.ipynb #467b7630
+def rebuild_parts(m:Msg):
+    "The parts of `m` that a rebuild for another API keeps: its text and client tool calls"
+    return [p for p in m.content if isinstance(p, Text) or (isinstance(p, ToolUse) and not p.server)]
 
 # %% ../nbs/00_types.ipynb #8a8e468b
 def fn_schema(t):
@@ -210,8 +224,8 @@ claude_models = haik45, haik55, sonn45, sonn46, sonn5, sonn55, opus46, opus48, o
 gpt55 = "gpt-5.5"
 codex53spark = "gpt-5.3-codex-spark"
 sol,luna,astra = gpt6s = 'gpt-6-sol gpt-6-luna gpt-6-astra'.split()
-terra = 'gpt-5.6-terra'
-gpt56s = 'gpt-5.6-sol', terra, 'gpt-5.6-luna'
+terra = 'gpt-6.1-terra'
+gpt56s = 'gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna'
 flash = 'models/gemini-3.8-flash'
 
 # %% ../nbs/00_types.ipynb #583e017b
@@ -225,11 +239,15 @@ def register_model_info(model, vendor_name=None, base=None, base_vendor_name=Non
         info['search_context_cost_per_query'] = {f'search_context_size_{s}':c for s in ('low','medium','high')}
     model_info_registry[vendor_name, model] = info
 
+_flag_mods = dict(supports_vision='image', supports_pdf_input='pdf', supports_audio_input='audio', supports_video_input='video')
+
 def get_model_info(mn, vendor_name=None):
     "Metadata for `mn`: its local registration, else LiteLLM's entry; `vendor_name` defaults to `infer_api_name(mn)`"
     vendor_name = ifnone(vendor_name, infer_api_name(mn))
-    info = model_info_registry.get((vendor_name, mn)) or get_model_meta(mn, vendor_name)
+    info = dict(model_info_registry.get((vendor_name, mn)) or get_model_meta(mn, vendor_name))
     if 'search_context_cost_per_query' in info: info['supports_web_search'] = True
+    mods = [m for f,m in _flag_mods.items() if info.get(f)]
+    if mods: info['supported_modalities'] = list(dict.fromkeys(info.get('supported_modalities', ['text']) + mods))
     return dict2obj(info)
 
 # %% ../nbs/00_types.ipynb #b36178d4
@@ -245,9 +263,6 @@ register_model_info('accounts/fireworks/models/deepseek-v4p1-flash', vendor_name
     input_cost_per_token=0.30e-6, cache_read_input_token_cost=0.006e-6, output_cost_per_token=1.20e-6)
 register_model_info('glm-5.3-flash', vendor_name='zai', base='glm-5.3-flash', reasoning_effort_levels=['low', 'high', 'max'])
 register_model_info('accounts/fireworks/models/glm-5p3-flash', vendor_name='fireworks_ai', base='glm-5.3-flash', base_vendor_name='zai')
-
-# LiteLLM's entry says Haiku 5.5 can't be forced to call a tool, but Anthropic's migration guide says it accepts a forced `tool_choice`
-register_model_info(haik55, 'anthropic', base=haik55, supports_forced_tool_use=True)
 
 # %% ../nbs/00_types.ipynb #0a2d3bff
 register_model_info(
@@ -338,7 +353,7 @@ for model in claude_models: register_sub_model(model, 'claude_code', 'anthropic'
 # %% ../nbs/00_types.ipynb #bb0c4c2a
 # Codex serves only the suffixed names; bare `gpt-5.6` is rejected with a ChatGPT account.
 # Its window accepts 371,331 input tokens and rejects 371,981 on all three GPT-5.6 models.
-for model in (*gpt56s, *gpt6s, 'gpt-6.1-sol'): register_sub_model(model, 'codex', 'openai', max_input_tokens=371_000)
+for model in (*gpt56s, *gpt6s, 'gpt-6.1-sol', terra): register_sub_model(model, 'codex', 'openai', max_input_tokens=371_000)
 
 # %% ../nbs/00_types.ipynb #004c0b30
 def find_models(substr:str):
