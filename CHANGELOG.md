@@ -2,6 +2,13 @@
 
 <!-- do not remove -->
 
+## 0.0.68
+
+### New Features
+
+- Simplify model lists: gpt6s now uses gpt-6.1 sol/terra, drop gpt56s and older Claude models from `claude_models`, update Codex registrations ([#124](https://github.com/AnswerDotAI/fastllm/issues/124))
+
+
 ## 0.0.67
 
 ### New Features
