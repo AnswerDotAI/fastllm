@@ -5,13 +5,13 @@
 # %% auto #0
 __all__ = ['FinishReason', 'api_registry', 'vendor_auth', 'vendor_hdrs', 'model_prices_url', 'sample_img_url', 'sample_doms',
            'haik45', 'haik', 'haik55', 'sonn45', 'sonn46', 'sonn5', 'sonn', 'sonn55', 'opus46', 'opus48', 'opus5',
-           'opus', 'opus55', 'fable', 'claude_models', 'gpt55', 'codex53spark', 'sol', 'luna', 'astra', 'gpt6s',
-           'terra', 'gpt56s', 'flash', 'model_info_registry', 'modern_llm', 'effort_codes', 'mimo_v25_common',
-           'codex_pricing', 'Usage', 'APIRegistry', 'mk_completion', 'rebuild_parts', 'fn_schema', 'payload_kwargs',
-           'provider_req', 'get_api_key', 'wrap_typed', 'unwrap_typed', 'resize_b64', 'model_prices_meta',
-           'infer_api_name', 'get_model_meta', 'register_model_info', 'get_model_info', 'effort_code', 'effort_levels',
-           'resolve_effort', 'effort_kwargs', 'register_sub_model', 'find_models', 'get_model_pricing',
-           'approx_pricing', 'is_deepseek_peak_hour', 'price_tier', 'tier_rate']
+           'opus', 'opus55', 'fable', 'claude_models', 'gpt55', 'codex53spark', 'sol', 'terra', 'luna', 'astra',
+           'gpt6s', 'flash', 'model_info_registry', 'modern_llm', 'effort_codes', 'mimo_v25_common', 'codex_pricing',
+           'Usage', 'APIRegistry', 'mk_completion', 'rebuild_parts', 'fn_schema', 'payload_kwargs', 'provider_req',
+           'get_api_key', 'wrap_typed', 'unwrap_typed', 'resize_b64', 'model_prices_meta', 'infer_api_name',
+           'get_model_meta', 'register_model_info', 'get_model_info', 'effort_code', 'effort_levels', 'resolve_effort',
+           'effort_kwargs', 'register_sub_model', 'find_models', 'get_model_pricing', 'approx_pricing',
+           'is_deepseek_peak_hour', 'price_tier', 'tier_rate']
 
 # %% ../nbs/00_types.ipynb #b4d047fd
 import httpx2, base64, io
@@ -220,12 +220,10 @@ opus48 = "claude-opus-4-8"
 opus5 = "claude-opus-5"
 opus = opus55 = "claude-opus-5-5"
 fable = 'claude-fable-5-1'
-claude_models = haik45, haik55, sonn45, sonn46, sonn5, sonn55, opus46, opus48, opus5, opus55, fable
+claude_models = haik55, sonn55, opus55, fable
 gpt55 = "gpt-5.5"
 codex53spark = "gpt-5.3-codex-spark"
-sol,luna,astra = gpt6s = 'gpt-6-sol gpt-6-luna gpt-6-astra'.split()
-sol,terra = 'gpt-6.1-sol', 'gpt-6.1-terra'
-gpt56s = 'gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna'
+sol,terra,luna,astra = gpt6s = 'gpt-6.1-sol gpt-6.1-terra gpt-6-luna gpt-6-astra'.split()
 flash = 'models/gemini-3.8-flash'
 
 # %% ../nbs/00_types.ipynb #583e017b
@@ -355,7 +353,7 @@ for model in claude_models: register_sub_model(model, 'claude_code', 'anthropic'
 # %% ../nbs/00_types.ipynb #bb0c4c2a
 # Codex serves only the suffixed names; bare `gpt-5.6` is rejected with a ChatGPT account.
 # Its window accepts 371,331 input tokens and rejects 371,981 on all three GPT-5.6 models.
-for model in (*gpt56s, *gpt6s, 'gpt-6.1-sol', terra): register_sub_model(model, 'codex', 'openai', max_input_tokens=371_000)
+for model in gpt6s: register_sub_model(model, 'codex', 'openai', max_input_tokens=371_000)
 
 # %% ../nbs/00_types.ipynb #004c0b30
 def find_models(substr:str):
