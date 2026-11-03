@@ -2,6 +2,13 @@
 
 <!-- do not remove -->
 
+## 0.0.67
+
+### New Features
+
+- Add Gemini 4 thinkingLevel support, gpt-6.1-terra alias, gemini-4-argon/qwen3p8-max registrations ([#123](https://github.com/AnswerDotAI/fastllm/issues/123))
+
+
 ## 0.0.66
 
 ### New Features
