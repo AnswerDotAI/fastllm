@@ -224,7 +224,7 @@ claude_models = haik45, haik55, sonn45, sonn46, sonn5, sonn55, opus46, opus48, o
 gpt55 = "gpt-5.5"
 codex53spark = "gpt-5.3-codex-spark"
 sol,luna,astra = gpt6s = 'gpt-6-sol gpt-6-luna gpt-6-astra'.split()
-terra = 'gpt-6.1-terra'
+sol,terra = 'gpt-6.1-sol', 'gpt-6.1-terra'
 gpt56s = 'gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna'
 flash = 'models/gemini-3.8-flash'
 
@@ -258,11 +258,13 @@ modern_llm = dict(supports_function_calling=True, supports_tool_choice=True, sup
 # %% ../nbs/00_types.ipynb #8261dcd0
 register_model_info('gpt-5.4', vendor_name='openai', base='gpt-5.4', supports_web_search=True)
 
-register_model_info('accounts/fireworks/models/deepseek-v4p1-flash', vendor_name='fireworks_ai',
-    base='accounts/fireworks/models/deepseek-v4-flash-0731', supports_vision=True, supports_image_input=True,
-    input_cost_per_token=0.30e-6, cache_read_input_token_cost=0.006e-6, output_cost_per_token=1.20e-6)
 register_model_info('glm-5.3-flash', vendor_name='zai', base='glm-5.3-flash', reasoning_effort_levels=['low', 'high', 'max'])
 register_model_info('accounts/fireworks/models/glm-5p3-flash', vendor_name='fireworks_ai', base='glm-5.3-flash', base_vendor_name='zai')
+
+for m in ('gemini-4-argon', 'models/gemini-4-argon'):
+    register_model_info(m, vendor_name='gemini', base='gemini-4-argon', max_output_tokens=65_536)
+register_model_info('accounts/fireworks/models/qwen3p8-max', vendor_name='fireworks_ai',
+    base='accounts/fireworks/models/qwen3p8-max', max_output_tokens=65_536)
 
 # %% ../nbs/00_types.ipynb #0a2d3bff
 register_model_info(

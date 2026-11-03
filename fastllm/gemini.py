@@ -222,9 +222,10 @@ _gem_think_levels  = dict(minimal='low', low='low', medium='medium', high='high'
 def denorm_reasoning(v, model=''):
     "Map canonical reasoning_effort to Gemini thinkingConfig (uses thinkingLevel for Gemini 3+)."
     if v is None or isinstance(v, dict): return v
+    if 'gemini-4' in model and isinstance(v, str): v = resolve_effort(['low','medium','high'], v) or 'low'
     if not isinstance(v, str) or v not in _gem_think_budgets:
         raise ValueError(f"Invalid reasoning effort for Gemini: {v!r}; expected one of {list(_gem_think_budgets)}, a dict, or None")
-    if 'gemini-3' in model: return {'thinkingLevel': _gem_think_levels[v], 'includeThoughts': True}
+    if 'gemini-3' in model or 'gemini-4' in model: return {'thinkingLevel': _gem_think_levels[v], 'includeThoughts': True}
     return {'thinkingBudget': _gem_think_budgets[v], 'includeThoughts': True}
 
 # %% ../nbs/07_gemini.ipynb #8fa9fbb8
