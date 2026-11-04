@@ -236,8 +236,8 @@ def get_hdrs(api_key=None, oauth_token=None):
 def cost(usage, m):
     raw = usage.raw
     pd,cd = raw.get('prompt_tokens_details') or {},raw.get('completion_tokens_details') or {}
-    cached = pd.get('cached_tokens', 0)
-    in_audio, out_audio = pd.get('audio_tokens', 0), cd.get('audio_tokens', 0)
+    cached = pd.get('cached_tokens') or 0
+    in_audio, out_audio = pd.get('audio_tokens') or 0, cd.get('audio_tokens') or 0
     toks = dict(input_cost_per_token=raw['prompt_tokens'] - cached - in_audio, output_cost_per_token=raw['completion_tokens'] - out_audio,
         cache_read_input_token_cost=cached, input_cost_per_audio_token=in_audio, output_cost_per_audio_token=out_audio)
     tier = price_tier(m, raw['prompt_tokens'])
