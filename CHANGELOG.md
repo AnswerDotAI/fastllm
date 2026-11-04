@@ -2,6 +2,13 @@
 
 <!-- do not remove -->
 
+## 0.0.70
+
+### New Features
+
+- Handle null cached/audio token counts in OpenAI usage details when computing cost ([#126](https://github.com/AnswerDotAI/fastllm/issues/126))
+
+
 ## 0.0.69
 
 ### New Features
