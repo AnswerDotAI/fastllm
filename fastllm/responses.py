@@ -1,6 +1,6 @@
 """Provider-independent Responses resources and streaming over FastLLM
 
-`response_input` accepts a prompt string or an input-item array. It returns `(messages, instructions)`. System and developer text goes in the instructions; the remaining items become shared messages.
+`response_input` accepts a prompt string, Responses input items, or canonical `msg2dict` messages. It returns `(messages, instructions)`. System and developer text becomes instructions. Canonical messages preserve provider replay data.
 
 `normalize_call_ids` supplies missing client call IDs before we retain the history. Later tool results can refer to the same IDs that the client received.
 
@@ -62,7 +62,10 @@ def response_input(inp):
             pending_tools.clear()
     for item in inp:
         typ = item.get('type')
-        if typ in ('message', 'easy_input_message') or 'role' in item:
+        if 'raw_api' in item:
+            flush_tools()
+            msgs.append(dict2msg(item))
+        elif typ in ('message', 'easy_input_message') or 'role' in item:
             flush_tools()
             role = item.get('role', 'user')
             if role in ('system', 'developer'): systems.append(_text_content(item.get('content', '')))
@@ -144,7 +147,7 @@ def response_usage(usage):
 def _response_base(rid, body, previous_response_id=None, created_at=None):
     result = dict(id=rid, object='response', created_at=int(created_at or time.time()), instructions=body.get('instructions'), model=body['model'])
     result.update(parallel_tool_calls=body.get('parallel_tool_calls', True), previous_response_id=previous_response_id,
-        reasoning=body.get('reasoning'), store=True, prompt_cache_key=body.get('prompt_cache_key'), temperature=body.get('temperature'))
+        reasoning=body.get('reasoning'), store=body.get('store', True), prompt_cache_key=body.get('prompt_cache_key'), temperature=body.get('temperature'))
     result.update(text=body.get('text', {'format':{'type':'text'}}), tool_choice=body.get('tool_choice', 'auto'),
         tools=body.get('tools', []), top_p=body.get('top_p'), metadata=body.get('metadata', {}))
     return result
@@ -243,16 +246,21 @@ class AsyncResponses:
 
 # %% ../nbs/08_responses.ipynb #373f7d5e
 @patch
-async def call(self:AsyncResponses, turn):
-    "Start the provider stream for a prepared turn, having received its first chunk; the turn's `call_kwargs` reach `acomplete`"
+def provider_kwargs(self:AsyncResponses, turn):
+    "Provider request options shared by calling and input inspection"
     body = turn.body
     reasoning = body.get('reasoning') or {}
     tools = list(body.get('tools') or []) + [dict(type='function', **get_schema(f, pname='parameters')) for f in turn.server_tools.values()]
-    kwargs = dict(previous_response_id=turn.provider_previous_id, system=turn.system or None, tools=tools or None)
+    kwargs = dict(model=body['model'], previous_response_id=turn.provider_previous_id, system=turn.system or None, tools=tools or None)
     kwargs.update(prompt_cache_key=body['prompt_cache_key'], tool_choice=body.get('tool_choice'), parallel_tool_calls=body.get('parallel_tool_calls', True),
         reasoning_effort=reasoning.get('effort'), max_tokens=body.get('max_output_tokens'), temperature=body.get('temperature'),
         cache_idxs=body.get('cache_idxs'), ttl=body.get('ttl'), web_search_options=body.get('web_search_options'))
-    stream = await acomplete(turn.provider_messages, model=body['model'], stream=True, **kwargs, **turn.call_kwargs)
+    return kwargs
+
+@patch
+async def call(self:AsyncResponses, turn):
+    "Start a provider stream, waiting for its first chunk before returning"
+    stream = await acomplete(turn.provider_messages, stream=True, **self.provider_kwargs(turn), **turn.call_kwargs)
     first = await anext(stream)
     async def _rest():
         yield first
@@ -458,6 +466,7 @@ async def events(self:AsyncResponses, turn, finalize=None, stream=None):
         comp.message,comp.usage = Msg('assistant', prior + _visible_parts(comp.message.content, results)),usage
         for event in state.done_events(comp): yield event
         response = response_object(first.id, first.body, comp, first.previous.id if first.previous else None, first.created_at)
+        response['messages'] = [msg2dict(m) for m in next_state.history[len(first.history):]]
         if finalize and (extra := await finalize(next_state, comp)): response['usage'].update(extra)
         name = 'response.incomplete' if response['status'] == 'incomplete' else 'response.completed'
         yield state.event(name, response=response)
