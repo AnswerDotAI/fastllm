@@ -2,6 +2,13 @@
 
 <!-- do not remove -->
 
+## 0.0.69
+
+### New Features
+
+- Accept msg2dict messages in `response_input`, return canonical messages in final response, honor store flag, split out `provider_kwargs` ([#125](https://github.com/AnswerDotAI/fastllm/issues/125))
+
+
 ## 0.0.68
 
 ### New Features
