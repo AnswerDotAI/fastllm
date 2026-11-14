@@ -194,14 +194,19 @@ async def acomplete(msgs, model, api_name=None, vendor_name=None, api_key=None, 
         ep = endpoint or api.endpoint
         path,params = ep(model, stream) if callable(ep) else (ep, None)
     if defaults.debug_mode: _debug_print(model, api_name, vendor_name, body, None if own else cli._url(path))
-    async def _call(): return await provider_req(cli, path, body, params=params, stream=stream, headers=headers)
+    async def _call(body=body):
+        async def send(): return await provider_req(cli, path, body, params=params, stream=stream, headers=headers)
+        return await send() if stream else await _retry_call(send, retries, retry_delay)
+    async def _request():
+        if req := getattr(api, 'request', None): return await req(_call, body, stream=stream)
+        return await _call()
     async def _mk_gen():
-        resp = payload if own else await _call()  # an own-transport api's `acollect_stream` makes the request itself, from the payload
+        resp = payload if own else await _request()  # an own-transport api's collector makes its request from the payload
         async for o in api.acollect_stream(resp, model=model, vendor_name=vendor_name, stop_callables=stop_callables): yield o
     if stream or own:
         result = _retry_stream(_mk_gen, retries, retry_delay)
         if stream: return result
         async for completion in result: pass  # own-transport apis are streaming-only: drain for the completion
         return completion
-    resp = await _retry_call(_call, retries, retry_delay)
+    resp = await _request()
     return mk_completion(resp, model=model, api_name=api_name, vendor_name=vendor_name)

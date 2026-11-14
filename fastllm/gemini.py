@@ -4,17 +4,18 @@
 
 # %% auto #0
 __all__ = ['api_ns', 'endpoint', 'grounding', 'norm_tool_calls', 'norm_usage', 'norm_finish', 'norm_parts', 'raw_msg',
-           'norm_sse_event', 'delta_index_fn', 'collate_raw', 'acollect_stream', 'denorm_tool_use', 'denorm_assistant',
-           'denorm_tool', 'denorm_msgs', 'denorm_tool_schs', 'denorm_tool_choice', 'denorm_reasoning',
-           'denorm_web_search', 'denorm_system', 'denorm_user', 'denorm_image', 'denorm_audio', 'denorm_video',
-           'denorm_file', 'denorm_tool_result', 'mk_payload', 'get_hdrs', 'cost']
+           'norm_sse_event', 'delta_index_fn', 'collate_raw', 'request', 'acollect_stream', 'denorm_tool_use',
+           'denorm_assistant', 'denorm_tool', 'denorm_msgs', 'denorm_tool_schs', 'denorm_tool_choice',
+           'denorm_reasoning', 'denorm_web_search', 'denorm_system', 'denorm_user', 'denorm_image', 'denorm_audio',
+           'denorm_video', 'denorm_file', 'denorm_tool_result', 'mk_payload', 'get_hdrs', 'cost']
 
 # %% ../nbs/07_gemini.ipynb #02afd3d7
 import html
+from copy import deepcopy
 from collections import Counter
 from fastcore.utils import *
 from fastcore.meta import *
-from fasttransport.errors import api_error_from_event
+from fasttransport.errors import APIError, api_error_from_event
 
 from .types import *
 from aidialog.msg_parts import (MdStr, Part, PartType, Msg, Completion, Text, Thinking, ToolUse, ToolResult, tool_text,
@@ -67,9 +68,9 @@ def norm_usage(resp):
     reasoning = int(usg.get("thoughtsTokenCount", 0) or 0)
     parts = nested_idx(resp, 'candidates', 0, 'content', 'parts') or []
     cand = nested_idx(resp, 'candidates', 0) or {}
-    stu = {}
-    if any("executableCode" in p for p in parts): stu["code_execution"] = sum(1 for p in parts if "executableCode" in p)
-    if call := grounding(cand)[1]: stu['google_search'] = len(call.arguments['queries'] or [1])
+    stu = dict(usg.get('server_tool_use') or {})
+    if any("executableCode" in p for p in parts): stu.setdefault('code_execution', sum(1 for p in parts if "executableCode" in p))
+    if call := grounding(cand)[1]: stu.setdefault('google_search', len(call.arguments['queries'] or [1]))
     if stu: usg['server_tool_use'] = stu
     return Usage(prompt_tokens=pt, completion_tokens=ct, total_tokens=tt,
         cached_tokens=cached, reasoning_tokens=reasoning, search_queries=stu.get('google_search', 0), raw=usg)
@@ -79,7 +80,8 @@ def norm_finish(resp, tcs=None):
     "Canonicalize finish_reason to OpenAI Chat values: stop, tool_calls, length, content_filter."
     reason = nested_idx(resp, 'candidates', 0, 'finishReason')
     if reason is not None: reason = reason.lower()
-    mp = dict(stop=FinishReason.stop, max_tokens=FinishReason.length, safety=FinishReason.content_filter, blocklist=FinishReason.content_filter)
+    mp = dict(stop=FinishReason.stop, max_tokens=FinishReason.length, continuation=FinishReason.length,
+        safety=FinishReason.content_filter, blocklist=FinishReason.content_filter)
     r =  mp.get(reason, reason)
     return FinishReason.tool_calls if r==FinishReason.stop and any(~L(tcs).attrgot('server')) else r 
 
@@ -134,21 +136,108 @@ def delta_index_fn(d, typ, last_typ, last_idx):
 # %% ../nbs/07_gemini.ipynb #33506d56
 def collate_raw(deltas):
     "The model content rebuilt from a stream's chunks"
-    parts = []
+    parts,start = [],0
     for ev in L(deltas).attrgot('raw'):
+        if ev.get('_continuation_start'): start = len(parts)
         for p in nested_idx(ev, 'candidates', 0, 'content', 'parts') or []:
-            last = parts[-1] if parts else None
+            last = parts[-1] if len(parts) > start else None
             if 'text' in p and last and 'text' in last and last.get('thought') == p.get('thought') and 'thoughtSignature' not in last:
                 last['text'] += p['text']
                 if 'thoughtSignature' in p: last['thoughtSignature'] = p['thoughtSignature']
             else: parts.append(dict(p))
     return dict(role='model', parts=parts)
 
+# %% ../nbs/07_gemini.ipynb #e9f0cac6
+def _merge_metadata(prev, cur):
+    res = prev.copy()
+    for k,v in cur.items():
+        old = res.get(k)
+        if isinstance(old, dict) and isinstance(v, dict): v = _merge_metadata(old, v)
+        elif isinstance(old, list) and isinstance(v, list): v = old + v
+        elif isinstance(old, (int, float)) and isinstance(v, (int, float)): v = old + v
+        res[k] = v
+    return res
+
+def _total_usage(hops):
+    res = {}
+    for u in hops: res = _merge_metadata(res, u)
+    if len(hops) > 1: res['continuation_usage'] = hops.copy()
+    return res
+
+def _continuation_token(resp, previous=None):
+    cand = nested_idx(resp, 'candidates', 0) or {}
+    token = cand.get('continuationToken')
+    if cand.get('finishReason') == 'CONTINUATION' and token != previous and not resp.get('promptFeedback'): return token
+
+def _merge_response(prev, cur):
+    res = prev | cur
+    if not (prev.get('candidates') or cur.get('candidates')): return res
+    a = nested_idx(prev, 'candidates', 0) or {}
+    b = deepcopy(nested_idx(cur, 'candidates', 0) or {})
+    ap,bp = nested_idx(a, 'content', 'parts') or [], nested_idx(b, 'content', 'parts') or []
+    ag,bg = a.get('groundingMetadata') or {}, b.get('groundingMetadata') or {}
+    for support in bg.get('groundingSupports', []):
+        if 'groundingChunkIndices' in support:
+            support['groundingChunkIndices'] = [i + len(ag.get('groundingChunks', [])) for i in support['groundingChunkIndices']]
+        if (seg := support.get('segment')) is not None: seg['partIndex'] = seg.get('partIndex', 0) + len(ap)
+    cand = a | b
+    if a.get('content') or b.get('content'):
+        cand['content'] = (a.get('content') or {}) | (b.get('content') or {}) | dict(parts=ap + bp)
+    if ag or bg: cand['groundingMetadata'] = _merge_metadata(ag, bg)
+    if b.get('finishReason'):
+        for k in ('continuationToken', 'finishMessage'):
+            if k not in b: cand.pop(k, None)
+    res['candidates'] = [cand]
+    return res
+
+# %% ../nbs/07_gemini.ipynb #594ca72a
+class _GeminiStream:
+    def __init__(self, call, body):
+        self.call,self.body = call,body
+        self.stopped = self.continued = False
+
+    async def __aiter__(self):
+        hops,token = [],self.body.get('continuationToken')
+        while True:
+            hop,usg = {},None
+            resp = await self.call(self.body | dict(continuationToken=token) if token else self.body)
+            async for ev in resp:
+                ev,first = obj2dict(ev),not hop
+                hop = _merge_response(hop, ev)
+                usg = norm_usage(hop | dict(usageMetadata=dict(hop.get('usageMetadata') or {})))
+                out = ev | dict(usageMetadata=_total_usage(hops + [usg.raw if usg else {}]), _continuation_start=first)
+                if not self.stopped and _continuation_token(hop, token):
+                    out = out | dict(candidates=[dict(c, finishReason=None) for c in out.get('candidates', [])])
+                yield out
+            if usg: hops.append(usg.raw)
+            token = None if self.stopped else _continuation_token(hop, token)
+            if not token: return
+            self.continued = True
+
+async def request(call, body, stream=False):
+    "Send a Gemini generation, resuming only at explicit continuation boundaries."
+    if stream: return _GeminiStream(call, body)
+    res,hops,token = {},[],body.get('continuationToken')
+    while True:
+        resp = obj2dict(await call(body | dict(continuationToken=token) if token else body))
+        if usg := norm_usage(resp): hops.append(usg.raw)
+        res = _merge_response(res, resp)
+        token = _continuation_token(resp, token)
+        if not token:
+            if hops: res['usageMetadata'] = _total_usage(hops)
+            return res
+
 # %% ../nbs/07_gemini.ipynb #328af4d5
 @delegates(mk_acollect_stream, but=['index_fn', 'api_name'])
 async def acollect_stream(resp, **kwargs):
     res = mk_acollect_stream(norm_and_yield(resp, norm_sse_event), index_fn=delta_index_fn, api_name='gemini', **kwargs)
-    async for o in res: yield o
+    try:
+        async for o in res:
+            if isinstance(resp, _GeminiStream) and isinstance(o, Status): resp.stopped = True
+            yield o
+    except APIError as e:
+        if isinstance(resp, _GeminiStream) and resp.continued: e.retryable = False  # never replay a completed segment
+        raise
 
 # %% ../nbs/07_gemini.ipynb #58d0cb74
 def denorm_tool_use(p:ToolUse):
@@ -311,6 +400,7 @@ def get_hdrs(api_key=None, oauth_token=None):
 # %% ../nbs/07_gemini.ipynb #4ee3891f
 def cost(usage, m):
     raw = usage.raw
+    if hops := raw.get('continuation_usage'): return sum(cost(Usage(raw=u), m) for u in hops)
     prompt_tot = raw.get('promptTokenCount', 0)
     tier = price_tier(m, prompt_tot)
     in_rate    = tier_rate(m, 'input_cost_per_token', tier)
@@ -324,14 +414,14 @@ def cost(usage, m):
     thoughts = raw.get('thoughtsTokenCount', 0) or 0
     cands    = raw.get('candidatesTokenCount', 0) or 0
     reason_rate = m.get('output_cost_per_reasoning_token') or out_rate
-    cost  = in_txt * in_rate + cands * out_rate
-    cost += cached * cache_rate
-    cost += audio  * (audio_rate or 0)
-    cost += thoughts * reason_rate
-    return cost
+    res  = in_txt * in_rate + cands * out_rate
+    res += cached * cache_rate
+    res += audio  * (audio_rate or 0)
+    res += thoughts * reason_rate
+    return res
 
 # %% ../nbs/07_gemini.ipynb #f7c0b989
 api_ns = dict(norm_tool_calls=norm_tool_calls, norm_parts=norm_parts, norm_finish=norm_finish, norm_usage=norm_usage,
     acollect_stream=acollect_stream, raw_msg=raw_msg, collate_raw=collate_raw, mk_payload=mk_payload, cost=cost, get_hdrs=get_hdrs,
-    endpoint=endpoint)
+    endpoint=endpoint, request=request)
 api_registry.register('gemini', **api_ns)

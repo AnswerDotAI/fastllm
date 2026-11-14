@@ -7,7 +7,6 @@ _proc/
 *.mp3
 
 *.bak
-.gitattributes
 .last_checked
 .gitconfig
 *.bak

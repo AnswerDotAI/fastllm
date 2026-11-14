@@ -219,7 +219,7 @@ opus46 = "claude-opus-4-6"
 opus48 = "claude-opus-4-8"
 opus5 = "claude-opus-5"
 opus = opus55 = "claude-opus-5-5"
-fable = 'claude-fable-5-1'
+fable = 'claude-fable-5-2'
 claude_models = haik55, sonn55, opus55, fable
 gpt55 = "gpt-5.5"
 codex53spark = "gpt-5.3-codex-spark"
@@ -259,8 +259,8 @@ register_model_info('gpt-5.4', vendor_name='openai', base='gpt-5.4', supports_we
 register_model_info('glm-5.3-flash', vendor_name='zai', base='glm-5.3-flash', reasoning_effort_levels=['low', 'high', 'max'])
 register_model_info('accounts/fireworks/models/glm-5p3-flash', vendor_name='fireworks_ai', base='glm-5.3-flash', base_vendor_name='zai')
 
-for m in ('gemini-4-argon', 'models/gemini-4-argon'):
-    register_model_info(m, vendor_name='gemini', base='gemini-4-argon', max_output_tokens=65_536)
+for m in ('gemini-4-argon', 'gemini-4-hydrogen', 'gemini-4-carbon'):
+    for n in (m, f'models/{m}'): register_model_info(n, vendor_name='gemini', base=m, max_output_tokens=65_536)
 register_model_info('accounts/fireworks/models/qwen3p8-max', vendor_name='fireworks_ai',
     base='accounts/fireworks/models/qwen3p8-max', max_output_tokens=65_536)
 
