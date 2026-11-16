@@ -2,6 +2,14 @@
 
 <!-- do not remove -->
 
+## 0.0.71
+
+### New Features
+
+- Validate structured output tool call args against tool signature, raising TypeError with model, tool and args on mismatch ([#128](https://github.com/AnswerDotAI/fastllm/issues/128))
+- Gemini: follow CONTINUATION tokens across requests, merge parts/grounding/usage, price per hop; add gemini-4 hydrogen/carbon, fable 5.2 ([#127](https://github.com/AnswerDotAI/fastllm/issues/127))
+
+
 ## 0.0.70
 
 ### New Features
