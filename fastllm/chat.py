@@ -9,7 +9,7 @@ __all__ = ['effort', 'contents', 'stop_reason', 'cite_footnote', 'postproc', 'Re
            'StopSequencesCallback', 'StreamAccum', 'adisplay_stream']
 
 # %% ../nbs/09_chat.ipynb #d5a3bc1f
-import secrets
+import secrets, inspect
 from typing import Optional,Callable
 from fastcore.funccall import mk_ns, call_func, call_func_async, get_schema
 from fastcore.utils import *
@@ -94,7 +94,10 @@ async def structured(
     if not forced: sp = f"{part_txt(sp)}\n\nAnswer by calling the `{name}` tool.".strip()
     r = await acomplete(msgs, m, system=sp, tools=[t], tool_choice=name if forced else 'auto', **kwargs)
     if not r.tool_calls: raise ValueError(f"{m} answered without calling `{name}`")
-    return tool(**r.tool_calls[0].arguments)
+    args = r.tool_calls[0].arguments
+    try: inspect.signature(tool).bind(**args)
+    except TypeError as e: raise TypeError(f"{m} called `{name}` with arguments that don't fit it ({e}): {args}") from None
+    return tool(**args)
 
 # %% ../nbs/09_chat.ipynb #1fe8a9bc
 def _has_search(info): return bool(info.get('search_context_cost_per_query') or info.get('supports_web_search'))
