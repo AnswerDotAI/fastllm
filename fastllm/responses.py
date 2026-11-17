@@ -456,7 +456,7 @@ async def events(self:AsyncResponses, turn, finalize=None, stream=None):
             for event in state.close_thinking(): yield event
             usage,stream = (comp.usage if usage is None else usage + comp.usage),None
             results = await self.server_results(turn, comp)
-            if not results or len(results) < len(comp.tool_calls): break
+            if not results or len(results) < len([t for t in comp.tool_calls if not t.server]): break
             step = _visible_parts(comp.message.content, results)
             for event in state.end_step(step): yield event
             prior += step
