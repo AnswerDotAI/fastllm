@@ -2,6 +2,13 @@
 
 <!-- do not remove -->
 
+## 0.0.72
+
+### New Features
+
+- Make `codex_info` return None plan and expiry instead of raising when the access token cannot be decoded ([#129](https://github.com/AnswerDotAI/fastllm/issues/129))
+
+
 ## 0.0.71
 
 ### New Features
