@@ -49,7 +49,8 @@ def codex_tokens(auth):
 # %% ../nbs/05_codex.ipynb #46864051
 def codex_info(tokens):
     "Plan type and expiry time of the access token in `tokens`"
-    claims = jwt_claims(tokens['access_token'])
+    try: claims = jwt_claims(tokens['access_token'])
+    except (ValueError, IndexError): claims = {}
     return dict(plan=claims.get('https://api.openai.com/auth', {}).get('chatgpt_plan_type'), expires=claims.get('exp'))
 
 # %% ../nbs/05_codex.ipynb #28410636
