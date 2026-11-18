@@ -2,6 +2,13 @@
 
 <!-- do not remove -->
 
+## 0.0.73
+
+### New Features
+
+- gpt 6.2 ([#131](https://github.com/AnswerDotAI/fastllm/issues/131))
+
+
 ## 0.0.72
 
 ### New Features
