@@ -223,7 +223,7 @@ fable = 'claude-fable-5-2'
 claude_models = haik55, sonn55, opus55, fable
 gpt55 = "gpt-5.5"
 codex53spark = "gpt-5.3-codex-spark"
-sol,terra,luna,astra = gpt6s = 'gpt-6.1-sol gpt-6.1-terra gpt-6-luna gpt-6-astra'.split()
+sol,terra,luna,astra = gpt6s = 'gpt-6.2-sol gpt-6.1-terra gpt-6-luna gpt-6.2-astra'.split()
 flash = 'models/gemini-3.8-flash'
 
 # %% ../nbs/00_types.ipynb #583e017b
