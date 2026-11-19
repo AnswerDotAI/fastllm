@@ -2,6 +2,13 @@
 
 <!-- do not remove -->
 
+## 0.0.75
+
+### New Features
+
+- Add model name constants for Gemini, Meta Muse and Fireworks families; use them in registrations and add older GPT-6 Codex sub-models ([#133](https://github.com/AnswerDotAI/fastllm/issues/133))
+
+
 ## 0.0.74
 
 ### New Features
