@@ -2,6 +2,13 @@
 
 <!-- do not remove -->
 
+## 0.0.74
+
+### New Features
+
+- neon ([#132](https://github.com/AnswerDotAI/fastllm/issues/132))
+
+
 ## 0.0.73
 
 ### New Features
