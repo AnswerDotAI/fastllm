@@ -306,16 +306,17 @@ def denorm_tool_choice(v):
 
 # %% ../nbs/07_gemini.ipynb #310f1e75
 _gem_think_budgets = dict(minimal=128, low=1024, medium=2048, high=4096)
-_gem_think_levels  = dict(minimal='low', low='low', medium='medium', high='high')
+_gem_think_levels  = dict(minimal='low', low='low', medium='medium', high='high', xhigh='xhigh')
 
 def denorm_reasoning(v, model=''):
     "Map canonical reasoning_effort to Gemini thinkingConfig (uses thinkingLevel for Gemini 3+)."
     if v is None or isinstance(v, dict): return v
-    if 'gemini-4' in model and isinstance(v, str): v = resolve_effort(['low','medium','high'], v) or 'low'
-    if not isinstance(v, str) or v not in _gem_think_budgets:
-        raise ValueError(f"Invalid reasoning effort for Gemini: {v!r}; expected one of {list(_gem_think_budgets)}, a dict, or None")
-    if 'gemini-3' in model or 'gemini-4' in model: return {'thinkingLevel': _gem_think_levels[v], 'includeThoughts': True}
-    return {'thinkingBudget': _gem_think_budgets[v], 'includeThoughts': True}
+    if 'gemini-4' in model and isinstance(v, str): v = resolve_effort(effort_levels(get_model_info(model)), v) or 'low'
+    use_levels = 'gemini-3' in model or 'gemini-4' in model
+    values = _gem_think_levels if use_levels else _gem_think_budgets
+    if not isinstance(v, str) or v not in values:
+        raise ValueError(f"Invalid reasoning effort for Gemini: {v!r}; expected one of {list(values)}, a dict, or None")
+    return {'thinkingLevel' if use_levels else 'thinkingBudget': values[v], 'includeThoughts': True}
 
 # %% ../nbs/07_gemini.ipynb #8fa9fbb8
 def denorm_web_search(v): return {"googleSearch": {}}

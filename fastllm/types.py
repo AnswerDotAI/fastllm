@@ -6,12 +6,12 @@
 __all__ = ['FinishReason', 'api_registry', 'vendor_auth', 'vendor_hdrs', 'model_prices_url', 'sample_img_url', 'sample_doms',
            'haik45', 'haik', 'haik55', 'sonn45', 'sonn46', 'sonn5', 'sonn', 'sonn55', 'opus46', 'opus48', 'opus5',
            'opus', 'opus55', 'fable', 'claude_models', 'gpt55', 'codex53spark', 'sol', 'terra', 'luna', 'astra',
-           'gpt6s', 'flash', 'model_info_registry', 'modern_llm', 'effort_codes', 'mimo_v25_common', 'codex_pricing',
-           'Usage', 'APIRegistry', 'mk_completion', 'rebuild_parts', 'fn_schema', 'payload_kwargs', 'provider_req',
-           'get_api_key', 'wrap_typed', 'unwrap_typed', 'resize_b64', 'model_prices_meta', 'infer_api_name',
-           'get_model_meta', 'register_model_info', 'get_model_info', 'effort_code', 'effort_levels', 'resolve_effort',
-           'effort_kwargs', 'register_sub_model', 'find_models', 'get_model_pricing', 'approx_pricing',
-           'is_deepseek_peak_hour', 'price_tier', 'tier_rate']
+           'gpt6s', 'flash', 'neon', 'model_info_registry', 'modern_llm', 'effort_codes', 'mimo_v25_common',
+           'codex_pricing', 'Usage', 'APIRegistry', 'mk_completion', 'rebuild_parts', 'fn_schema', 'payload_kwargs',
+           'provider_req', 'get_api_key', 'wrap_typed', 'unwrap_typed', 'resize_b64', 'model_prices_meta',
+           'infer_api_name', 'get_model_meta', 'register_model_info', 'get_model_info', 'effort_code', 'effort_levels',
+           'resolve_effort', 'effort_kwargs', 'register_sub_model', 'find_models', 'get_model_pricing',
+           'approx_pricing', 'is_deepseek_peak_hour', 'price_tier', 'tier_rate']
 
 # %% ../nbs/00_types.ipynb #b4d047fd
 import httpx2, base64, io
@@ -225,6 +225,7 @@ gpt55 = "gpt-5.5"
 codex53spark = "gpt-5.3-codex-spark"
 sol,terra,luna,astra = gpt6s = 'gpt-6.2-sol gpt-6.1-terra gpt-6-luna gpt-6.2-astra'.split()
 flash = 'models/gemini-3.8-flash'
+neon = 'models/gemini-4-neon'
 
 # %% ../nbs/00_types.ipynb #583e017b
 model_info_registry = {}
@@ -259,7 +260,7 @@ register_model_info('gpt-5.4', vendor_name='openai', base='gpt-5.4', supports_we
 register_model_info('glm-5.3-flash', vendor_name='zai', base='glm-5.3-flash', reasoning_effort_levels=['low', 'high', 'max'])
 register_model_info('accounts/fireworks/models/glm-5p3-flash', vendor_name='fireworks_ai', base='glm-5.3-flash', base_vendor_name='zai')
 
-for m in ('gemini-4-argon', 'gemini-4-hydrogen', 'gemini-4-carbon'):
+for m in ('gemini-4-argon', 'gemini-4-hydrogen', 'gemini-4-carbon', 'gemini-4-neon'):
     for n in (m, f'models/{m}'): register_model_info(n, vendor_name='gemini', base=m, max_output_tokens=65_536)
 register_model_info('accounts/fireworks/models/qwen3p8-max', vendor_name='fireworks_ai',
     base='accounts/fireworks/models/qwen3p8-max', max_output_tokens=65_536)
