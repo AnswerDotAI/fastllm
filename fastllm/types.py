@@ -6,12 +6,14 @@
 __all__ = ['FinishReason', 'api_registry', 'vendor_auth', 'vendor_hdrs', 'model_prices_url', 'sample_img_url', 'sample_doms',
            'haik45', 'haik', 'haik55', 'sonn45', 'sonn46', 'sonn5', 'sonn', 'sonn55', 'opus46', 'opus48', 'opus5',
            'opus', 'opus55', 'fable', 'claude_models', 'gpt55', 'codex53spark', 'sol', 'terra', 'luna', 'astra',
-           'gpt6s', 'flash', 'neon', 'model_info_registry', 'modern_llm', 'effort_codes', 'mimo_v25_common',
-           'codex_pricing', 'Usage', 'APIRegistry', 'mk_completion', 'rebuild_parts', 'fn_schema', 'payload_kwargs',
-           'provider_req', 'get_api_key', 'wrap_typed', 'unwrap_typed', 'resize_b64', 'model_prices_meta',
-           'infer_api_name', 'get_model_meta', 'register_model_info', 'get_model_info', 'effort_code', 'effort_levels',
-           'resolve_effort', 'effort_kwargs', 'register_sub_model', 'find_models', 'get_model_pricing',
-           'approx_pricing', 'is_deepseek_peak_hour', 'price_tier', 'tier_rate']
+           'gpt6s', 'flashlite', 'flash', 'hydrogen', 'neon', 'carbon', 'argon', 'gemini4s', 'gemini_models', 'muse',
+           'muse_contrib', 'meta_models', 'qwenplus', 'qwen', 'minimax', 'kimi', 'glmflash', 'glm', 'dsflash',
+           'fw_models', 'model_info_registry', 'modern_llm', 'effort_codes', 'mimo_v25_common', 'codex_pricing',
+           'Usage', 'APIRegistry', 'mk_completion', 'rebuild_parts', 'fn_schema', 'payload_kwargs', 'provider_req',
+           'get_api_key', 'wrap_typed', 'unwrap_typed', 'resize_b64', 'model_prices_meta', 'infer_api_name',
+           'get_model_meta', 'register_model_info', 'get_model_info', 'effort_code', 'effort_levels', 'resolve_effort',
+           'effort_kwargs', 'register_sub_model', 'find_models', 'get_model_pricing', 'approx_pricing',
+           'is_deepseek_peak_hour', 'price_tier', 'tier_rate']
 
 # %% ../nbs/00_types.ipynb #b4d047fd
 import httpx2, base64, io
@@ -224,8 +226,14 @@ claude_models = haik55, sonn55, opus55, fable
 gpt55 = "gpt-5.5"
 codex53spark = "gpt-5.3-codex-spark"
 sol,terra,luna,astra = gpt6s = 'gpt-6.2-sol gpt-6.1-terra gpt-6-luna gpt-6.2-astra'.split()
+flashlite = 'models/gemini-3.5-flash-lite'
 flash = 'models/gemini-3.8-flash'
-neon = 'models/gemini-4-neon'
+hydrogen,neon,carbon,argon = gemini4s = [f'models/gemini-4-{o}' for o in 'hydrogen neon carbon argon'.split()]
+gemini_models = flashlite, flash, *gemini4s
+muse,muse_contrib = meta_models = 'muse-spark-1.3', 'muse-spark-1.3-contributor'
+_fw = 'accounts/fireworks/models/'
+qwenplus,qwen,minimax,kimi,glmflash,glm,dsflash = fw_models = [
+    f'{_fw}{o}' for o in 'qwen3p7-plus qwen3p8-max minimax-m3p1-flash kimi-k3 glm-5p3-flash glm-5p3 deepseek-v4p1-flash'.split()]
 
 # %% ../nbs/00_types.ipynb #583e017b
 model_info_registry = {}
@@ -258,12 +266,12 @@ modern_llm = dict(supports_function_calling=True, supports_tool_choice=True, sup
 register_model_info('gpt-5.4', vendor_name='openai', base='gpt-5.4', supports_web_search=True)
 
 register_model_info('glm-5.3-flash', vendor_name='zai', base='glm-5.3-flash', reasoning_effort_levels=['low', 'high', 'max'])
-register_model_info('accounts/fireworks/models/glm-5p3-flash', vendor_name='fireworks_ai', base='glm-5.3-flash', base_vendor_name='zai')
+register_model_info(glmflash, vendor_name='fireworks_ai', base='glm-5.3-flash', base_vendor_name='zai')
 
-for m in ('gemini-4-argon', 'gemini-4-hydrogen', 'gemini-4-carbon', 'gemini-4-neon'):
-    for n in (m, f'models/{m}'): register_model_info(n, vendor_name='gemini', base=m, max_output_tokens=65_536)
-register_model_info('accounts/fireworks/models/qwen3p8-max', vendor_name='fireworks_ai',
-    base='accounts/fireworks/models/qwen3p8-max', max_output_tokens=65_536)
+for m in gemini4s:
+    b = m.removeprefix('models/')
+    for n in (b, m): register_model_info(n, vendor_name='gemini', base=b, max_output_tokens=65_536)
+register_model_info(qwen, vendor_name='fireworks_ai', base=qwen, max_output_tokens=65_536)
 
 # %% ../nbs/00_types.ipynb #0a2d3bff
 register_model_info(
@@ -354,7 +362,7 @@ for model in claude_models: register_sub_model(model, 'claude_code', 'anthropic'
 # %% ../nbs/00_types.ipynb #bb0c4c2a
 # Codex serves only the suffixed names; bare `gpt-5.6` is rejected with a ChatGPT account.
 # Its window accepts 371,331 input tokens and rejects 371,981 on all three GPT-5.6 models.
-for model in gpt6s: register_sub_model(model, 'codex', 'openai', max_input_tokens=371_000)
+for model in (*gpt6s, 'gpt-6.1-sol', 'gpt-6-astra'): register_sub_model(model, 'codex', 'openai', max_input_tokens=371_000)
 
 # %% ../nbs/00_types.ipynb #004c0b30
 def find_models(substr:str):
