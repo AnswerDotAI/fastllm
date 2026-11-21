@@ -8,12 +8,12 @@ __all__ = ['FinishReason', 'api_registry', 'vendor_auth', 'vendor_hdrs', 'model_
            'opus', 'opus55', 'fable', 'claude_models', 'gpt55', 'codex53spark', 'sol', 'terra', 'luna', 'astra',
            'gpt6s', 'flashlite', 'flash', 'hydrogen', 'neon', 'carbon', 'argon', 'gemini4s', 'gemini_models', 'muse',
            'muse_contrib', 'meta_models', 'qwenplus', 'qwen', 'minimax', 'kimi', 'glmflash', 'glm', 'dsflash',
-           'fw_models', 'model_info_registry', 'modern_llm', 'effort_codes', 'mimo_v25_common', 'codex_pricing',
-           'Usage', 'APIRegistry', 'mk_completion', 'rebuild_parts', 'fn_schema', 'payload_kwargs', 'provider_req',
-           'get_api_key', 'wrap_typed', 'unwrap_typed', 'resize_b64', 'model_prices_meta', 'infer_api_name',
-           'get_model_meta', 'register_model_info', 'get_model_info', 'effort_code', 'effort_levels', 'resolve_effort',
-           'effort_kwargs', 'register_sub_model', 'find_models', 'get_model_pricing', 'approx_pricing',
-           'is_deepseek_peak_hour', 'price_tier', 'tier_rate']
+           'fw_models', 'model_aliases', 'model_info_registry', 'modern_llm', 'effort_codes', 'mimo_v25_common',
+           'codex_pricing', 'Usage', 'APIRegistry', 'mk_completion', 'rebuild_parts', 'fn_schema', 'payload_kwargs',
+           'provider_req', 'get_api_key', 'wrap_typed', 'unwrap_typed', 'resize_b64', 'model_prices_meta',
+           'infer_api_name', 'get_model_meta', 'register_model_info', 'get_model_info', 'effort_code', 'effort_levels',
+           'resolve_effort', 'effort_kwargs', 'register_sub_model', 'find_models', 'get_model_pricing',
+           'approx_pricing', 'is_deepseek_peak_hour', 'price_tier', 'tier_rate']
 
 # %% ../nbs/00_types.ipynb #b4d047fd
 import httpx2, base64, io
@@ -234,6 +234,10 @@ muse,muse_contrib = meta_models = 'muse-spark-1.3', 'muse-spark-1.3-contributor'
 _fw = 'accounts/fireworks/models/'
 qwenplus,qwen,minimax,kimi,glmflash,glm,dsflash = fw_models = [
     f'{_fw}{o}' for o in 'qwen3p7-plus qwen3p8-max minimax-m3p1-flash kimi-k3 glm-5p3-flash glm-5p3 deepseek-v4p1-flash'.split()]
+_alias_names = '''haik45 haik haik55 sonn45 sonn46 sonn5 sonn sonn55 opus46 opus48 opus5 opus opus55 fable
+    gpt55 codex53spark sol terra luna astra flashlite flash hydrogen neon carbon argon
+    muse muse_contrib qwenplus qwen minimax kimi glmflash glm dsflash'''
+model_aliases = {k: globals()[k] for k in _alias_names.split()}
 
 # %% ../nbs/00_types.ipynb #583e017b
 model_info_registry = {}
