@@ -2,6 +2,13 @@
 
 <!-- do not remove -->
 
+## 0.0.76
+
+### New Features
+
+- Add `model_aliases` and `resolve_model` to expand short model names with optional vendor prefixes ([#134](https://github.com/AnswerDotAI/fastllm/issues/134))
+
+
 ## 0.0.75
 
 ### New Features
