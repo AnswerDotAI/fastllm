@@ -16,7 +16,7 @@ Run `pip install python-fastllm` or clone from github and install locally.
 ``` python
 from aidialog.msg_parts import Msg, Part, Text, Thinking, ToolUse, InputImage, mk_tool_res_msg, Completion
 from fastllm.acomplete import acomplete
-from fastllm.types import sample_img_url, sample_doms, sonn, sonn46
+from fastllm.types import sample_img_url, sample_doms, sonn, luna, flash
 import asyncio, json
 ```
 
@@ -45,7 +45,7 @@ mtok = 1024
 Use the same `acomplete` interface with Claude, GPT, Gemini, or Kimi. Set `model` and any provider-specific routing arguments:
 
 ``` python
-models = [(sonn, {}), ('gpt-4o-mini', {}), ('models/gemini-3-flash-preview', {}),
+models = [(sonn, {}), (luna, {}), (flash, {}),
     ('accounts/fireworks/models/kimi-k3', dict(vendor_name='fireworks_ai'))]
 for name, kw in models:
     r = await acomplete([user("Translate 'hello' into French. Return only the translation.")],
@@ -54,14 +54,14 @@ for name, kw in models:
     print(f"{name}: {text.strip()}")
 ```
 
-    claude-sonnet-5: Bonjour
-    gpt-4o-mini: Bonjour
-    models/gemini-3-flash-preview: Bonjour
-    accounts/fireworks/models/kimi-k3: Bonjour
+    claude-sonnet-5-5: Bonjour
+    gpt-6-luna: Bonjour
+    models/gemini-3.8-flash: Bonjour
+    accounts/fireworks/models/kimi-k3: bonjour
 
 ## System prompts
 
-Pass `system` to supply a system prompt. `fastllm` translates it to the provider’s field: Anthropic `system`, OpenAI Responses `instructions`, or Gemini `system_instruction`.
+Pass `system` to supply a system prompt. `fastllm` translates it to the provider’s format: Anthropic `system`, a leading OpenAI Responses `developer` message, or Gemini `system_instruction`.
 
 ``` python
 sys = "You are a pirate chef. Always respond in pirate speak and mention food. Use one short sentence."
@@ -70,11 +70,11 @@ print("Claude: ", end='')
 r = await stream([user("What should I do today?")], model=sonn, system=sys, max_tokens=mtok)
 
 print("Gemini: ", end='')
-r = await stream([user("What should I do today?")], model='models/gemini-3-flash-preview', system=sys, max_tokens=mtok)
+r = await stream([user("What should I do today?")], model=flash, system=sys, max_tokens=mtok)
 ```
 
-    Claude: Arrr, chart a course fer the galley and cook up a hearty stew, matey!
-    Gemini: Sharpen yer cutlass and feast on spicy shark stew, ye scurvy dog!
+    Claude: Arr, matey, hoist yer sails and hunt fer treasure, then feast on a hearty stew o' salted pork and hardtack!
+    Gemini: Stir the kraken stew and hoist the mainsail, ye scurvy dog!
 
 ## Tool calling
 
@@ -91,7 +91,7 @@ print("Tool calls:", r1.tool_calls)
 
     - ⏳ `get_weather(city="Paris")` ⏳
 
-    Tool calls: [ToolUse(raw={'caller': {'type': 'direct'}}, cache_control=None, id='toolu_01XacBpJHnsjtPWJWr55nA2m', name='get_weather', arguments={'city': 'Paris'}, server=False, text=None)]
+    Tool calls: [ToolUse(raw={'caller': {'type': 'direct'}}, cache_control=None, id='toolu_01YV9njAjzo17oXmCuaLw6qz', name='get_weather', arguments={'city': 'Paris'}, server=False, text=None)]
 
 ``` python
 msgs += [r1.message, mk_tool_res_msg(r1.tool_calls, ['22°C, sunny with light clouds']),
@@ -99,17 +99,17 @@ msgs += [r1.message, mk_tool_res_msg(r1.tool_calls, ['22°C, sunny with light cl
 r2 = await stream(msgs, model=sonn, tools=tools, max_tokens=mtok)
 ```
 
-    No, a jacket isn't necessary — it's a mild, sunny 22°C day.
+    At 22°C and sunny, you probably won't need a jacket, though a light layer could help in the evening.
 
 ## Tool Choice
 
-Control whether the model must use tools, can’t use tools, or decides on its own:
+Control whether the model must use tools, can’t use tools, or decides on its own. The current Claude models reject `required` and named tool choices. This example uses `luna`:
 
 ``` python
-r = await acomplete([user('Hello there!')], model=sonn, tools=tools, tool_choice='required', max_tokens=mtok)
+r = await acomplete([user('Hello there!')], model=luna, tools=tools, tool_choice='required', max_tokens=mtok)
 print("Required:", [tc.name for tc in r.tool_calls])
 
-r = await acomplete([user("What's the weather?")], model=sonn, tools=tools, tool_choice='none', max_tokens=mtok)
+r = await acomplete([user("What's the weather?")], model=luna, tools=tools, tool_choice='none', max_tokens=mtok)
 print("None:", r.tool_calls)
 ```
 
@@ -122,7 +122,7 @@ Set `reasoning_effort` to `low`, `medium`, or `high` for supported models. The a
 
 ``` python
 print("Claude: ", end='')
-r = await stream([user("What is 127 × 849? Return just the number.")], model=sonn46,
+r = await stream([user("What is 127 × 849? Return just the number.")], model=sonn,
     reasoning_effort='low', max_tokens=8192)
 for p in r.message.content:
     if isinstance(p, Thinking): print(f"Thinking excerpt: {p.text[:150]}...")
@@ -134,10 +134,11 @@ for p in r.message.content:
     if isinstance(p, Thinking): print(f"Thinking excerpt: {p.text[:150]}...")
 ```
 
-    Claude: 107823
-    Thinking excerpt: 127 × 849 = 127 × 800 + 127 × 49 = 101600 + 6223 = 107823...
+    Claude: 127 × 849 = 127 × 800 + 127 × 49 = 101600 + 6223 = 107823
+
+    107823
     Kimi: 107823
-    Thinking excerpt: 127 × 849 = 107823. Let me verify: 127*800=101600; 127*49=6223; total 107823. Return just number....
+    Thinking excerpt: The user wants 127 × 849. Let me compute: 127 × 849 = 127 × (850 - 1) = 107950 - 127 = 107823. Check: 849 × 127. 849 × 100 = 84900, 849 × 27 = 22923, ...
 
 ## Web Search (Server Tools)
 
@@ -146,7 +147,7 @@ OpenAI’s Responses API supports server-side web search. Server tool calls are 
 ``` python
 ws_tools = [{"type": "web_search_preview"}]
 r = await acomplete([user("What is the latest Python release? Reply with the version number only.")],
-    model='gpt-4o-mini', tools=ws_tools, max_tokens=512)
+    model=luna, tools=ws_tools, max_tokens=512)
 print("Server tools used:", [tc.name for tc in r.tool_calls if tc.server])
 ```
 
@@ -169,8 +170,8 @@ r2 = await acomplete([user("What is Saturn's mass? Answer in one sentence.")],
 print("Second call: cache read tokens", r2.usage.cached_tokens)
 ```
 
-    First call: cache creation tokens 2204
-    Second call: cache read tokens 2204
+    First call: cache creation tokens 2203
+    Second call: cache read tokens 2203
 
 ## Media inputs
 
@@ -179,16 +180,18 @@ Use `InputImage` with a model that supports images. The example sends the same i
 ``` python
 img_msg = Msg(role='user', content=[InputImage(sample_img_url), Text('List three visible objects, using nouns only.')])
 
-for name, kw in [(sonn, {}), ('gpt-4o-mini', {}), ('models/gemini-3-flash-preview', {})]:
+for name, kw in [(sonn, {}), (luna, {}), (flash, {})]:
     print(f"{name}: ", end='')
     r = await stream([img_msg], model=name, max_tokens=mtok, **kw)
 ```
 
-    claude-sonnet-5: Mountains, lake, trees
-    gpt-4o-mini: 1. Mountains  
-    2. Trees  
-    3. Lake
-    models/gemini-3-flash-preview: planks, lake, mountains
+    claude-sonnet-5-5: 1. Mountains
+    2. Lake
+    3. Trees
+    gpt-6-luna: Mountains, trees, lake
+    models/gemini-3.8-flash: 1. Mountains
+    2. Lake
+    3. Deck
 
 The media adapters support the following part types:
 

@@ -209,7 +209,7 @@ def denorm_web_search(v):
     return t
 
 # %% ../nbs/04_oai_responses.ipynb #18346f93
-def denorm_system(sp): return sys_text(part_txt(sp))
+def denorm_system(sp): return dict(type='message', role='developer', content=[{'type': 'input_text', 'text': sys_text(part_txt(sp))}])
 
 # %% ../nbs/04_oai_responses.ipynb #8c06da0c
 def denorm_user(m:Msg):
@@ -250,9 +250,10 @@ def denorm_tool_result(m:ToolResult):
 @delegates(payload_kwargs)
 def mk_payload(msgs, model, **kwargs):
     payload = dict(model=model)
-    if msgs: payload['input'] = denorm_msgs(msgs)
+    inp = denorm_msgs(msgs) if msgs else []
+    if (sp:=kwargs.get('system')) and not kwargs.get('previous_response_id'): inp = [denorm_system(sp), *inp]
+    if inp: payload['input'] = inp
     if stream:=kwargs.get('stream'):        payload['stream'] = True
-    if sp:=kwargs.get('system'):            payload['instructions'] = denorm_system(sp)
     if mt:=kwargs.get('max_tokens'):        payload['max_output_tokens'] = mt
     if tools:=kwargs.get('tools'):          payload['tools'] = denorm_tool_schs(tools)
     if tchc:=kwargs.get('tool_choice'):     payload['tool_choice'] = denorm_tool_choice(tchc)
