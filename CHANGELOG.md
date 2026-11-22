@@ -2,6 +2,13 @@
 
 <!-- do not remove -->
 
+## 0.0.78
+
+### New Features
+
+- Send OpenAI Responses system prompt as leading developer input message instead of instructions unless `previous_response_id` is set ([#136](https://github.com/AnswerDotAI/fastllm/issues/136))
+
+
 ## 0.0.77
 
 ### New Features
