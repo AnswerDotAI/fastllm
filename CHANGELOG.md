@@ -2,6 +2,13 @@
 
 <!-- do not remove -->
 
+## 0.0.77
+
+### New Features
+
+- move out argon ([#135](https://github.com/AnswerDotAI/fastllm/issues/135))
+
+
 ## 0.0.76
 
 ### New Features
