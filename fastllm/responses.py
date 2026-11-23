@@ -478,16 +478,24 @@ async def events(self:AsyncResponses, turn, finalize=None, stream=None):
 @patch
 def serve(self:AsyncResponses, turn, finalize=None, stream=None, timeout=None):
     "The frames of `events`, from a task that outlives its reader, so a disconnected client still gets its turn finalized"
-    q = asyncio.Queue()
+    q,closed = asyncio.Queue(),False
     async def _run():
         try:
             async with asyncio.timeout(timeout):
-                async for frame in self.events(turn, finalize=finalize, stream=stream): q.put_nowait(frame)
-        except TimeoutError: q.put_nowait(response_event('error', 0, code='timeout', message=f'turn exceeded {timeout}s', param=None))
-        finally: q.put_nowait(None)
+                async for frame in self.events(turn, finalize=finalize, stream=stream):
+                    if not closed: q.put_nowait(frame)
+        except TimeoutError:
+            if not closed: q.put_nowait(response_event('error', 0, code='timeout', message=f'turn exceeded {timeout}s', param=None))
+        finally:
+            if not closed: q.put_nowait(None)
     t = asyncio.create_task(_run())
     self.tasks.add(t)
     t.add_done_callback(self.tasks.discard)
     async def _frames():
-        while (frame := await q.get()) is not None: yield frame
+        nonlocal closed
+        try:
+            while (frame := await q.get()) is not None: yield frame
+        finally:
+            closed = True
+            while not q.empty(): q.get_nowait()
     return _frames()
