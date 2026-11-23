@@ -2,6 +2,13 @@
 
 <!-- do not remove -->
 
+## 0.0.80
+
+### New Features
+
+- Stop queueing frames and drain queue in AsyncResponses.serve when consumer closes ([#138](https://github.com/AnswerDotAI/fastllm/issues/138))
+
+
 ## 0.0.79
 
 ### New Features
