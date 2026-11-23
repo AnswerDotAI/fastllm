@@ -2,6 +2,13 @@
 
 <!-- do not remove -->
 
+## 0.0.79
+
+### New Features
+
+- Add `turn_instructions` and `build_payload`, fold `fix_payload` into `mk_payload`, and persist system separately in ResponseState ([#137](https://github.com/AnswerDotAI/fastllm/issues/137))
+
+
 ## 0.0.78
 
 ### New Features
