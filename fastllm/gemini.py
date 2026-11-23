@@ -254,7 +254,8 @@ def denorm_assistant(m:Msg):
 
 def denorm_tool(m:Msg):
     "Convert canonical tool Msg to Gemini user content with functionResponse parts."
-    parts = [denorm_tool_result(p) for p in m.content if isinstance(p, ToolResult)]
+    parts = [denorm_tool_result(p) if isinstance(p, ToolResult) else dict(text=p.text or '')
+        for p in m.content if isinstance(p, (ToolResult, Text))]
     return dict(role='user', parts=parts)
 
 def denorm_msgs(msgs:list[Msg]):
@@ -373,7 +374,7 @@ def denorm_tool_result(p:ToolResult):
 
 # %% ../nbs/07_gemini.ipynb #587d4fe5
 @delegates(payload_kwargs)
-def mk_payload(msgs, model, **kwargs):
+def mk_payload(msgs, model, vendor_name=None, **kwargs):
     payload = dict(contents=denorm_msgs(msgs))
     if sp:=kwargs.get('system'): payload['systemInstruction'] = denorm_system(sp)
     gen_config = {}
@@ -424,5 +425,5 @@ def cost(usage, m):
 # %% ../nbs/07_gemini.ipynb #f7c0b989
 api_ns = dict(norm_tool_calls=norm_tool_calls, norm_parts=norm_parts, norm_finish=norm_finish, norm_usage=norm_usage,
     acollect_stream=acollect_stream, raw_msg=raw_msg, collate_raw=collate_raw, mk_payload=mk_payload, cost=cost, get_hdrs=get_hdrs,
-    endpoint=endpoint, request=request)
+    turn_roles=('user', 'tool'), endpoint=endpoint, request=request)
 api_registry.register('gemini', **api_ns)

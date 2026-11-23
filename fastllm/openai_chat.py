@@ -6,8 +6,7 @@
 __all__ = ['api_ns', 'norm_tool_calls', 'norm_finish', 'norm_parts', 'raw_msg', 'norm_sse_event', 'delta_index_fn', 'collate_raw',
            'acollect_stream', 'denorm_tool_use', 'denorm_assistant', 'denorm_tool', 'denorm_msgs', 'denorm_tool_schs',
            'denorm_tool_choice', 'denorm_reasoning', 'denorm_web_search', 'denorm_system', 'denorm_user',
-           'denorm_image', 'denorm_audio', 'denorm_file', 'denorm_tool_result', 'mk_payload', 'get_hdrs', 'cost',
-           'fix_payload']
+           'denorm_image', 'denorm_audio', 'denorm_file', 'denorm_tool_result', 'mk_payload', 'get_hdrs', 'cost']
 
 # %% ../nbs/02_oai_chat.ipynb #493e3606
 import json
@@ -213,7 +212,7 @@ def denorm_tool_result(p:ToolResult):
 
 # %% ../nbs/02_oai_chat.ipynb #d2f55686
 @delegates(payload_kwargs)
-def mk_payload(msgs, model, **kwargs):
+def mk_payload(msgs, model, vendor_name=None, **kwargs):
     payload = dict(model=model, messages=denorm_msgs(msgs))
     if sp:=kwargs.get('system'):            payload['messages'] = denorm_system(sp, payload['messages'])
     if kwargs.get('stream'):                payload.update(stream=True, stream_options={"include_usage": True})
@@ -224,6 +223,9 @@ def mk_payload(msgs, model, **kwargs):
     if thk:=kwargs.get('reasoning_effort'): payload['reasoning_effort'] = denorm_reasoning(thk)
     if (wopts:=kwargs.get('web_search_options')) is not None:  payload['web_search_options'] = denorm_web_search(wopts)
     if (temp:=kwargs.get('temperature')) is not None: payload['temperature'] = temp
+    if nested_idx(payload, 'messages', -1, 'role') == 'assistant':
+        if vendor_name == 'deepseek' and model == 'deepseek-flash': payload['messages'][-1]['prefix'] = True
+        if vendor_name == 'moonshot' and 'kimi' in model: payload['messages'][-1]['partial'] = True
     return payload
 
 # %% ../nbs/02_oai_chat.ipynb #16e813d2
@@ -243,15 +245,8 @@ def cost(usage, m):
     tier = price_tier(m, raw['prompt_tokens'])
     return sum(n * tier_rate(m, k, tier) for k,n in toks.items())
 
-# %% ../nbs/02_oai_chat.ipynb #8aae2ed5
-def fix_payload(payload, model, vendor_name):
-    "Apply vendor request quirks to a built payload."
-    if nested_idx(payload, 'messages', -1, 'role') == 'assistant':
-        if vendor_name == 'deepseek' and model == 'deepseek-flash':   payload['messages'][-1]['prefix'] = True
-        if vendor_name == 'moonshot' and 'kimi' in model: payload['messages'][-1]['partial'] = True
-
 # %% ../nbs/02_oai_chat.ipynb #e2b0908e
 api_ns = dict(norm_tool_calls=norm_tool_calls, norm_parts=norm_parts, norm_finish=norm_finish, norm_usage=norm_usage,
-    raw_msg=raw_msg, collate_raw=collate_raw, acollect_stream=acollect_stream, mk_payload=mk_payload, cost=cost, get_hdrs=get_hdrs, fix_payload=fix_payload,
+    raw_msg=raw_msg, collate_raw=collate_raw, acollect_stream=acollect_stream, mk_payload=mk_payload, cost=cost, get_hdrs=get_hdrs,
     endpoint='/chat/completions')
 api_registry.register('openai_chat', **api_ns)

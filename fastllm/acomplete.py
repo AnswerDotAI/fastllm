@@ -4,7 +4,7 @@
 
 # %% auto #0
 __all__ = ['vendor_mapping', 'vendor_doms', 'defaults', 'split_vendor', 'resolve_model', 'mk_client',
-           'ContextWindowExceededError', 'acomplete']
+           'ContextWindowExceededError', 'build_payload', 'acomplete']
 
 # %% ../nbs/03_acomplete.ipynb #f2f57253
 import asyncio,json,httpx2
@@ -14,6 +14,7 @@ from fasttransport.core import AsyncHttpCli
 from fasttransport.errors import APIError
 
 from .types import *
+from .types import _append_turn_instructions
 from .codex import *
 from aidialog.msg_parts import (Part, PartType, Msg, Text, Thinking, ToolUse, ToolResult, InputImage, InputAudio, InputVideo,
     InputFile, mk_tool_res_msg, Completion)
@@ -57,6 +58,13 @@ def resolve_model(model):
     vendor, name = split_vendor(model)
     resolved = model_aliases.get(name, name)
     return f'{vendor}/{resolved}' if vendor else resolved
+
+def _resolve_target(model, api_name=None, vendor_name=None):
+    if not api_name and not vendor_name:
+        v, m = split_vendor(model)
+        if v in vendor_mapping: vendor_name, model = v, m
+        elif v: api_name, model = v, m  # a registered transport api (e.g. claude_code): not an HTTP vendor
+    return model, api_name, vendor_name
 
 # %% ../nbs/03_acomplete.ipynb #79075d95
 @flexicache()
@@ -170,14 +178,24 @@ def _tool_messages(msgs):
         raw=m.raw, raw_api=m.raw_api) if any(isinstance(p, ToolResult) for p in m.content) else m for m in msgs]
 
 @delegates(payload_kwargs)
+def build_payload(msgs, model, api_name=None, vendor_name=None, **kwargs):
+    "Prepare canonical messages and build the provider request payload."
+    model, api_name, vendor_name = _resolve_target(model, api_name, vendor_name)
+    if not api_name: api_name = vendor_mapping[vendor_name][0] if vendor_name in vendor_mapping else infer_api_name(model)
+    api = api_registry[api_name]
+    msgs = _tool_messages(msgs)
+    if (prep := getattr(api, 'prep_cache', None)) and (ci := kwargs.get('cache_idxs')):
+        msgs, kwargs['system'] = prep(msgs, ci, kwargs.get('system'), kwargs.get('ttl'))
+    if roles := getattr(api, 'turn_roles', ('user',)): msgs = _append_turn_instructions(msgs, kwargs.pop('turn_instructions', None), roles)
+    return api.mk_payload(msgs, model, vendor_name=vendor_name, **kwargs)
+
+# %% ../nbs/03_acomplete.ipynb #0a1b5a22
+@delegates(payload_kwargs)
 async def acomplete(msgs, model, api_name=None, vendor_name=None, api_key=None, oauth_token=None, base_url=None, endpoint=None, xtra_body=None, xtra_hdrs=None,
     stream=False, previous_response_id=None, stop_callables=None, retries=2, retry_delay=0.5, **kwargs):
     "Unified completion across different APIs."
     if api_key and oauth_token: raise ValueError('Pass `api_key` or `oauth_token`, not both: a request has one identity')
-    if not vendor_name and not api_name and not (base_url and (api_key or oauth_token)):
-        v, m = split_vendor(model)
-        if v in vendor_mapping: vendor_name, model = v, m
-        elif v: api_name, model = v, m  # a registered transport api (e.g. claude_code): not an HTTP vendor
+    if not (base_url and (api_key or oauth_token)): model, api_name, vendor_name = _resolve_target(model, api_name, vendor_name)
     own = api_name in api_registry and not hasattr(api_registry[api_name], 'endpoint') if api_name else False
     if own:
         vendor_name = ifnone(vendor_name, api_name)  # an own-transport api: no HTTP client to build
@@ -193,8 +211,7 @@ async def acomplete(msgs, model, api_name=None, vendor_name=None, api_key=None, 
         if not getattr(api, 'supports_previous_response_id', False):
             raise ValueError('previous_response_id is not supported by this transport')
         kwargs['previous_response_id'] = previous_response_id
-    payload = api.mk_payload(_tool_messages(msgs), model, stream=stream, **kwargs)
-    if fix := getattr(api, 'fix_payload', None): fix(payload, model, vendor_name)
+    payload = build_payload(msgs, model, api_name=api_name, vendor_name=vendor_name, stream=stream, **kwargs)
     body = payload | ifnone(xtra_body, {})
     if not own:
         headers = xtra_hdrs or {}
@@ -218,3 +235,4 @@ async def acomplete(msgs, model, api_name=None, vendor_name=None, api_key=None, 
         return completion
     resp = await _request()
     return mk_completion(resp, model=model, api_name=api_name, vendor_name=vendor_name)
+

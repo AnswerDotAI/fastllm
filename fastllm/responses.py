@@ -1,10 +1,10 @@
 """Provider-independent Responses resources and streaming over FastLLM
 
-`response_input` accepts a prompt string, Responses input items, or canonical `msg2dict` messages. It returns `(messages, instructions)`. System and developer text becomes instructions. Canonical messages preserve provider replay data.
+`response_input` accepts a prompt string, Responses input items, or canonical `msg2dict` messages. It returns `(messages, system)`. System and developer text becomes the reusable `system` prompt. Canonical messages preserve provider replay data.
 
 `normalize_call_ids` supplies missing client call IDs before we retain the history. Later tool results can refer to the same IDs that the client received.
 
-`ResponseState` holds the public ID, model, full message history, prompt cache key, and optional provider response ID. The host can store it under its own ownership and expiry rules. A provider ID lets the next call send just the new messages; without one, it needs the retained history.
+`ResponseState` holds the public ID, model, full message history, prompt cache key, system prompt, and optional provider response ID. The host can store it under its own ownership and expiry rules. A provider ID lets the next call send just the new messages; without one, it needs the retained history and system prompt.
 
 FastLLM calls stream internally. The helpers here turn their parts into Responses SSE frames; they don't decide storage, ownership, or billing policy."""
 
@@ -168,19 +168,19 @@ def response_object(rid, body, comp, previous_response_id=None, created_at=None)
 # %% ../nbs/08_responses.ipynb #73a2fc16
 class ResponseState(BasicRepr):
     "Canonical history and optional provider continuation metadata."
-    def __init__(self, id, model, history, provider_response_id=None, prompt_cache_key=None): store_attr()
+    def __init__(self, id, model, history, provider_response_id=None, prompt_cache_key=None, system=''): store_attr()
 
 # %% ../nbs/08_responses.ipynb #b28fa30d
 @patch
 def to_dict(self:ResponseState):
     "This state as a JSON-ready dict"
     return dict(id=self.id, model=self.model, history=[msg2dict(m) for m in self.history],
-        provider_response_id=self.provider_response_id, prompt_cache_key=self.prompt_cache_key)
+        provider_response_id=self.provider_response_id, prompt_cache_key=self.prompt_cache_key, system=self.system)
 
 @patch(cls_method=True)
 def from_dict(cls:ResponseState, d):
     "The state `to_dict` produced `d` from"
-    return cls(d['id'], d['model'], tuple(dict2msg(m) for m in d['history']), d['provider_response_id'], d['prompt_cache_key'])
+    return cls(d['id'], d['model'], tuple(dict2msg(m) for m in d['history']), d['provider_response_id'], d['prompt_cache_key'], d.get('system', ''))
 
 # %% ../nbs/08_responses.ipynb #74e09d18
 class ResponseStore:
@@ -236,11 +236,11 @@ class AsyncResponses:
         for m in new_msgs:
             for p in m.content:
                 if isinstance(p, ToolResult) and not p.name: p.name = names.get(p.id, '')
-        instructions = '\n\n'.join(filter(None, [body.get('instructions', ''), input_system]))
+        system = '\n\n'.join(filter(None, [previous.system if previous else '', input_system]))
         provider_messages = new_msgs if previous and previous.provider_response_id else list(history)
         key = body.get('prompt_cache_key') or (previous.prompt_cache_key if previous else None) or secrets.token_hex(16)
         body = body | dict(prompt_cache_key=key)
-        return ResponseTurn(_new_id('resp'), int(time.time()), body, history, provider_messages, instructions, previous,
+        return ResponseTurn(_new_id('resp'), int(time.time()), body, history, provider_messages, system, previous,
             {f.__name__: f for f in server_tools or []}, kwargs)
 
 
@@ -254,7 +254,7 @@ def provider_kwargs(self:AsyncResponses, turn):
     kwargs = dict(model=body['model'], previous_response_id=turn.provider_previous_id, system=turn.system or None, tools=tools or None)
     kwargs.update(prompt_cache_key=body['prompt_cache_key'], tool_choice=body.get('tool_choice'), parallel_tool_calls=body.get('parallel_tool_calls', True),
         reasoning_effort=reasoning.get('effort'), max_tokens=body.get('max_output_tokens'), temperature=body.get('temperature'),
-        cache_idxs=body.get('cache_idxs'), ttl=body.get('ttl'), web_search_options=body.get('web_search_options'))
+        cache_idxs=body.get('cache_idxs'), ttl=body.get('ttl'), web_search_options=body.get('web_search_options'), turn_instructions=body.get('instructions') or None)
     return kwargs
 
 @patch
@@ -274,7 +274,7 @@ def state(self:AsyncResponses, turn, comp, results=()):
     "Build the next continuation state; `results` are server tool results answering `comp`'s calls."
     normalize_call_ids(comp)
     history = (*turn.history, comp.message, *([Msg('tool', list(results))] if results else []))
-    return ResponseState(turn.id, turn.body['model'], history, comp.response_id, turn.body['prompt_cache_key'])
+    return ResponseState(turn.id, turn.body['model'], history, comp.response_id, turn.body['prompt_cache_key'], turn.system)
 
 
 # %% ../nbs/08_responses.ipynb #7615b274

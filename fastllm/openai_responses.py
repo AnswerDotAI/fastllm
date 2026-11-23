@@ -7,7 +7,7 @@ __all__ = ['api_ns', 'norm_tool_call', 'norm_tool_calls', 'norm_usage', 'norm_fi
            'norm_sse_event', 'delta_index_fn', 'collate_raw', 'acollect_stream', 'denorm_tool_use', 'denorm_tool',
            'denorm_assistant', 'denorm_msgs', 'denorm_tool_schs', 'denorm_tool_choice', 'denorm_reasoning',
            'denorm_web_search', 'denorm_system', 'denorm_user', 'denorm_image', 'denorm_video', 'denorm_file',
-           'denorm_tool_result', 'mk_payload', 'get_hdrs', 'cost', 'fix_payload']
+           'denorm_tool_result', 'mk_payload', 'get_hdrs', 'cost']
 
 # %% ../nbs/04_oai_responses.ipynb #591f55b5
 import json
@@ -17,6 +17,7 @@ from fastcore.meta import *
 from fasttransport.errors import api_error_from_event
 
 from .types import *
+from .types import _append_turn_instructions
 from aidialog.msg_parts import (Completion, Part, PartType, Msg, Text, Thinking, Refusal, ToolUse, ToolResult, tool_text, MdStr,
     InputImage, InputAudio, InputVideo, InputFile, mk_tool_res_msg, sys_text, part_txt, resp_part)
 from .streaming import *
@@ -246,15 +247,39 @@ def denorm_tool_result(m:ToolResult):
         return dict(type='function_call_output', call_id=cid, output=out)
     return dict(type='function_call_output', call_id=cid, output=tool_text(m.text))
 
+# %% ../nbs/04_oai_responses.ipynb #c962cce5
+_gpt_ver_re = re.compile(r'gpt-(\d+)(?:\.(\d+))?')
+_bp_types = {'input_text', 'input_image', 'input_file'}
+
+def _is_gpt62_plus(model):
+    m = _gpt_ver_re.search(model or '')
+    return bool(m) and (int(m.group(1)), int(m.group(2) or 0)) >= (6, 2)
+
+def _mark_cache_bp(inp):
+    for i,item in enumerate(reversed(inp)):
+        if item.get('type') == 'function_call_output' and isinstance(out := item.get('output'), str):
+            item['output'] = [dict(type='input_text', text=out, prompt_cache_breakpoint={'mode': 'explicit'})]
+            return
+        blks = item['output'] if item.get('type') == 'function_call_output' else item['content'] if item.get('role') in ('developer', 'user') else ()
+        for b in reversed(blks[:-1] if i == 0 else blks):
+            if b.get('type') in _bp_types:
+                b['prompt_cache_breakpoint'] = {'mode': 'explicit'}
+                return
+
 # %% ../nbs/04_oai_responses.ipynb #9b0f81a4
 @delegates(payload_kwargs)
-def mk_payload(msgs, model, **kwargs):
+def mk_payload(msgs, model, vendor_name=None, **kwargs):
     payload = dict(model=model)
+    ti = kwargs.get('turn_instructions')
+    ti = ti and sys_text(part_txt(ti))
+    if ti and _is_gpt62_plus(model): payload['instructions'] = ti
+    elif ti: msgs = _append_turn_instructions(msgs, ti)
     inp = denorm_msgs(msgs) if msgs else []
     if (sp:=kwargs.get('system')) and not kwargs.get('previous_response_id'): inp = [denorm_system(sp), *inp]
+    if ti and 'instructions' not in payload and vendor_name != 'codex' and get_model_info(model, 'openai').get('supports_prompt_cache_breakpoint'): _mark_cache_bp(inp)
     if inp: payload['input'] = inp
     if stream:=kwargs.get('stream'):        payload['stream'] = True
-    if mt:=kwargs.get('max_tokens'):        payload['max_output_tokens'] = mt
+    if (mt:=kwargs.get('max_tokens')) and vendor_name != 'codex': payload['max_output_tokens'] = mt
     if tools:=kwargs.get('tools'):          payload['tools'] = denorm_tool_schs(tools)
     if tchc:=kwargs.get('tool_choice'):     payload['tool_choice'] = denorm_tool_choice(tchc)
     if rid:=kwargs.get('previous_response_id'): payload['previous_response_id'] = rid
@@ -262,7 +287,8 @@ def mk_payload(msgs, model, **kwargs):
     if (ptc:=kwargs.get('parallel_tool_calls')) is not None: payload['parallel_tool_calls'] = ptc
     if thk:=kwargs.get('reasoning_effort'): payload['reasoning'] = denorm_reasoning(thk)
     if (wopts:=kwargs.get('web_search_options')) is not None:  payload.setdefault('tools', []).append(denorm_web_search(wopts))
-    if (temp:=kwargs.get('temperature')) is not None: payload['temperature'] = temp
+    if (temp:=kwargs.get('temperature')) is not None and model != 'gpt-6-astra' and vendor_name != 'codex': payload['temperature'] = temp
+    if vendor_name == 'codex': payload['store'] = False
     return payload
 
 # %% ../nbs/04_oai_responses.ipynb #529fd4bc
@@ -281,16 +307,8 @@ def cost(usage, m):
     cost += cached * tier_rate(m, 'cache_read_input_token_cost', tier)
     return cost
 
-# %% ../nbs/04_oai_responses.ipynb #2efda2a1
-def fix_payload(payload, model, vendor_name):
-    "Apply vendor request quirks to a built payload."
-    if model == 'gpt-6-astra': payload.pop('temperature', None)
-    if vendor_name == 'codex':
-        for k in 'temperature max_tokens max_output_tokens max_completion_tokens metadata'.split(): payload.pop(k, None)
-        payload['store'] = False
-
 # %% ../nbs/04_oai_responses.ipynb #07114b55
 api_ns = dict(norm_tool_calls=norm_tool_calls, norm_parts=norm_parts, norm_finish=norm_finish, norm_usage=norm_usage,
     supports_previous_response_id=True, raw_msg=raw_msg, collate_raw=collate_raw, acollect_stream=acollect_stream, mk_payload=mk_payload,
-    cost=cost, get_hdrs=get_hdrs, fix_payload=fix_payload, endpoint='/responses')
+    cost=cost, get_hdrs=get_hdrs, turn_roles=None, endpoint='/responses')
 api_registry.register('openai', **api_ns)

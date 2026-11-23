@@ -194,9 +194,13 @@ def denorm_assistant(m:Msg):
     blocks = [_ant_cc(dict(type='text', text=p.text or ''), p) if isinstance(p, Text) else denorm_tool_use(p) for p in rebuild_parts(m)]
     return dict(role='assistant', content=blocks)
 
-def denorm_tool(m:Msg):
+def denorm_tool(m:Msg, prev=None):
     "Convert canonical tool Msg to Anthropic user message with tool_result blocks."
-    blocks = [denorm_tool_result(p) for p in m.content if isinstance(p, ToolResult)]
+    blks = prev['content'] if prev and prev.get('role') == 'assistant' and isinstance(prev.get('content'), list) else ()
+    done = {b.get('tool_use_id') for b in blks if b.get('tool_use_id')}
+    types = ToolResult if any(b.get('type') == 'server_tool_use' and b.get('id') not in done for b in blks) else (ToolResult, Text)
+    blocks = [denorm_tool_result(p) if isinstance(p, ToolResult) else _ant_cc(dict(type='text', text=p.text or ''), p)
+        for p in m.content if isinstance(p, types)]
     return dict(role='user', content=blocks)
 
 def denorm_msgs(msgs:list[Msg]):
@@ -205,7 +209,7 @@ def denorm_msgs(msgs:list[Msg]):
     for m in msgs:
         if   m.role == 'user':      res.append(denorm_user(m))
         elif m.role == 'assistant': res.append(denorm_assistant(m))
-        elif m.role == 'tool':      res.append(denorm_tool(m))
+        elif m.role == 'tool':      res.append(denorm_tool(m, res[-1] if res else None))
     return res
 
 # %% ../nbs/06_anthropic.ipynb #f762a6f2
@@ -332,14 +336,12 @@ def apply_cache_idxs(
 
 # %% ../nbs/06_anthropic.ipynb #587d4fe5
 @delegates(payload_kwargs)
-def mk_payload(msgs, model, **kwargs):
-    sp = kwargs.get('system')
-    if ci := kwargs.get('cache_idxs'): msgs,sp = apply_cache_idxs(msgs, ci, sp, kwargs.get('ttl'))
+def mk_payload(msgs, model, vendor_name=None, **kwargs):
     max_tokens = kwargs.get('max_tokens')
     if max_tokens is None: max_tokens = get_model_info(model, 'anthropic').get('max_output_tokens') or 1024
     payload = dict(model=model, messages=denorm_msgs(msgs), max_tokens=max_tokens)
     if kwargs.get('stream'):                payload['stream'] = True
-    if sp:                              payload['system'] = denorm_system(sp)
+    if sp:=kwargs.get('system'):            payload['system'] = denorm_system(sp)
     if tools:=kwargs.get('tools'):          payload['tools'] = denorm_tool_schs(tools)
     if tchc:=kwargs.get('tool_choice'):     payload['tool_choice'] = denorm_tool_choice(tchc)
     if thk:=kwargs.get('reasoning_effort'): payload.update(denorm_reasoning(thk))
@@ -369,4 +371,4 @@ def cost(usage, m):
 # %% ../nbs/06_anthropic.ipynb #f7c0b989
 api_registry.register('anthropic', norm_tool_calls=norm_tool_calls, norm_parts=norm_parts, norm_finish=norm_finish, norm_usage=norm_usage,
     finalize_usage=finalize_usage, raw_msg=raw_msg, collate_raw=collate_raw, acollect_stream=acollect_stream, mk_payload=mk_payload,
-    cost=cost, get_hdrs=get_hdrs, endpoint='/v1/messages')
+    cost=cost, get_hdrs=get_hdrs, prep_cache=apply_cache_idxs, turn_roles=('user', 'tool'), endpoint='/v1/messages')
