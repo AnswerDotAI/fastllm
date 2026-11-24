@@ -6,14 +6,14 @@
 __all__ = ['FinishReason', 'api_registry', 'vendor_auth', 'vendor_hdrs', 'model_prices_url', 'sample_img_url', 'sample_doms',
            'haik45', 'haik', 'haik55', 'sonn45', 'sonn46', 'sonn5', 'sonn', 'sonn55', 'opus46', 'opus48', 'opus5',
            'opus', 'opus55', 'fable', 'claude_models', 'gpt55', 'codex53spark', 'sol', 'terra', 'luna', 'astra',
-           'gpt6s', 'flashlite', 'flash', 'argon', 'hydrogen', 'neon', 'carbon', 'gemini4s', 'gemini_models', 'muse',
-           'muse_contrib', 'meta_models', 'qwenplus', 'qwen', 'minimax', 'kimi', 'glmflash', 'glm', 'dsflash',
-           'fw_models', 'model_aliases', 'model_info_registry', 'modern_llm', 'effort_codes', 'mimo_v25_common',
-           'codex_pricing', 'Usage', 'APIRegistry', 'mk_completion', 'rebuild_parts', 'fn_schema', 'payload_kwargs',
-           'provider_req', 'get_api_key', 'wrap_typed', 'unwrap_typed', 'resize_b64', 'model_prices_meta',
-           'infer_api_name', 'get_model_meta', 'register_model_info', 'get_model_info', 'effort_code', 'effort_levels',
-           'resolve_effort', 'effort_kwargs', 'register_sub_model', 'find_models', 'get_model_pricing',
-           'approx_pricing', 'is_deepseek_peak_hour', 'price_tier', 'tier_rate']
+           'gpt6s', 'flashlite', 'flash', 'argon', 'hydrogen', 'neon', 'carbon', 'gemini4s', 'gemini_models',
+           'muse_contrib', 'muse_ember', 'muse', 'muse_wonder', 'muses', 'qwen', 'minimax', 'kimi', 'glmflash', 'glm',
+           'dsflash', 'fw_models', 'model_aliases', 'model_info_registry', 'modern_llm', 'effort_codes',
+           'mimo_v25_common', 'codex_pricing', 'Usage', 'APIRegistry', 'mk_completion', 'rebuild_parts', 'fn_schema',
+           'payload_kwargs', 'provider_req', 'get_api_key', 'wrap_typed', 'unwrap_typed', 'resize_b64',
+           'model_prices_meta', 'infer_api_name', 'get_model_meta', 'register_model_info', 'get_model_info',
+           'effort_code', 'effort_levels', 'resolve_effort', 'effort_kwargs', 'register_sub_model', 'find_models',
+           'get_model_pricing', 'approx_pricing', 'is_deepseek_peak_hour', 'price_tier', 'tier_rate']
 
 # %% ../nbs/00_types.ipynb #b4d047fd
 import httpx2, base64, io
@@ -239,13 +239,13 @@ flash = 'models/gemini-3.8-flash'
 argon = 'models/gemini-4-argon'
 hydrogen,neon,carbon = gemini4s = [f'models/gemini-4-{o}' for o in 'hydrogen neon carbon'.split()]
 gemini_models = flashlite, flash, *gemini4s
-muse,muse_contrib = meta_models = 'muse-spark-1.3', 'muse-spark-1.3-contributor'
+muse_contrib,muse_ember,muse,muse_wonder = muses = [f'muse-{o}' for o in 'spark-1.3-contributor ember-1.0 spark-1.3 wonder-1.0'.split()]
 _fw = 'accounts/fireworks/models/'
-qwenplus,qwen,minimax,kimi,glmflash,glm,dsflash = fw_models = [
-    f'{_fw}{o}' for o in 'qwen3p7-plus qwen3p8-max minimax-m3p1-flash kimi-k3 glm-5p3-flash glm-5p3 deepseek-v4p1-flash'.split()]
+_fw_names = 'qwen4-max minimax-m3p1-flash kimi-k3p1-pro glm-5p3-flash glm-5p3 deepseek-v4p1-flash-1017'
+qwen,minimax,kimi,glmflash,glm,dsflash = fw_models = [f'{_fw}{o}' for o in _fw_names.split()]
 _alias_names = '''haik45 haik haik55 sonn45 sonn46 sonn5 sonn sonn55 opus46 opus48 opus5 opus opus55 fable
     gpt55 codex53spark sol terra luna astra flashlite flash hydrogen neon carbon argon
-    muse muse_contrib qwenplus qwen minimax kimi glmflash glm dsflash'''
+    muse_contrib muse_ember muse muse_wonder qwen minimax kimi glmflash glm dsflash'''
 model_aliases = {k: globals()[k] for k in _alias_names.split()}
 
 # %% ../nbs/00_types.ipynb #583e017b
@@ -284,7 +284,8 @@ register_model_info(glmflash, vendor_name='fireworks_ai', base='glm-5.3-flash', 
 for m in (*gemini4s, argon):
     b = m.removeprefix('models/')
     for n in (b, m): register_model_info(n, vendor_name='gemini', base=b, max_output_tokens=65_536)
-register_model_info(qwen, vendor_name='fireworks_ai', base=qwen, max_output_tokens=65_536)
+register_model_info(qwen, vendor_name='fireworks_ai', **modern_llm, supports_vision=True, max_input_tokens=262_144,
+    max_output_tokens=65_536, input_cost_per_token=1.5e-6, cache_read_input_token_cost=0.075e-6, output_cost_per_token=4.5e-6)
 
 # %% ../nbs/00_types.ipynb #0a2d3bff
 register_model_info(
