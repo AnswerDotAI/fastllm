@@ -4,7 +4,8 @@
 
 # %% auto #0
 __all__ = ['SKEW_SECS', 'jwt_claims', 'mk_jwt', 'token_expired', 'codex_tokens', 'codex_info', 'codex_refresh', 'codex_token',
-           'codex_auth_path', 'codex_auth', 'codex_device_code', 'codex_device_tokens', 'codex_login', 'main']
+           'codex_auth_path', 'codex_auth', 'codex_device_code', 'codex_device_poll', 'codex_device_tokens',
+           'codex_login', 'main']
 
 # %% ../nbs/05_codex.ipynb #a1d088d2
 import asyncio, base64, json, sys, time, httpx2
@@ -109,16 +110,18 @@ async def codex_device_code():
     return dict(url=f'{_AUTH}/codex/device', code=r['user_code'], device_auth_id=r['device_auth_id'], interval=int(r.get('interval') or 5))
 
 # %% ../nbs/05_codex.ipynb #9ada6ae8
+async def codex_device_poll(dev):
+    "Poll once for the device grant from `dev`; return the token block once approved, or `None` while pending"
+    try: grant = await _post(f'{_DEVICE}/token', device_auth_id=dev['device_auth_id'], user_code=dev['code'])
+    except httpx2.HTTPStatusError as e:
+        if e.response.status_code in (403, 404): return None
+        raise
+    return await _token_grant({}, form=True, grant_type='authorization_code', code=grant['authorization_code'],
+        redirect_uri=f'{_AUTH}/deviceauth/callback', code_verifier=grant['code_verifier'])
+
 async def codex_device_tokens(dev, timeout=15*60):
     "Wait for the user to enter the code from `dev`, then exchange the grant for a token block"
-    async def _poll():
-        try: return await _post(f'{_DEVICE}/token', device_auth_id=dev['device_auth_id'], user_code=dev['code'])
-        except httpx2.HTTPStatusError as e:
-            if e.response.status_code in (403, 404): return None
-            raise
-    grant = await wait_until(_poll, 'the sign-in to complete', timeout, sleep=dev['interval'])
-    return await _token_grant({}, form=True, grant_type='authorization_code', code=grant['authorization_code'], redirect_uri=f'{_AUTH}/deviceauth/callback',
-        code_verifier=grant['code_verifier'])
+    return await wait_until(lambda: codex_device_poll(dev), 'the sign-in to complete', timeout, sleep=dev['interval'])
 
 # %% ../nbs/05_codex.ipynb #0ca00e36
 async def codex_login():
