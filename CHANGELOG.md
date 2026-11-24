@@ -2,6 +2,13 @@
 
 <!-- do not remove -->
 
+## 0.0.81
+
+### New Features
+
+- model updates ([#140](https://github.com/AnswerDotAI/fastllm/issues/140))
+
+
 ## 0.0.80
 
 ### New Features
