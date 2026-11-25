@@ -176,9 +176,7 @@ def resize_b64(b64, max_sz):
     img.thumbnail((max_sz,max_sz), PImg.Resampling.LANCZOS)
     fmt = (img.format or 'PNG').upper()
     if fmt=='JPG': fmt = 'JPEG'
-    buf = io.BytesIO()
-    img.save(buf, format=fmt)
-    return base64.b64encode(buf.getvalue()).decode()
+    return base64.b64encode(img_bytes(img, fmt=fmt)).decode()
 
 # %% ../nbs/00_types.ipynb #852adecd
 model_prices_url = 'https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json'
