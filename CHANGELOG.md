@@ -2,6 +2,13 @@
 
 <!-- do not remove -->
 
+## 0.0.82
+
+### Bugs Squashed
+
+- Remove `turn_instructions` and `turn_roles`; fold Responses instructions into system ([#141](https://github.com/AnswerDotAI/fastllm/issues/141))
+
+
 ## 0.0.81
 
 ### New Features
