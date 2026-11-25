@@ -4,6 +4,10 @@
 
 ## 0.0.83
 
+### Bugs Squashed
+
+- Deduplicate tool call IDs across Gemini responses and Responses API streams, keeping raw provider messages in sync ([#142](https://github.com/AnswerDotAI/fastllm/issues/142))
+
 
 ## 0.0.82
 
