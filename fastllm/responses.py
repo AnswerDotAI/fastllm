@@ -251,10 +251,11 @@ def provider_kwargs(self:AsyncResponses, turn):
     body = turn.body
     reasoning = body.get('reasoning') or {}
     tools = list(body.get('tools') or []) + [dict(type='function', **get_schema(f, pname='parameters')) for f in turn.server_tools.values()]
-    kwargs = dict(model=body['model'], previous_response_id=turn.provider_previous_id, system=turn.system or None, tools=tools or None)
+    system = '\n\n'.join(filter(None, [body.get('instructions'), turn.system])) or None
+    kwargs = dict(model=body['model'], previous_response_id=turn.provider_previous_id, system=system, tools=tools or None)
     kwargs.update(prompt_cache_key=body['prompt_cache_key'], tool_choice=body.get('tool_choice'), parallel_tool_calls=body.get('parallel_tool_calls', True),
         reasoning_effort=reasoning.get('effort'), max_tokens=body.get('max_output_tokens'), temperature=body.get('temperature'),
-        cache_idxs=body.get('cache_idxs'), ttl=body.get('ttl'), web_search_options=body.get('web_search_options'), turn_instructions=body.get('instructions') or None)
+        cache_idxs=body.get('cache_idxs'), ttl=body.get('ttl'), web_search_options=body.get('web_search_options'))
     return kwargs
 
 @patch

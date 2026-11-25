@@ -14,7 +14,6 @@ from fasttransport.core import AsyncHttpCli
 from fasttransport.errors import APIError
 
 from .types import *
-from .types import _append_turn_instructions
 from .codex import *
 from aidialog.msg_parts import (Part, PartType, Msg, Text, Thinking, ToolUse, ToolResult, InputImage, InputAudio, InputVideo,
     InputFile, mk_tool_res_msg, Completion)
@@ -186,7 +185,6 @@ def build_payload(msgs, model, api_name=None, vendor_name=None, **kwargs):
     msgs = _tool_messages(msgs)
     if (prep := getattr(api, 'prep_cache', None)) and (ci := kwargs.get('cache_idxs')):
         msgs, kwargs['system'] = prep(msgs, ci, kwargs.get('system'), kwargs.get('ttl'))
-    if roles := getattr(api, 'turn_roles', ('user',)): msgs = _append_turn_instructions(msgs, kwargs.pop('turn_instructions', None), roles)
     return api.mk_payload(msgs, model, vendor_name=vendor_name, **kwargs)
 
 # %% ../nbs/03_acomplete.ipynb #0a1b5a22

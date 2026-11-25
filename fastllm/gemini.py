@@ -425,5 +425,5 @@ def cost(usage, m):
 # %% ../nbs/07_gemini.ipynb #f7c0b989
 api_ns = dict(norm_tool_calls=norm_tool_calls, norm_parts=norm_parts, norm_finish=norm_finish, norm_usage=norm_usage,
     acollect_stream=acollect_stream, raw_msg=raw_msg, collate_raw=collate_raw, mk_payload=mk_payload, cost=cost, get_hdrs=get_hdrs,
-    turn_roles=('user', 'tool'), endpoint=endpoint, request=request)
+    endpoint=endpoint, request=request)
 api_registry.register('gemini', **api_ns)

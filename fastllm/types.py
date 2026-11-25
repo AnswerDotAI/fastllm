@@ -23,7 +23,7 @@ from importlib.metadata import entry_points
 from datetime import datetime, timezone
 from fastcore.utils import *
 from PIL import Image as PImg
-from aidialog.msg_parts import Msg, Text, Thinking, ToolUse, Completion, StopResponse, FullResponse, sys_text, part_txt
+from aidialog.msg_parts import Msg, Text, Thinking, ToolUse, Completion, StopResponse, FullResponse
 
 # %% ../nbs/00_types.ipynb #802ad832
 class Usage(BasicRepr):
@@ -126,15 +126,7 @@ def fn_schema(t):
 # %% ../nbs/00_types.ipynb #28c698fe
 def payload_kwargs(msgs, model, stream=False, system=None, max_tokens=None, temperature=None, tools=None, tool_choice=None,
     parallel_tool_calls=None, previous_response_id=None, prompt_cache_key=None, reasoning_effort=None, web_search_options=None,
-    cache_idxs=None, ttl=None, stop_callables=None, turn_instructions=None): pass
-
-def _append_turn_instructions(msgs, ti, roles=('user',)):
-    "Return `msgs` with per-turn instruction `ti` appended to a trailing message in `roles`, without mutating `msgs`."
-    if not (txt := ti and sys_text(part_txt(ti))): return msgs
-    p, msgs = Text(txt), list(msgs or ())
-    if msgs and msgs[-1].role in roles: msgs[-1] = Msg(msgs[-1].role, [*msgs[-1].content, p], raw=msgs[-1].raw, raw_api=msgs[-1].raw_api)
-    else: msgs.append(Msg('user', [p]))
-    return msgs
+    cache_idxs=None, ttl=None, stop_callables=None): pass
 
 # %% ../nbs/00_types.ipynb #0c582256
 async def provider_req(

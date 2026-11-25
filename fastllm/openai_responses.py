@@ -17,7 +17,6 @@ from fastcore.meta import *
 from fasttransport.errors import api_error_from_event
 
 from .types import *
-from .types import _append_turn_instructions
 from aidialog.msg_parts import (Completion, Part, PartType, Msg, Text, Thinking, Refusal, ToolUse, ToolResult, tool_text, MdStr,
     InputImage, InputAudio, InputVideo, InputFile, mk_tool_res_msg, sys_text, part_txt, resp_part)
 from .streaming import *
@@ -247,36 +246,12 @@ def denorm_tool_result(m:ToolResult):
         return dict(type='function_call_output', call_id=cid, output=out)
     return dict(type='function_call_output', call_id=cid, output=tool_text(m.text))
 
-# %% ../nbs/04_oai_responses.ipynb #c962cce5
-_gpt_ver_re = re.compile(r'gpt-(\d+)(?:\.(\d+))?')
-_bp_types = {'input_text', 'input_image', 'input_file'}
-
-def _is_gpt62_plus(model):
-    m = _gpt_ver_re.search(model or '')
-    return bool(m) and (int(m.group(1)), int(m.group(2) or 0)) >= (6, 2)
-
-def _mark_cache_bp(inp):
-    for i,item in enumerate(reversed(inp)):
-        if item.get('type') == 'function_call_output' and isinstance(out := item.get('output'), str):
-            item['output'] = [dict(type='input_text', text=out, prompt_cache_breakpoint={'mode': 'explicit'})]
-            return
-        blks = item['output'] if item.get('type') == 'function_call_output' else item['content'] if item.get('role') in ('developer', 'user') else ()
-        for b in reversed(blks[:-1] if i == 0 else blks):
-            if b.get('type') in _bp_types:
-                b['prompt_cache_breakpoint'] = {'mode': 'explicit'}
-                return
-
 # %% ../nbs/04_oai_responses.ipynb #9b0f81a4
 @delegates(payload_kwargs)
 def mk_payload(msgs, model, vendor_name=None, **kwargs):
     payload = dict(model=model)
-    ti = kwargs.get('turn_instructions')
-    ti = ti and sys_text(part_txt(ti))
-    if ti and _is_gpt62_plus(model): payload['instructions'] = ti
-    elif ti: msgs = _append_turn_instructions(msgs, ti)
     inp = denorm_msgs(msgs) if msgs else []
     if (sp:=kwargs.get('system')) and not kwargs.get('previous_response_id'): inp = [denorm_system(sp), *inp]
-    if ti and 'instructions' not in payload and vendor_name != 'codex' and get_model_info(model, 'openai').get('supports_prompt_cache_breakpoint'): _mark_cache_bp(inp)
     if inp: payload['input'] = inp
     if stream:=kwargs.get('stream'):        payload['stream'] = True
     if (mt:=kwargs.get('max_tokens')) and vendor_name != 'codex': payload['max_output_tokens'] = mt
@@ -310,5 +285,5 @@ def cost(usage, m):
 # %% ../nbs/04_oai_responses.ipynb #07114b55
 api_ns = dict(norm_tool_calls=norm_tool_calls, norm_parts=norm_parts, norm_finish=norm_finish, norm_usage=norm_usage,
     supports_previous_response_id=True, raw_msg=raw_msg, collate_raw=collate_raw, acollect_stream=acollect_stream, mk_payload=mk_payload,
-    cost=cost, get_hdrs=get_hdrs, turn_roles=None, endpoint='/responses')
+    cost=cost, get_hdrs=get_hdrs, endpoint='/responses')
 api_registry.register('openai', **api_ns)

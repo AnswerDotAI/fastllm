@@ -371,4 +371,4 @@ def cost(usage, m):
 # %% ../nbs/06_anthropic.ipynb #f7c0b989
 api_registry.register('anthropic', norm_tool_calls=norm_tool_calls, norm_parts=norm_parts, norm_finish=norm_finish, norm_usage=norm_usage,
     finalize_usage=finalize_usage, raw_msg=raw_msg, collate_raw=collate_raw, acollect_stream=acollect_stream, mk_payload=mk_payload,
-    cost=cost, get_hdrs=get_hdrs, prep_cache=apply_cache_idxs, turn_roles=('user', 'tool'), endpoint='/v1/messages')
+    cost=cost, get_hdrs=get_hdrs, prep_cache=apply_cache_idxs, endpoint='/v1/messages')
