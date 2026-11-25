@@ -10,7 +10,7 @@ __all__ = ['api_ns', 'endpoint', 'grounding', 'norm_tool_calls', 'norm_usage', '
            'denorm_video', 'denorm_file', 'denorm_tool_result', 'mk_payload', 'get_hdrs', 'cost']
 
 # %% ../nbs/07_gemini.ipynb #02afd3d7
-import html
+import html, secrets
 from copy import deepcopy
 from collections import Counter
 from fastcore.utils import *
@@ -44,12 +44,30 @@ def grounding(cand):
     return cites, call
 
 # %% ../nbs/07_gemini.ipynb #48de3125
-def _fn_call(p, i):
+def _unique_call_id(cid, seen):
+    if not cid: cid = f'call_{secrets.token_hex(8)}'
+    elif cid in seen:
+        n = 2
+        while f'{cid}_{n}' in seen: n += 1
+        cid = f'{cid}_{n}'
+    seen.add(cid)
+    return cid
+
+def _dedupe_fc_ids(parts, seen=None):
+    "Ensure every `functionCall` in `parts` has a unique non-empty `id`, updating `parts` in place when missing or colliding."
+    seen = set() if seen is None else seen
+    for p in parts:
+        if not (fc := p.get('functionCall')): continue
+        cid = _unique_call_id(fc.get('id'), seen)
+        if fc.get('id') != cid: p['functionCall'] = {**fc, 'id': cid}
+    return parts
+
+def _fn_call(p):
     fc = p['functionCall']
-    return ToolUse(id=fc.get("id", f"call_{i}"), name=fc.get("name", ""), arguments=fc.get("args") or {},
+    return ToolUse(id=fc['id'], name=fc.get("name", ""), arguments=fc.get("args") or {},
         raw={k:v for k,v in p.items() if k != "functionCall"})
 
-def _fn_calls(parts): return [_fn_call(p, i) for i,p in enumerate(parts) if p.get('functionCall')]
+def _fn_calls(parts, seen=None): return [_fn_call(p) for p in _dedupe_fc_ids(parts, seen) if p.get('functionCall')]
 
 def norm_tool_calls(resp):
     "Tool calls of a response: the `google_search` call its grounding describes, then its `functionCall` parts"
@@ -98,10 +116,10 @@ def norm_parts(resp):
     c0 = nested_idx(resp, 'candidates', 0) or {}
     cites,call = grounding(c0)
     parts = [call] if call else []
-    for i,p in enumerate(nested_idx(c0, 'content', 'parts') or []):
+    for p in _dedupe_fc_ids(nested_idx(c0, 'content', 'parts') or []):
         if 'toolCall' in p or 'toolResponse' in p: continue
         typ = _gem_part_type(p)
-        if typ == PartType.tool_use:      parts.append(_fn_call(p, i))
+        if typ == PartType.tool_use:      parts.append(_fn_call(p))
         elif typ == PartType.thinking:    parts.append(Thinking(p.get("text",""), raw=p))
         elif typ == PartType.tool_result: parts.append(ToolResult(text=p.get("text",""), raw=p))
         else:                             parts.append(Text(p.get("text",""), raw=p))
@@ -114,7 +132,7 @@ def raw_msg(resp):
     return nested_idx(resp, 'candidates', 0, 'content')
 
 # %% ../nbs/07_gemini.ipynb #9a5024ee
-def norm_sse_event(ev, **kwargs):
+def norm_sse_event(ev, seen=None, **kwargs):
     "Normalize Gemini stream event into Delta."
     ev = obj2dict(ev)
     cand = nested_idx(ev, 'candidates', 0) or {}
@@ -123,7 +141,7 @@ def norm_sse_event(ev, **kwargs):
     thinking = "".join(p.get("text","") for p in parts if p.get("thought") and "text" in p)
     txt = "".join(p.get("text","") for p in parts if not p.get("thought") and "text" in p)
     cites,call = grounding(cand) if 'groundingMetadata' in cand else ([], None)  # a search is reported once its grounding arrives
-    tcs = _fn_calls(parts) + ([call] if call else [])
+    tcs = _fn_calls(parts, seen=seen) + ([call] if call else [])
     if ev.get("error"): raise api_error_from_event(ev)
     return Delta(text=txt, thinking=thinking, tool_calls=tcs, citations=cites, finish_reason=finish_reason, usage=norm_usage(ev), raw=ev, **kwargs)
 
@@ -230,7 +248,7 @@ async def request(call, body, stream=False):
 # %% ../nbs/07_gemini.ipynb #328af4d5
 @delegates(mk_acollect_stream, but=['index_fn', 'api_name'])
 async def acollect_stream(resp, **kwargs):
-    res = mk_acollect_stream(norm_and_yield(resp, norm_sse_event), index_fn=delta_index_fn, api_name='gemini', **kwargs)
+    res = mk_acollect_stream(norm_and_yield(resp, partial(norm_sse_event, seen=set())), index_fn=delta_index_fn, api_name='gemini', **kwargs)
     try:
         async for o in res:
             if isinstance(resp, _GeminiStream) and isinstance(o, Status): resp.stopped = True

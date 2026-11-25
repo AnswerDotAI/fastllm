@@ -2,7 +2,7 @@
 
 `response_input` accepts a prompt string, Responses input items, or canonical `msg2dict` messages. It returns `(messages, system)`. System and developer text becomes the reusable `system` prompt. Canonical messages preserve provider replay data.
 
-`normalize_call_ids` supplies missing client call IDs before we retain the history. Later tool results can refer to the same IDs that the client received.
+`normalize_call_ids` supplies missing client call IDs and rewrites any IDs that collide with `used` history or earlier calls in the same response, keeping `Msg.raw` aligned so later tool results match both canonical and raw replay data.
 
 `ResponseState` holds the public ID, model, full message history, prompt cache key, system prompt, and optional provider response ID. The host can store it under its own ownership and expiry rules. A provider ID lets the next call send just the new messages; without one, it needs the retained history and system prompt.
 
@@ -91,10 +91,34 @@ def response_input(inp):
 # %% ../nbs/08_responses.ipynb #7154feb3
 def _new_id(prefix): return f'{prefix}_{secrets.token_hex(16)}'
 
-def normalize_call_ids(comp):
-    "Ensure every client tool call has a Responses call id."
+def _history_call_ids(history):
+    return {p.id for m in (history or ()) for p in m.content if isinstance(p, ToolUse) and not p.server and p.id}
+
+def _raw_tool_entries(raw, raw_api):
+    if raw_api == 'gemini' and isinstance(raw, dict): return [(p['functionCall'], 'id') for p in raw.get('parts') or [] if 'functionCall' in p]
+    if raw_api == 'anthropic' and isinstance(raw, dict): return [(b, 'id') for b in raw.get('content') or [] if b.get('type') == 'tool_use']
+    if raw_api == 'openai' and isinstance(raw, list): return [(it, 'call_id') for it in raw if it.get('type') == 'function_call']
+    if raw_api == 'openai_chat' and isinstance(raw, dict): return [(it, 'id') for it in raw.get('tool_calls') or []]
+    return []
+
+def _sync_raw_call_ids(msg):
+    "Keep `msg.raw` tool-call IDs aligned with non-server `ToolUse` parts in `msg.content`."
+    if not msg.raw or not msg.raw_api: return
+    tcs = [p for p in msg.content if isinstance(p, ToolUse) and not p.server]
+    entries = _raw_tool_entries(msg.raw, msg.raw_api)
+    if not tcs or not any(d.get(k) != tc.id for (d,k),tc in zip(entries, tcs)): return
+    raw = copy.deepcopy(msg.raw)
+    for (d,k),tc in zip(_raw_tool_entries(raw, msg.raw_api), tcs): d[k] = tc.id
+    msg.raw = raw
+
+def normalize_call_ids(comp, used=None):
+    "Ensure every non-server tool call has a unique Responses call id across `used` and `comp`, keeping `comp.message.raw` aligned."
+    seen = set(used or ())
     for tc in comp.tool_calls:
-        if not tc.id: tc.id = _new_id('call')
+        if tc.server: continue
+        if not tc.id or tc.id in seen: tc.id = _new_id('call')
+        seen.add(tc.id)
+    _sync_raw_call_ids(comp.message)
     return comp
 
 # %% ../nbs/08_responses.ipynb #ab1a57d7
@@ -273,7 +297,7 @@ async def call(self:AsyncResponses, turn):
 @patch
 def state(self:AsyncResponses, turn, comp, results=()):
     "Build the next continuation state; `results` are server tool results answering `comp`'s calls."
-    normalize_call_ids(comp)
+    normalize_call_ids(comp, _history_call_ids(turn.history))
     history = (*turn.history, comp.message, *([Msg('tool', list(results))] if results else []))
     return ResponseState(turn.id, turn.body['model'], history, comp.response_id, turn.body['prompt_cache_key'], turn.system)
 
@@ -282,7 +306,7 @@ def state(self:AsyncResponses, turn, comp, results=()):
 @patch
 async def server_results(self:AsyncResponses, turn, comp):
     "Run the server tool calls in `comp`, returning their results"
-    normalize_call_ids(comp)
+    normalize_call_ids(comp, _history_call_ids(turn.history))
     res = []
     for tc in comp.tool_calls:
         if tc.name not in turn.server_tools: continue
@@ -318,7 +342,7 @@ class _ResponseStream(BasicRepr):
         self.turn,self.seq,self.next_index = turn,0,0
         self.message_id,self.message_index,self.text = None,None,''
         self.reasoning_id,self.reasoning_index,self.reasoning_text,self.reasoning_ids = None,None,'',[]
-        self.tool_item_ids,self.streamed_call_ids = {},[]
+        self.tool_item_ids,self.streamed_call_ids,self.used_call_ids = {},[],_history_call_ids(turn.history)
 
     def event(self, event_type, **kwargs):
         result = response_event(event_type, self.seq, **kwargs)
@@ -346,7 +370,8 @@ def text_events(self:_ResponseStream, part):
 # %% ../nbs/08_responses.ipynb #d1679663
 @patch
 def tool_events(self:_ResponseStream, part):
-    if not part.id: part.id = _new_id('call')
+    if not part.id or part.id in self.used_call_ids: part.id = _new_id('call')
+    self.used_call_ids.add(part.id)
     self.streamed_call_ids.append(part.id)
     item_id,index,args = _new_id('fc'),self.next_index,_arguments(part.arguments)
     self.next_index += 1
@@ -422,7 +447,7 @@ def done_events(self:_ResponseStream, comp):
     events = self.end_step([p for p in comp.message.content if getattr(p, '_response_item_id', None) is None])
     client_calls = [tc for tc in comp.tool_calls if not tc.server]
     for i,tc in enumerate(client_calls):
-        if not tc.id and i < len(self.streamed_call_ids): tc.id = self.streamed_call_ids[i]
+        if i < len(self.streamed_call_ids): tc.id = self.streamed_call_ids[i]
         tc._response_item_id = self.tool_item_ids.get(tc.id)
     rids = iter(self.reasoning_ids)
     for part in comp.message.content:
@@ -456,11 +481,13 @@ async def events(self:AsyncResponses, turn, finalize=None, stream=None):
                     for event in state.part_events(part): yield event
             for event in state.close_thinking(): yield event
             usage,stream = (comp.usage if usage is None else usage + comp.usage),None
+            for tc,sid in zip([t for t in comp.tool_calls if not t.server and t.name not in turn.server_tools], state.streamed_call_ids): tc.id = sid
             results = await self.server_results(turn, comp)
             if not results or len(results) < len([t for t in comp.tool_calls if not t.server]): break
             step = _visible_parts(comp.message.content, results)
             for event in state.end_step(step): yield event
             prior += step
+            state.used_call_ids.update(tc.id for tc in comp.tool_calls if not tc.server and tc.id)
             turn = self.server_turn(turn, comp, results)
         next_state = self.state(turn, comp, results)
         comp = copy.copy(comp)
