@@ -51,11 +51,12 @@ def norm_usage(resp):
     pd = usg.get("prompt_tokens_details") or usg.get("input_tokens_details") or {}
     cd = usg.get("completion_tokens_details") or usg.get("output_tokens_details") or {}
     cached = int(pd.get("cached_tokens", 0) or 0)
+    cache_create = int(pd.get("cache_write_tokens", pd.get("cache_creation_tokens", 0)) or 0)
     reasoning = int(cd.get("reasoning_tokens", 0) or 0)
     server_tool_use = dict(Counter(o['type'] for o in resp.get('output', []) if o.get('type') != 'function_call' and o.get('type', '').endswith('_call')))
     if server_tool_use: usg['server_tool_use'] = server_tool_use
     return Usage(prompt_tokens=pt, completion_tokens=ct, total_tokens=tt,
-        cached_tokens=cached, reasoning_tokens=reasoning, search_queries=server_tool_use.get('web_search_call', 0), raw=usg)
+        cached_tokens=cached, cache_creation_tokens=cache_create, reasoning_tokens=reasoning, search_queries=server_tool_use.get('web_search_call', 0), raw=usg)
 
 # %% ../nbs/04_oai_responses.ipynb #95102df4
 def norm_finish(resp, tcs=None):
@@ -197,6 +198,7 @@ def denorm_reasoning(v):
     "Map canonical reasoning_effort to OpenAI Responses reasoning param."
     if v is None: return None
     if isinstance(v, int): return {'level': v}  # a 0-3 level, for a Responses server that resolves it per model
+    if isinstance(v, dict) and 'output_config' in v: return {'effort': v['output_config']['effort']}
     return {'effort': v} if isinstance(v, str) else v
 
 # %% ../nbs/04_oai_responses.ipynb #e11c15c0

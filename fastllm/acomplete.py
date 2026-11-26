@@ -66,11 +66,25 @@ def _resolve_target(model, api_name=None, vendor_name=None):
     return model, api_name, vendor_name
 
 # %% ../nbs/03_acomplete.ipynb #79075d95
+def _responses_proxy(model, vendor_name=None, api_name=None, api_key=None, oauth_token=None, base_url=None):
+    "Return `(proxy_url, proxy_model, target_vendor)` when `FASTLLM_RESPONSES_URL` should handle the call, else `(None, model, vendor_name)`."
+    if base_url or api_key or oauth_token or (api_name and api_name != 'openai'): return None, model, vendor_name
+    if not (url := os.getenv('FASTLLM_RESPONSES_URL')): return None, model, vendor_name
+    if not vendor_name and not api_name:
+        v, m = split_vendor(model)
+        if v in vendor_mapping: vendor_name, model = v, m
+    if vendor_name and vendor_name not in vendor_mapping: return None, model, vendor_name
+    resolved = resolve_model(model)
+    target = vendor_name or infer_api_name(resolved)
+    if target in vendor_mapping and os.getenv(vendor_mapping[target][2]): return None, model, vendor_name
+    proxy_model = f'{target}/{resolved}' if target and not resolved.startswith(f'{target}/') else resolved
+    return url, proxy_model, target
+
 @flexicache()
-def mk_client(model=None, vendor_name=None, api_name=None, api_key=None, oauth_token=None, base_url=None, xtra_hdrs=None,
+def _mk_client(model=None, vendor_name=None, api_name=None, api_key=None, oauth_token=None, base_url=None, xtra_hdrs=None,
     timeout=httpx2.Timeout(connect=30, read=300, write=30, pool=10)):
     err_msg = f"please pass a valid one vendor: {', '.join(list(vendor_mapping))} or pass `api_name`,`base_url` and `api_key`"
-    if not vendor_name and not api_name and not (base_url and (api_key or oauth_token)):
+    if not vendor_name and not api_name and not base_url:
         v, m = split_vendor(model)
         if v in vendor_mapping: vendor_name, model = v, m
     if vendor_name:
@@ -80,13 +94,21 @@ def mk_client(model=None, vendor_name=None, api_name=None, api_key=None, oauth_t
             base_url = override_base_url or base_url
             if not oauth_token: api_key = get_api_key(api_key, env_api_nm)
         except KeyError: raise ValueError(f"Unknown vendor '{vendor_name}', {err_msg}")
-    elif base_url and (api_key or oauth_token): vendor_name, api_name = ifnone(vendor_name, 'custom'), ifnone(api_name, 'openai_chat')
+    elif base_url: vendor_name, api_name = 'custom', ifnone(api_name, 'openai_chat')
     elif (api_name:=infer_api_name(model)):  base_url, vendor_name = vendor_mapping[api_name][1], api_name
     else: raise ValueError(f"Model {model} can't be auto resolved, {err_msg}")
     api = api_registry[api_name]
-    hdrs = merge(api.get_hdrs(api_key, oauth_token), ifnone(xtra_hdrs, {}))
+    auth_hdrs = api.get_hdrs(api_key, oauth_token) if (api_key or oauth_token or vendor_name != 'custom') else {}
+    hdrs = merge(auth_hdrs, ifnone(xtra_hdrs, {}))
     cli = AsyncHttpCli(base_url, base_headers=hdrs, timeout=timeout)
     return cli, api_name, vendor_name
+
+def mk_client(model=None, vendor_name=None, api_name=None, api_key=None, oauth_token=None, base_url=None, xtra_hdrs=None,
+    timeout=httpx2.Timeout(connect=30, read=300, write=30, pool=10)):
+    proxy_url, proxy_model, _ = _responses_proxy(model, vendor_name, api_name, api_key, oauth_token, base_url)
+    if proxy_url: return _mk_client(model=proxy_model, api_name='openai', base_url=proxy_url, xtra_hdrs=xtra_hdrs, timeout=timeout)
+    return _mk_client(model=model, vendor_name=vendor_name, api_name=api_name, api_key=api_key, oauth_token=oauth_token,
+        base_url=base_url, xtra_hdrs=xtra_hdrs, timeout=timeout)
 
 # %% ../nbs/03_acomplete.ipynb #df851a5c
 class ContextWindowExceededError(APIError): pass
@@ -195,42 +217,49 @@ async def acomplete(msgs, model, api_name=None, vendor_name=None, api_key=None, 
     if api_key and oauth_token: raise ValueError('Pass `api_key` or `oauth_token`, not both: a request has one identity')
     if not (base_url and (api_key or oauth_token)): model, api_name, vendor_name = _resolve_target(model, api_name, vendor_name)
     own = api_name in api_registry and not hasattr(api_registry[api_name], 'endpoint') if api_name else False
+    proxy_url, send_model, info_vendor = None, model, vendor_name
     if own:
-        vendor_name = ifnone(vendor_name, api_name)  # an own-transport api: no HTTP client to build
+        vendor_name = info_vendor = ifnone(vendor_name, api_name)  # an own-transport api: no HTTP client to build
         if oauth_token: kwargs['oauth_token'] = oauth_token  # its `mk_payload` applies the user's token itself
     else:
         auth = vendor_auth.get(vendor_name)
         if auth and not (api_key or oauth_token or os.getenv(vendor_mapping[vendor_name][2])): api_key = await auth()
-        cli, api_name, vendor_name = mk_client(model=model, vendor_name=vendor_name, api_name=api_name, api_key=api_key, oauth_token=oauth_token, base_url=base_url)
-    if (eff := defaults.reasoning_effort) and 'reasoning_effort' not in kwargs and effort_levels(get_model_info(model, vendor_name)):
-        kwargs |= effort_kwargs(model, eff, vendor_name)
+        proxy_url, send_model, info_vendor = _responses_proxy(model, vendor_name, api_name, api_key, oauth_token, base_url)
+        if proxy_url: cli, api_name, vendor_name = mk_client(model=send_model, api_name='openai', base_url=proxy_url)
+        else: cli, api_name, vendor_name = mk_client(model=model, vendor_name=vendor_name, api_name=api_name,
+            api_key=api_key, oauth_token=oauth_token, base_url=base_url)
+        info_vendor = info_vendor or vendor_name
+    info_model = resolve_model(model) if proxy_url else model
+    if (eff := defaults.reasoning_effort) and 'reasoning_effort' not in kwargs and effort_levels(get_model_info(info_model, info_vendor)):
+        kwargs |= effort_kwargs(info_model, eff, info_vendor)
     api = api_registry[api_name]
     if previous_response_id is not None:
         if not getattr(api, 'supports_previous_response_id', False):
             raise ValueError('previous_response_id is not supported by this transport')
         kwargs['previous_response_id'] = previous_response_id
-    payload = build_payload(msgs, model, api_name=api_name, vendor_name=vendor_name, stream=stream, **kwargs)
+    req_stream = stream or own or bool(proxy_url) or vendor_name == 'codex'
+    payload = build_payload(msgs, send_model, api_name=api_name, vendor_name=vendor_name, stream=req_stream, **kwargs)
     body = payload | ifnone(xtra_body, {})
     if not own:
         headers = xtra_hdrs or {}
         if hk := vendor_hdrs.get(vendor_name): headers = hk(body, headers)
         ep = endpoint or api.endpoint
-        path,params = ep(model, stream) if callable(ep) else (ep, None)
-    if defaults.debug_mode: _debug_print(model, api_name, vendor_name, body, None if own else cli._url(path))
+        path,params = ep(send_model, req_stream) if callable(ep) else (ep, None)
+    if defaults.debug_mode: _debug_print(send_model, api_name, vendor_name, body, None if own else cli._url(path))
     async def _call(body=body):
-        async def send(): return await provider_req(cli, path, body, params=params, stream=stream, headers=headers)
-        return await send() if stream else await _retry_call(send, retries, retry_delay)
+        async def send(): return await provider_req(cli, path, body, params=params, stream=req_stream, headers=headers)
+        return await send() if req_stream else await _retry_call(send, retries, retry_delay)
     async def _request():
-        if req := getattr(api, 'request', None): return await req(_call, body, stream=stream)
+        if req := getattr(api, 'request', None): return await req(_call, body, stream=req_stream)
         return await _call()
     async def _mk_gen():
         resp = payload if own else await _request()  # an own-transport api's collector makes its request from the payload
-        async for o in api.acollect_stream(resp, model=model, vendor_name=vendor_name, stop_callables=stop_callables): yield o
-    if stream or own:
+        async for o in api.acollect_stream(resp, model=info_model, vendor_name=info_vendor, stop_callables=stop_callables): yield o
+    if req_stream:
         result = _retry_stream(_mk_gen, retries, retry_delay)
         if stream: return result
-        async for completion in result: pass  # own-transport apis are streaming-only: drain for the completion
+        async for completion in result: pass  # streaming-only backends: drain for the completion
         return completion
     resp = await _request()
-    return mk_completion(resp, model=model, api_name=api_name, vendor_name=vendor_name)
+    return mk_completion(resp, model=info_model, api_name=api_name, vendor_name=info_vendor)
 
