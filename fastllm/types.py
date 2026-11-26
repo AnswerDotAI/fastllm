@@ -11,9 +11,9 @@ __all__ = ['FinishReason', 'api_registry', 'vendor_auth', 'vendor_hdrs', 'model_
            'dsflash', 'fw_models', 'model_aliases', 'model_info_registry', 'modern_llm', 'effort_codes',
            'mimo_v25_common', 'codex_pricing', 'Usage', 'APIRegistry', 'mk_completion', 'rebuild_parts', 'fn_schema',
            'payload_kwargs', 'provider_req', 'get_api_key', 'wrap_typed', 'unwrap_typed', 'resize_b64',
-           'model_prices_meta', 'infer_api_name', 'get_model_meta', 'register_model_info', 'get_model_info',
-           'effort_code', 'effort_levels', 'resolve_effort', 'effort_kwargs', 'register_sub_model', 'find_models',
-           'get_model_pricing', 'approx_pricing', 'is_deepseek_peak_hour', 'price_tier', 'tier_rate']
+           'model_prices_meta', 'infer_api_name', 'infer_vendor', 'get_model_meta', 'register_model_info',
+           'get_model_info', 'effort_code', 'effort_levels', 'resolve_effort', 'effort_kwargs', 'register_sub_model',
+           'find_models', 'get_model_pricing', 'approx_pricing', 'is_deepseek_peak_hour', 'price_tier', 'tier_rate']
 
 # %% ../nbs/00_types.ipynb #b4d047fd
 import httpx2, base64, io
@@ -198,10 +198,17 @@ def infer_api_name(model):
     if "gemini" in model: return 'gemini'
     if any(o in model for o in ('gpt','o3-','o4-')): return 'openai'
 
+def infer_vendor(model):
+    "Infer vendor_name from model"
+    if not model: return None
+    if model.startswith('accounts/fireworks/'): return 'fireworks_ai'
+    if model.startswith('muse-'): return 'meta'
+    return infer_api_name(model)
+
 # %% ../nbs/00_types.ipynb #2f0720c2
 def get_model_meta(model, vendor_name=None, tfm=noop):
     "Look up cost metadata for `model` from litellm price map, using `vendor_name` prefix if needed."
-    vendor_name = ifnone(vendor_name, infer_api_name(model))
+    vendor_name = ifnone(vendor_name, infer_vendor(model))
     mp, key = model_prices_meta(), ''
     if model in mp: key = model
     elif vendor_name=='gemini' and model.startswith('models/'): key = f"gemini/{model.removeprefix('models/')}"
@@ -252,8 +259,8 @@ def register_model_info(model, vendor_name=None, base=None, base_vendor_name=Non
 _flag_mods = dict(supports_vision='image', supports_pdf_input='pdf', supports_audio_input='audio', supports_video_input='video')
 
 def get_model_info(mn, vendor_name=None):
-    "Metadata for `mn`: its local registration, else LiteLLM's entry; `vendor_name` defaults to `infer_api_name(mn)`"
-    vendor_name = ifnone(vendor_name, infer_api_name(mn))
+    "Metadata for `mn`: its local registration, else LiteLLM's entry; `vendor_name` defaults to `infer_vendor(mn)`"
+    vendor_name = ifnone(vendor_name, infer_vendor(mn))
     info = dict(model_info_registry.get((vendor_name, mn)) or get_model_meta(mn, vendor_name))
     if 'search_context_cost_per_query' in info: info['supports_web_search'] = True
     mods = [m for f,m in _flag_mods.items() if info.get(f)]

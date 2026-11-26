@@ -60,9 +60,11 @@ def resolve_model(model):
 
 def _resolve_target(model, api_name=None, vendor_name=None):
     if not api_name and not vendor_name:
+        model = resolve_model(model)
         v, m = split_vendor(model)
         if v in vendor_mapping: vendor_name, model = v, m
         elif v: api_name, model = v, m  # a registered transport api (e.g. claude_code): not an HTTP vendor
+        else: vendor_name = infer_vendor(model)
     return model, api_name, vendor_name
 
 # %% ../nbs/03_acomplete.ipynb #79075d95
@@ -75,7 +77,7 @@ def _responses_proxy(model, vendor_name=None, api_name=None, api_key=None, oauth
         if v in vendor_mapping: vendor_name, model = v, m
     if vendor_name and vendor_name not in vendor_mapping: return None, model, vendor_name
     resolved = resolve_model(model)
-    target = vendor_name or infer_api_name(resolved)
+    target = vendor_name or infer_vendor(resolved)
     if target in vendor_mapping and os.getenv(vendor_mapping[target][2]): return None, model, vendor_name
     proxy_model = f'{target}/{resolved}' if target and not resolved.startswith(f'{target}/') else resolved
     return url, proxy_model, target
@@ -84,18 +86,20 @@ def _responses_proxy(model, vendor_name=None, api_name=None, api_key=None, oauth
 def _mk_client(model=None, vendor_name=None, api_name=None, api_key=None, oauth_token=None, base_url=None, xtra_hdrs=None,
     timeout=httpx2.Timeout(connect=30, read=300, write=30, pool=10)):
     err_msg = f"please pass a valid one vendor: {', '.join(list(vendor_mapping))} or pass `api_name`,`base_url` and `api_key`"
-    if not vendor_name and not api_name and not base_url:
-        v, m = split_vendor(model)
-        if v in vendor_mapping: vendor_name, model = v, m
+    if not vendor_name and not base_url:
+        model = resolve_model(model)
+        v = None
+        if not api_name:
+            v, m = split_vendor(model)
+            if v in vendor_mapping: vendor_name, model = v, m
+        if not vendor_name and not v: vendor_name = infer_vendor(model)
     if vendor_name:
-        override_base_url = base_url
         try:
-            api_name, base_url, env_api_nm = vendor_mapping[vendor_name]
-            base_url = override_base_url or base_url
+            v_api, v_url, env_api_nm = vendor_mapping[vendor_name]
+            api_name, base_url = api_name or v_api, base_url or v_url
             if not oauth_token: api_key = get_api_key(api_key, env_api_nm)
         except KeyError: raise ValueError(f"Unknown vendor '{vendor_name}', {err_msg}")
     elif base_url: vendor_name, api_name = 'custom', ifnone(api_name, 'openai_chat')
-    elif (api_name:=infer_api_name(model)):  base_url, vendor_name = vendor_mapping[api_name][1], api_name
     else: raise ValueError(f"Model {model} can't be auto resolved, {err_msg}")
     api = api_registry[api_name]
     auth_hdrs = api.get_hdrs(api_key, oauth_token) if (api_key or oauth_token or vendor_name != 'custom') else {}
