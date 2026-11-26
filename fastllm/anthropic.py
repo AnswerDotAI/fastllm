@@ -135,6 +135,8 @@ def norm_sse_event(ev, **kwargs):
         elif dtyp == "input_json_delta":
             tcs = [ToolUse(id=str(ev.get("index", "")), name="", arguments={"_delta": d.get("partial_json", '')})]
         elif dtyp == "citations_delta": citations = [_url_cite(c) for c in listify(d.get('citation', [])) if c.get('url')]
+    elif typ == "content_block_stop":
+        tcs = [ToolUse(id=str(ev.get("index", "")), name="", arguments={"_done": True})]
     elif typ == "message_delta":
         fin = norm_finish(ev.get('delta'))
         return Delta(finish_reason=fin, usage=norm_usage(ev), raw=ev, **kwargs)

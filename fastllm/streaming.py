@@ -163,6 +163,13 @@ async def mk_acollect_stream(it, index_fn, model=None, api_name=None, vendor_nam
             for r in _yield_parts(d): yield r
         # Rest incl. tools, finish reason, usage is processed independently
         for tc in d.tool_calls:
+            if tc.arguments == {'_done': True}:
+                idx, _ = index_fn(d, PartType.tool_use, last_typ, last_idx)
+                acc = part_accum.parts.get(idx)
+                if isinstance(acc, ToolUse) and isinstance(acc.arguments, str):
+                    acc.arguments = json.loads(acc.arguments) if acc.arguments else {}
+                    yield acc
+                continue
             args = tc.arguments.get('_delta', tc.arguments)
             _, idx = _proc(d, 'tool_use', ret=dict(id=tc.id, name=tc.name, arguments=args, server=tc.server, text=tc.text, raw=tc.raw))
             if (isinstance(args, str) and args.endswith('}')) or (isinstance(args, dict) and '_delta' not in tc.arguments): # tool call ready
