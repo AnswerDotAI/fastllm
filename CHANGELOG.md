@@ -2,6 +2,13 @@
 
 <!-- do not remove -->
 
+## 0.0.84
+
+### New Features
+
+- Add `FASTLLM_RESPONSES_URL` proxy routing, stream codex/proxy calls, and handle cache creation tokens and `output_config` reasoning ([#143](https://github.com/AnswerDotAI/fastllm/issues/143))
+
+
 ## 0.0.83
 
 ### Bugs Squashed
