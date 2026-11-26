@@ -2,7 +2,9 @@
 
 - `fastllm.responses`: Provider-independent Responses resources and streaming over FastLLM"""
 
-__version__ = "0.0.84"
+__version__ = "0.0.85"
+
+
 
 
 
