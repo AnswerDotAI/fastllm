@@ -148,7 +148,7 @@ def norm_sse_event(ev, seen=None, **kwargs):
 # %% ../nbs/07_gemini.ipynb #ebd6fdd4
 def delta_index_fn(d, typ, last_typ, last_idx):
     'Returns accumulation index for current delta and updated last idx'
-    if not (last_typ or last_idx): return 0,0
+    if last_idx is None: return 0,0
     return last_idx + 1, last_idx + 1
 
 # %% ../nbs/07_gemini.ipynb #33506d56
