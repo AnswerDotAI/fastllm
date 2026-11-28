@@ -75,7 +75,7 @@ def delta_index_fn(d, typ, last_typ, last_idx):
     if d.tool_calls: 
         tc_idx = nested_idx(d.tool_calls, 0, 'raw', 'index')
         return f"tool_{tc_idx}", last_idx
-    if not (last_typ or last_idx): return 0,0
+    if last_idx is None: return 0,0
     if typ == last_typ: return last_idx, last_idx
     return last_idx + 1, last_idx + 1
 

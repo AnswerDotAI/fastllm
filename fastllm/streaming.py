@@ -137,9 +137,10 @@ async def mk_acollect_stream(it, index_fn, model=None, api_name=None, vendor_nam
     part_accum,deltas,stop_callables = PartAccum(), [], L(stop_callables)
     fin, usg, typ, last_typ, last_idx = [None]*5
     def _fidx(d, name, pt=None):
-        nonlocal typ, last_idx
+        nonlocal typ, last_typ, last_idx
         typ = getattr(PartType, pt or name)
         idx,last_idx = index_fn(d, typ, last_typ, last_idx)
+        last_typ = typ
         return idx
     def _proc(d, name, pt=None, kw='txt', ret=None):
         if not ret and not (val := getattr(d, name)): return None, None
@@ -183,7 +184,6 @@ async def mk_acollect_stream(it, index_fn, model=None, api_name=None, vendor_nam
         if r[0]: yield _mk_delta_part('refusal', r[0]['refusal'])
         if d.finish_reason: fin = d.finish_reason
         if d.usage: usg = d.usage
-        last_typ = typ
         deltas.append(d)
     parts = part_accum.get_merged()
     tcs = [p for p in parts if isinstance(p, ToolUse)]
